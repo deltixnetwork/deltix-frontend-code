@@ -696,8 +696,9 @@ async function unstake(id) {
   }
 }
 
-// ---------- D-Browser security interstitial ----------
+// ---------- D-Browser security interstitial + in-app browser ----------
 let pendingDappUrl = null;
+let pendingDappName = '';
 const ALLOWED_DAPP_HOSTS = new Set([
   'app.uniswap.org', 'opensea.io', 'aave.com', 'snapshot.org', 'etherscan.io', 'web3.storage',
 ]);
@@ -711,6 +712,7 @@ document.querySelectorAll('#dappGrid .dapp').forEach((d) =>
     }
     if (url.protocol !== 'https:' || !ALLOWED_DAPP_HOSTS.has(url.hostname)) return;
     pendingDappUrl = url.href;
+    pendingDappName = d.dataset.name;
     $('dappModalTitle').textContent = `Open ${d.dataset.name}?`;
     $('dappModalUrl').textContent = url.href;
     $('dappModal').hidden = false;
@@ -718,9 +720,64 @@ document.querySelectorAll('#dappGrid .dapp').forEach((d) =>
 );
 $('cancelDapp').addEventListener('click', () => ($('dappModal').hidden = true));
 $('confirmDapp').addEventListener('click', () => {
-  if (pendingDappUrl) window.open(pendingDappUrl, '_blank', 'noopener');
   $('dappModal').hidden = true;
+  if (!pendingDappUrl) return;
+  openDBrowser(pendingDappUrl, pendingDappName);
   pendingDappUrl = null;
+});
+
+/** Open a dApp inside the app: native in-app browser sheet on device, overlay browser on web. */
+function openDBrowser(url, name) {
+  const cap = window.Capacitor;
+  if (cap && cap.isNativePlatform && cap.isNativePlatform()) {
+    const B = cap.Plugins && cap.Plugins.Browser;
+    if (B && B.open) {
+      B.open({ url, toolbarColor: '#ffffff' });
+      return;
+    }
+    window.open(url, '_blank', 'noopener');
+    return;
+  }
+  $('dbName').textContent = name || 'dApp';
+  $('dbHost').textContent = '🔒 ' + new URL(url).hostname;
+  const loading = $('dbLoading');
+  loading.hidden = false;
+  loading.innerHTML = '◆ Connecting securely…';
+  const frame = $('dbFrame');
+  frame.dataset.url = url;
+  frame.src = url;
+  let loaded = false;
+  frame.onload = () => {
+    loaded = true;
+    loading.hidden = true;
+  };
+  // Many dApps refuse to be embedded (X-Frame-Options) — offer the system browser.
+  setTimeout(() => {
+    if (loaded) return;
+    loading.innerHTML = `<div class="db-blocked">
+      <div class="db-blocked-icon">🛡</div>
+      <b>${name || 'This dApp'} blocks embedded browsing</b>
+      <p>For your security it only runs in a full browser tab.</p>
+      <button class="btn primary" id="dbBlockedOpen">Open ${new URL(url).hostname} ↗</button>
+    </div>`;
+    document.getElementById('dbBlockedOpen').onclick = () => window.open(url, '_blank', 'noopener');
+  }, 5000);
+  $('dbrowser').hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+function closeDBrowser() {
+  $('dbFrame').src = 'about:blank';
+  $('dbrowser').hidden = true;
+  document.body.style.overflow = '';
+}
+$('dbClose').addEventListener('click', closeDBrowser);
+$('dbExternal').addEventListener('click', () => {
+  const url = $('dbFrame').dataset.url;
+  if (url) window.open(url, '_blank', 'noopener');
+});
+$('dbOpenExt').addEventListener('click', () => {
+  const url = $('dbFrame').dataset.url;
+  if (url) window.open(url, '_blank', 'noopener');
 });
 
 // Auto-advance OTP focus

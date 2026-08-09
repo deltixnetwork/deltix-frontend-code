@@ -411,3 +411,36 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 }
 .update-card h2 { margin: 14px 0 8px; }
 .update-card p { color: var(--muted, #64748b); font-size: 14px; line-height: 1.6; margin-bottom: 18px; }
+
+/* -- In-app D-Browser ------------------------------------- */
+.dbrowser {
+  position: fixed; inset: 0; z-index: 900; background: #fff;
+  display: flex; flex-direction: column;
+}
+.db-bar {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border-bottom: 1px solid var(--border, #e6eaf2); background: #fff;
+}
+.db-btn {
+  border: 1px solid var(--border, #e6eaf2); background: #fff; border-radius: 10px;
+  padding: 8px 12px; font-weight: 700; color: var(--accent); cursor: pointer; font-size: 14px;
+}
+.db-info { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; }
+.db-info b { font-size: 14px; color: #0f172a; }
+.db-host { font-size: 11px; color: var(--green, #16a34a); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.db-frame-wrap { flex: 1; position: relative; background: #f6f8fc; }
+.db-frame-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.db-loading {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: #f6f8fc; color: var(--accent); font-weight: 700; font-size: 15px; z-index: 1;
+}
+.db-hint {
+  padding: 8px 12px; font-size: 11px; color: var(--muted, #64748b); text-align: center;
+  border-top: 1px solid var(--border, #e6eaf2); background: #fff;
+}
+.db-link { border: none; background: none; color: var(--accent); font-size: 11px; cursor: pointer; padding: 0; font-weight: 700; }
+.db-blocked { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 24px; max-width: 320px; }
+.db-blocked-icon { font-size: 40px; }
+.db-blocked b { color: #0f172a; font-size: 16px; }
+.db-blocked p { color: var(--muted, #64748b); font-size: 13px; margin: 0 0 6px; }
+.db-blocked .btn { width: auto; padding: 12px 18px; }

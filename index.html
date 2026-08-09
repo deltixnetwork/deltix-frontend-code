@@ -109,7 +109,7 @@
       <!-- D-Browser -->
       <div class="tab" id="tab-browser">
         <h3 class="section-title">D-Browser</h3>
-        <p class="muted small-note">Your gateway to Web3 dApps. External apps open after a security confirmation.</p>
+        <p class="muted small-note">Your gateway to Web3 dApps — browsed inside Deltix after a security confirmation.</p>
         <div class="dapp-grid" id="dappGrid">
           <div class="dapp" data-url="https://app.uniswap.org" data-name="Swap (DEX)"><span>🦄</span>Swap</div>
           <div class="dapp" data-url="https://opensea.io" data-name="NFT Marketplace"><span>🖼️</span>NFTs</div>
@@ -356,6 +356,24 @@
         <button class="btn primary" id="confirmDapp">Open dApp</button>
       </div>
     </div>
+  </div>
+
+  <!-- In-app D-Browser -->
+  <div class="dbrowser" id="dbrowser" hidden>
+    <div class="db-bar">
+      <button class="db-btn" id="dbClose">‹ Back</button>
+      <div class="db-info">
+        <b id="dbName"></b>
+        <span id="dbHost" class="db-host">🔒</span>
+      </div>
+      <button class="db-btn" id="dbExternal" title="Open in system browser">↗</button>
+    </div>
+    <div class="db-frame-wrap">
+      <div class="db-loading" id="dbLoading">◆ Connecting securely…</div>
+      <iframe id="dbFrame" title="D-Browser" referrerpolicy="no-referrer"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"></iframe>
+    </div>
+    <div class="db-hint">Deltix D-Browser · never enter your recovery phrase · dApp won’t load? <button class="db-link" id="dbOpenExt">open externally ↗</button></div>
   </div>
 
   <div class="toast" id="toast" hidden></div>
