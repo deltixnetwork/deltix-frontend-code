@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" role="img" aria-label="Deltix Network">
+  <!-- Mark: blue delta diamond -->
+  <path d="M160 56 L264 160 L160 264 L56 160 Z" fill="#1f66f2"/>
+  <!-- Wordmark -->
+  <text x="330" y="178" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="132" font-weight="800" letter-spacing="2" fill="#0f172a">DELTIX</text>
+  <text x="334" y="244" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="52" font-weight="600" letter-spacing="22" fill="#1f66f2">NETWORK</text>
+</svg>

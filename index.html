@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>Deltix Network</title>
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
+  <link rel="apple-touch-icon" href="assets/app-icon.svg" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app" class="phone">
+    <!-- Top bar -->
+    <header class="topbar" id="topbar" hidden>
+      <div class="brand">
+        <span class="logo">◆</span> Deltix
+      </div>
+      <button class="icon-btn" id="logoutBtn" title="Sign out">⎋</button>
+    </header>
+
+    <!-- ============ AUTH: EMAIL ============ -->
+    <section class="screen active" id="screen-email">
+      <div class="hero">
+        <div class="hero-logo">◆</div>
+        <h1>Deltix Network</h1>
+        <p class="tagline">Mobile-first Proof of Stake. Stake, delegate &amp; govern — no mining rigs.</p>
+      </div>
+      <div class="card">
+        <label for="emailInput">Email address</label>
+        <input id="emailInput" type="email" inputmode="email" placeholder="you@example.com" autocomplete="email" />
+        <label for="refCodeInput">Referral code (optional)</label>
+        <input id="refCodeInput" type="text" placeholder="DLTX-XXXXXX" autocomplete="off" style="text-transform:uppercase" />
+        <label class="check-row" for="ageGate">
+          <input id="ageGate" type="checkbox" />
+          <span>I am 18 years of age or older, and I understand $DLTX has no monetary value,
+            is not redeemable for real currency, and is not an investment. I accept the
+            <a href="/terms.html" class="legal-link" target="_blank" rel="noopener">Terms of Service</a> and
+            <a href="/privacy.html" class="legal-link" target="_blank" rel="noopener">Privacy Policy</a>.</span>
+        </label>
+        <button class="btn primary" id="sendCodeBtn" disabled>Send verification code</button>
+        <p class="hint" id="emailHint"></p>
+      </div>
+      <p class="footnote">A standalone, Ethereum-inspired DPoS network.<br/>OTP verification is identity-only — it never controls your wallet keys.</p>
+    </section>
+
+    <!-- ============ AUTH: OTP ============ -->
+    <section class="screen" id="screen-otp">
+      <div class="hero small">
+        <div class="hero-logo">✉</div>
+        <h1>Verify your email</h1>
+        <p class="tagline" id="otpSubtitle">Enter the 6-digit code we sent you.</p>
+      </div>
+      <div class="card">
+        <div class="dev-banner" id="devBanner" hidden></div>
+        <label for="codeInput">Verification code</label>
+        <input id="codeInput" type="text" inputmode="numeric" maxlength="6" placeholder="000000" class="otp-input" />
+        <button class="btn primary" id="verifyBtn">Verify &amp; create wallet</button>
+        <button class="btn ghost" id="backToEmail">Change email</button>
+        <p class="hint" id="otpHint"></p>
+      </div>
+    </section>
+
+    <!-- ============ MAIN TABS ============ -->
+    <main class="screen" id="screen-main">
+      <!-- Dashboard -->
+      <div class="tab active" id="tab-wallet">
+        <div class="balance-card">
+          <span class="muted">Total balance</span>
+          <div class="balance" id="totalBalance">0.00 <small>$DLTX</small></div>
+          <div class="address" id="walletAddress" title="Tap to copy"></div>
+          <div class="balance-row">
+            <div><span class="muted">Liquid</span><b id="liquidBalance">0</b></div>
+            <div><span class="muted">Staked</span><b id="stakedBalance">0</b></div>
+            <div><span class="muted">Rewards</span><b id="pendingRewards">0</b></div>
+          </div>
+        </div>
+        <div class="action-row">
+          <button class="btn primary" id="sendBtn">↑ Send</button>
+          <button class="btn ghost" id="receiveBtn">↓ Receive</button>
+        </div>
+        <button class="btn faucet" id="faucetBtn">＋ Genesis faucet (+500 $DLTX)</button>
+
+        <h3 class="section-title">Network snapshot</h3>
+        <div class="stats-grid" id="statsGrid"></div>
+
+        <h3 class="section-title">Recent activity</h3>
+        <div class="tx-list" id="txList"><p class="muted center">No activity yet.</p></div>
+      </div>
+
+      <!-- Staking -->
+      <div class="tab" id="tab-stake">
+        <h3 class="section-title">Your delegations</h3>
+        <div id="myStakes"><p class="muted center">You have no active stakes.</p></div>
+
+        <h3 class="section-title">Validators</h3>
+        <p class="muted small-note">Delegate stake to a validator to help secure consensus. Rewards are variable protocol incentives — never guaranteed income.</p>
+        <div id="validatorList" class="validator-list"></div>
+
+        <h3 class="section-title">Delegation risks</h3>
+        <ul class="disclosure">
+          <li>Validator downtime reduces rewards; serious violations can be slashed.</li>
+          <li>Unstaking is subject to the protocol unbonding rules.</li>
+          <li>APY estimates change with total stake, fees and issuance.</li>
+          <li>Validators charge the disclosed commission on rewards.</li>
+        </ul>
+      </div>
+
+      <!-- D-Browser -->
+      <div class="tab" id="tab-browser">
+        <h3 class="section-title">D-Browser</h3>
+        <p class="muted small-note">Your gateway to Web3 dApps. External apps open after a security confirmation.</p>
+        <div class="dapp-grid" id="dappGrid">
+          <div class="dapp" data-url="https://app.uniswap.org" data-name="Swap (DEX)"><span>🦄</span>Swap</div>
+          <div class="dapp" data-url="https://opensea.io" data-name="NFT Marketplace"><span>🖼️</span>NFTs</div>
+          <div class="dapp" data-url="https://aave.com" data-name="DeFi Lending"><span>👻</span>DeFi</div>
+          <div class="dapp" data-url="https://snapshot.org" data-name="DAO Governance"><span>🗳️</span>DAO</div>
+          <div class="dapp" data-url="https://etherscan.io" data-name="Block Explorer"><span>🔎</span>Explorer</div>
+          <div class="dapp" data-url="https://web3.storage" data-name="Decentralized Storage"><span>📦</span>Storage</div>
+        </div>
+        <div class="ad-slot">Sustainability Fund · Ad slot<br/><small>Ad revenue funds infrastructure — it is not a protocol reward.</small></div>
+      </div>
+
+      <!-- Network / tokenomics -->
+      <div class="tab" id="tab-network">
+        <h3 class="section-title">Deltix Chain <span class="pill live">Live</span></h3>
+        <div class="card supply-list" id="chainInfo"></div>
+        <div id="blockList"></div>
+
+        <h3 class="section-title">Token supply</h3>
+        <div class="card supply-list" id="supplyList"></div>
+
+        <h3 class="section-title">Monetary model</h3>
+        <div class="feature-card">
+          <div class="name">Ethereum-inspired issuance &amp; burn</div>
+          <div class="meta">S<sub>t+1</sub> = S<sub>t</sub> + I<sub>t</sub> − B<sub>t</sub> — no fixed max supply.
+            Protocol issuance funds validator rewards while transaction base-fee burning can offset
+            inflation. Staking locks tokens and reduces liquid circulating supply
+            (C = S − L − R).</div>
+        </div>
+
+        <h3 class="section-title">Participation roles</h3>
+        <div class="feature-card">
+          <div class="name">Staker / Delegator <span class="pill">You</span></div>
+          <div class="meta">Lock $DLTX and delegate to qualified validators from your phone. Your share:
+            R<sub>u</sub> = (S<sub>u</sub>/S<sub>v</sub>) · R<sub>v</sub> · (1 − c<sub>v</sub>).</div>
+        </div>
+        <div class="feature-card">
+          <div class="name">Validator</div>
+          <div class="meta">Runs consensus nodes, proposes blocks and attests. Bonded stake is subject to
+            inactivity penalties and slashing for consensus violations.</div>
+        </div>
+        <div class="feature-card">
+          <div class="name">Your phone is a gateway — not a miner</div>
+          <div class="meta">Deltix does not simulate mining on your phone. Smartphones control wallets,
+            staking, delegation, governance and D-Browser access; validator nodes run on dedicated
+            infrastructure.</div>
+        </div>
+
+        <h3 class="section-title">Referral program <span class="pill">Max 3</span></h3>
+        <div class="feature-card">
+          <div class="meta">Each verified account may sponsor a maximum of <b>three</b> participants.
+            No downlines, no paid membership, no rewards for registration alone. Rewards activate only
+            after the referred participant verifies and maintains an eligible stake. Manage yours in
+            the <b>Community</b> tab.</div>
+        </div>
+
+        <h3 class="section-title">Governance</h3>
+        <div class="feature-card">
+          <div class="name">Deltix DAO <span class="pill live">Live</span></div>
+          <div class="meta">The DAO is live from day one: protocol changes are decided by
+            stake-weighted community vote in the <b>Community</b> tab — 1 staked $DLTX = 1 vote.
+            The scope of binding on-chain control (validator voting, timelocks, treasury) expands
+            progressively toward full decentralization.</div>
+        </div>
+
+        <h3 class="section-title">Liquidity strategy</h3>
+        <div class="feature-card">
+          <div class="meta"><b>Deltix</b> — Proof of Stake, Ethereum-inspired programmable utility, delivered as a
+            standalone mobile-first application.<br/>
+            Listings and exchange liquidity are pursued deliberately, once network fundamentals are
+            established — no premature independent listings.</div>
+        </div>
+      </div>
+
+      <!-- Community: DAO + referrals + ambassador program -->
+      <div class="tab" id="tab-community">
+        <h3 class="section-title">Deltix DAO <span class="pill live">Live</span></h3>
+        <div class="feature-card">
+          <div class="name">Community governance, from day one</div>
+          <div class="meta" id="daoMeta">The DAO decides protocol changes by stake-weighted vote —
+            1 staked $DLTX = 1 vote. Stake to gain voting power; anyone with an eligible stake can
+            submit a proposal.</div>
+        </div>
+        <div id="daoList"><p class="muted center">Loading proposals…</p></div>
+
+        <h3 class="section-title">Submit a proposal</h3>
+        <div class="card">
+          <label for="propTitle">Title</label>
+          <input id="propTitle" type="text" maxlength="120" placeholder="DIP-3: Your proposal title" autocomplete="off" />
+          <label for="propDesc">Description</label>
+          <textarea id="propDesc" rows="4" maxlength="2000" placeholder="What should change, and why? The DAO votes for 7 days."></textarea>
+          <button class="btn primary" id="proposeBtn">Submit to the DAO</button>
+          <p class="hint" id="propHint"></p>
+        </div>
+
+        <h3 class="section-title">Ambassador program</h3>
+        <div class="ambassador-card" id="ambassadorCard">
+          <div class="tier-badge" id="tierBadge">Participant</div>
+          <div class="meta" id="tierMeta"></div>
+          <div class="progress" id="tierProgress"></div>
+        </div>
+        <div class="feature-card">
+          <div class="name">Tiers &amp; benefits</div>
+          <div class="meta">
+            <b>Participant</b> — stake, delegate, govern, refer up to 3.<br/>
+            <b>Advocate</b> — 1 activated referral + an active stake: community badge, early feature access.<br/>
+            <b>Ambassador</b> — 3 activated referrals + 500 $DLTX staked: non-transferable ambassador badge,
+            governance spotlight, priority validator invitations.
+          </div>
+        </div>
+
+        <h3 class="section-title">Your referral code <span class="pill">Max 3</span></h3>
+        <div class="card">
+          <div class="ref-code" id="myRefCode" title="Tap to copy">—</div>
+          <div class="slots" id="refSlots"></div>
+          <p class="hint" id="refInfo"></p>
+        </div>
+
+        <h3 class="section-title">Your referrals</h3>
+        <div id="refList"><p class="muted center">No referrals yet. Share your code — up to three genuine participants.</p></div>
+
+        <div id="redeemBox">
+          <h3 class="section-title">Have a sponsor code?</h3>
+          <div class="card">
+            <label for="redeemInput">Referral code</label>
+            <input id="redeemInput" type="text" placeholder="DLTX-XXXXXX" autocomplete="off" style="text-transform:uppercase" />
+            <button class="btn primary" id="redeemBtn">Link sponsor</button>
+            <p class="hint" id="redeemHint"></p>
+          </div>
+        </div>
+
+        <h3 class="section-title">Program rules</h3>
+        <ul class="disclosure">
+          <li>Maximum of three direct referrals — no downlines or recruitment trees.</li>
+          <li>No reward for registration alone; activation requires a maintained eligible stake.</li>
+          <li>Referral rewards are modest, capped and paid once per referred participant.</li>
+          <li>No reward from your referrals' future referrals.</li>
+        </ul>
+
+        <h3 class="section-title">Account</h3>
+        <div class="card">
+          <p class="muted small-note">Permanently delete your account, wallet, stakes and history.
+            This cannot be undone.</p>
+          <button class="btn danger" id="deleteAccountBtn">Delete account</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- Bottom nav -->
+    <nav class="tabbar" id="tabbar" hidden>
+      <button class="tabbtn active" data-tab="tab-wallet"><span>◈</span>Wallet</button>
+      <button class="tabbtn" data-tab="tab-stake"><span>⛃</span>Stake</button>
+      <button class="tabbtn" data-tab="tab-browser"><span>⬡</span>D-Browser</button>
+      <button class="tabbtn" data-tab="tab-community"><span>✿</span>Community</button>
+      <button class="tabbtn" data-tab="tab-network"><span>◎</span>Network</button>
+    </nav>
+  </div>
+
+  <!-- Stake modal -->
+  <div class="modal-backdrop" id="stakeModal" hidden>
+    <div class="modal">
+      <h3 id="stakeModalTitle">Delegate to validator</h3>
+      <div class="supply-list" id="stakeModalTerms"></div>
+      <label for="stakeAmount">Amount ($DLTX)</label>
+      <input id="stakeAmount" type="number" min="0" step="1" placeholder="0" />
+      <ul class="disclosure">
+        <li>Rewards are variable and not guaranteed.</li>
+        <li>Delegation exposes you to validator performance and slashing risk.</li>
+      </ul>
+      <p class="hint" id="stakeModalHint"></p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="cancelStake">Cancel</button>
+        <button class="btn primary" id="confirmStake">Confirm delegation</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete account modal -->
+  <div class="modal-backdrop" id="deleteModal" hidden>
+    <div class="modal">
+      <h3>Delete account?</h3>
+      <ul class="disclosure">
+        <li>Your wallet, balance, stakes and rewards will be permanently erased.</li>
+        <li>Your referral links and history will be removed.</li>
+        <li>This action is immediate and cannot be undone.</li>
+      </ul>
+      <label for="deleteConfirmInput">Type <b>DELETE</b> to confirm</label>
+      <input id="deleteConfirmInput" type="text" autocomplete="off" placeholder="DELETE" />
+      <p class="hint" id="deleteHint"></p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="cancelDelete">Cancel</button>
+        <button class="btn danger" id="confirmDelete">Delete forever</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Send modal -->
+  <div class="modal-backdrop" id="sendModal" hidden>
+    <div class="modal">
+      <h3>Send $DLTX</h3>
+      <label for="sendTo">Recipient address</label>
+      <input id="sendTo" type="text" placeholder="0x…" autocomplete="off" spellcheck="false" />
+      <label for="sendAmount">Amount ($DLTX)</label>
+      <input id="sendAmount" type="number" min="0" step="any" placeholder="0" />
+      <div class="supply-list" id="sendPreview"></div>
+      <ul class="disclosure">
+        <li>Only liquid balance can be sent — staked $DLTX stays locked.</li>
+        <li>The base fee is burned permanently (whitepaper §12.4).</li>
+        <li>Transfers are final. Verify the address before confirming.</li>
+      </ul>
+      <p class="hint" id="sendHint"></p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="cancelSend">Cancel</button>
+        <button class="btn primary" id="confirmSend">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- D-Browser security interstitial -->
+  <div class="modal-backdrop" id="dappModal" hidden>
+    <div class="modal">
+      <h3 id="dappModalTitle">Open external dApp?</h3>
+      <div class="url" id="dappModalUrl"></div>
+      <ul class="disclosure">
+        <li>Deltix does not audit or guarantee external applications.</li>
+        <li>Verify the domain before connecting a wallet or signing.</li>
+        <li>Never enter your recovery phrase on a website.</li>
+      </ul>
+      <div class="modal-actions">
+        <button class="btn ghost" id="cancelDapp">Cancel</button>
+        <button class="btn primary" id="confirmDapp">Open dApp</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

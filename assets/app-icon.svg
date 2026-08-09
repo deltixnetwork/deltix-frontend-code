@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Deltix app icon">
+  <defs>
+    <!-- Brushed-steel ring -->
+    <linearGradient id="steel" gradientUnits="userSpaceOnUse" x1="80" y1="60" x2="432" y2="452">
+      <stop offset="0" stop-color="#f4f5f7"/>
+      <stop offset="0.25" stop-color="#c2c6cd"/>
+      <stop offset="0.5" stop-color="#eef0f2"/>
+      <stop offset="0.75" stop-color="#a7abb4"/>
+      <stop offset="1" stop-color="#d9dbdf"/>
+    </linearGradient>
+    <linearGradient id="steelInner" gradientUnits="userSpaceOnUse" x1="432" y1="452" x2="80" y2="60">
+      <stop offset="0" stop-color="#eceef0"/>
+      <stop offset="0.5" stop-color="#b3b7bf"/>
+      <stop offset="1" stop-color="#e4e6e9"/>
+    </linearGradient>
+    <!-- Soft inner shadow on the white face -->
+    <radialGradient id="face" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0.82" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e9ebee"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Outer steel ring -->
+  <circle cx="256" cy="256" r="248" fill="url(#steel)"/>
+  <!-- Inner bevel ring -->
+  <circle cx="256" cy="256" r="212" fill="url(#steelInner)"/>
+  <!-- White face -->
+  <circle cx="256" cy="256" r="200" fill="url(#face)"/>
+
+  <!-- Blue delta diamond -->
+  <path d="M256 140 L372 256 L256 372 L140 256 Z" fill="#1f66f2"/>
+</svg>
