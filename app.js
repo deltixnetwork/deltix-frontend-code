@@ -554,8 +554,8 @@ setInterval(() => {
 $('faucetBtn').addEventListener('click', async () => {
   $('faucetBtn').disabled = true;
   try {
-    await api('POST', '/wallet/faucet', { amount: 500 });
-    toast('+500 $DLTX received');
+    const r = await api('POST', '/wallet/faucet');
+    toast(`+${fmt(r.amount)} $DLTX · faucet claim ${r.claimsUsed}/${r.claimsMax}`);
     await Promise.all([loadWallet(), loadTx()]);
   } catch (e) {
     toast(e.message);
