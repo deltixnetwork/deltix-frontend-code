@@ -407,4 +407,4 @@ Deltix Network makes Ethereum-style staking economics accessible to anyone with 
 
 ---
 
-*Contact: support@deltix.com · © 2026 Deltix Network. All rights reserved.*
+*Contact: support@deltixllc.com · © 2026 Deltix Network. All rights reserved.*
