@@ -1,6 +1,7 @@
 'use strict';
 
 const API = '/api';
+const APP_VERSION = '1.1.0';
 const $ = (id) => document.getElementById(id);
 const state = { token: localStorage.getItem('dltx_token') || null, email: null, validators: [] };
 
@@ -10,6 +11,7 @@ async function api(method, path, body) {
     method,
     headers: {
       'Content-Type': 'application/json',
+      'X-Deltix-Client': 'deltix-app',
       ...(state.token ? { Authorization: 'Bearer ' + state.token } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -17,6 +19,29 @@ async function api(method, path, body) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || 'Request failed');
   return json;
+}
+
+// ---------- Forced update gate ----------
+function versionLt(a, b) {
+  const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) < (pb[i] || 0)) return true;
+    if ((pa[i] || 0) > (pb[i] || 0)) return false;
+  }
+  return false;
+}
+async function checkAppVersion() {
+  try {
+    const v = await api('GET', '/app/version');
+    if (versionLt(APP_VERSION, v.minSupported)) {
+      $('updateGate').hidden = false;
+      $('updateReloadBtn').onclick = () => location.reload(true);
+      return false;
+    }
+  } catch {
+    /* offline or server unreachable — do not lock the user out */
+  }
+  return true;
 }
 
 // ---------- UI helpers ----------
@@ -161,7 +186,7 @@ document.querySelectorAll('.tabbtn').forEach((b) =>
 async function enterApp() {
   showScreen('screen-main');
   showTab('tab-wallet');
-  await Promise.all([loadWallet(), loadStats(), loadValidators(), loadStakes(), loadTx(), loadReferrals(), loadGovernance(), loadChain()]);
+  await Promise.all([loadWallet(), loadStats(), loadValidators(), loadStakes(), loadTx(), loadReferrals(), loadGovernance(), loadChain(), loadArcade()]);
 }
 
 async function loadWallet() {
@@ -706,6 +731,7 @@ $('codeInput').addEventListener('keydown', (e) => {
 
 // ---------- Boot ----------
 (async function boot() {
+  if (!(await checkAppVersion())) return; // outdated client — blocked until update
   if (state.token) {
     try {
       await enterApp();

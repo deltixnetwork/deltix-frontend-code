@@ -121,6 +121,19 @@
         <div class="ad-slot">Sustainability Fund · Ad slot<br/><small>Ad revenue funds infrastructure — it is not a protocol reward.</small></div>
       </div>
 
+      <!-- Deltix Arcade -->
+      <div class="tab" id="tab-arcade">
+        <h3 class="section-title">Deltix Arcade <span class="pill live">Live</span></h3>
+        <p class="muted small-note">Ten original Deltix games — classic, ownerless game concepts rebuilt in our own style. Win to earn $DLTX.</p>
+        <div class="card supply-list" id="arcadeMeta"></div>
+        <div class="games-grid" id="gamesGrid"></div>
+        <ul class="disclosure">
+          <li>Game rewards are $DLTX utility points with <b>no monetary value</b>.</li>
+          <li>No wagering, no entry fees — all games are free skill games.</li>
+          <li>Rewards are capped per day and recorded on the Deltix chain.</li>
+        </ul>
+      </div>
+
       <!-- Network / tokenomics -->
       <div class="tab" id="tab-network">
         <h3 class="section-title">Deltix Chain <span class="pill live">Live</span></h3>
@@ -261,6 +274,7 @@
     <nav class="tabbar" id="tabbar" hidden>
       <button class="tabbtn active" data-tab="tab-wallet"><span>◈</span>Wallet</button>
       <button class="tabbtn" data-tab="tab-stake"><span>⛃</span>Stake</button>
+      <button class="tabbtn" data-tab="tab-arcade"><span>▷</span>Arcade</button>
       <button class="tabbtn" data-tab="tab-browser"><span>⬡</span>D-Browser</button>
       <button class="tabbtn" data-tab="tab-community"><span>✿</span>Community</button>
       <button class="tabbtn" data-tab="tab-network"><span>◎</span>Network</button>
@@ -346,6 +360,40 @@
 
   <div class="toast" id="toast" hidden></div>
 
+  <!-- Deltix Arcade game overlay -->
+  <div class="modal-backdrop" id="gameModal" hidden>
+    <div class="modal game-modal">
+      <div class="game-head">
+        <h3 id="gameTitle">Game</h3>
+        <button class="btn ghost small" id="quitGame">✕ Quit</button>
+      </div>
+      <div id="gameSetup">
+        <p class="muted small-note" id="gameTagline"></p>
+        <div class="diff-row">
+          <button class="btn ghost diff-btn active" data-diff="easy" id="diffEasy">Easy</button>
+          <button class="btn ghost diff-btn" data-diff="hard" id="diffHard">Hard</button>
+        </div>
+        <p class="hint" id="gameRewardHint"></p>
+        <button class="btn primary" id="startGameBtn">Play</button>
+      </div>
+      <div id="gameArea" hidden>
+        <div class="game-status" id="gameStatus"></div>
+        <div id="gameMount"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Forced update gate -->
+  <div class="update-gate" id="updateGate" hidden>
+    <div class="update-card">
+      <img src="assets/logo.svg" alt="Deltix" width="56" height="56" />
+      <h2>Update required</h2>
+      <p>This version of the Deltix Network app is no longer supported.<br/>Please update to the latest version to continue.</p>
+      <button class="btn primary" id="updateReloadBtn">Update now</button>
+    </div>
+  </div>
+
+  <script src="arcade.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -13,6 +13,7 @@ and packaged for stores by [deltix-Mobile-App-code](https://github.com/deltixnet
 |---|---|
 | **Wallet** | Balance, send/receive $DLTX (base fee burned), genesis faucet, activity history |
 | **Stake** | Validator directory, delegation, rewards, unstake |
+| **Arcade** | **Deltix Arcade (live)** — 10 original games (easy/hard) with daily-capped $DLTX win rewards |
 | **D-Browser** | Curated, allowlisted dApp gateway with security interstitial |
 | **Community** | **Deltix DAO (live)** — proposals + stake-weighted voting; referrals (max 3); ambassador tiers; account deletion |
 | **Network** | **Deltix Chain (live)** — latest blocks + chain info; token supply; monetary model |
@@ -39,10 +40,19 @@ cd ../deltix-backend-code && npm install && npm start
 
 All API calls go to the same origin under `/api/...`.
 
+## Deltix Arcade
+
+Ten fully original implementations of classic, ownerless game concepts — Tic-Tac-Toe, Memory
+Match, Delta Snake, Merge 2048, Sudoku, Mine Hunt, Slide Puzzle, Reversi, Pattern Recall, and
+Reaction Rush. All code, names, and visuals are Deltix originals (no third-party assets), each
+with easy/hard modes. Wins earn $DLTX utility rewards, settled server-side against a play
+session with a minimum play time and a daily cap — no wagering, no entry fees.
+
 ## Compliance Built In
 
 18+ age gate with explicit consent · no-monetary-value disclosures · in-app account deletion ·
-no mining · single-level, hard-capped referrals · risk disclosures before every delegation.
+no mining · single-level, hard-capped referrals · risk disclosures before every delegation ·
+free skill games only · forced-update gate for unsupported client versions.
 
 ---
 
