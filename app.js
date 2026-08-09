@@ -308,7 +308,7 @@ async function loadTx() {
     el.innerHTML = '<p class="muted center">No activity yet.</p>';
     return;
   }
-  const negatives = ['stake', 'send'];
+  const negatives = ['stake', 'send', 'treasury_burn'];
   el.innerHTML = r.transactions
     .map((t) => {
       const neg = negatives.includes(t.type);
