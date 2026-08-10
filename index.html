@@ -84,7 +84,7 @@
         <h3 class="section-title">Network snapshot</h3>
         <div class="stats-grid" id="statsGrid"></div>
 
-        <h3 class="section-title">Recent activity</h3>
+        <h3 class="section-title">Recent activity <button class="see-all" id="seeAllTx">View all →</button></h3>
         <div class="tx-list" id="txList"><p class="muted center">No activity yet.</p></div>
       </div>
 
@@ -136,7 +136,7 @@
 
       <!-- Network / tokenomics -->
       <div class="tab" id="tab-network">
-        <h3 class="section-title">Deltix Chain <span class="pill live">Live</span></h3>
+        <h3 class="section-title">Deltix Chain <span class="pill live">Live</span> <button class="see-all" id="openExplorer">Explorer →</button></h3>
         <div class="card supply-list" id="chainInfo"></div>
         <div id="blockList"></div>
 
@@ -374,6 +374,23 @@
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"></iframe>
     </div>
     <div class="db-hint">Deltix D-Browser · never enter your recovery phrase · dApp won’t load? <button class="db-link" id="dbOpenExt">open externally ↗</button></div>
+  </div>
+
+  <!-- In-app Deltix Explorer -->
+  <div class="dbrowser" id="explorer" hidden>
+    <div class="db-bar">
+      <button class="db-btn" id="expBack">‹ Back</button>
+      <div class="db-info">
+        <b>◆ Deltix Explorer</b>
+        <span class="db-host" id="expCrumb">deltix-1</span>
+      </div>
+      <button class="db-btn" id="expClose">✕</button>
+    </div>
+    <div class="exp-search">
+      <input id="expSearch" type="text" placeholder="Block height or transaction hash…" autocomplete="off" />
+      <button class="mini-btn" id="expSearchBtn">Search</button>
+    </div>
+    <div class="exp-body" id="expBody"></div>
   </div>
 
   <div class="toast" id="toast" hidden></div>

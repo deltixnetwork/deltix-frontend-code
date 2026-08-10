@@ -303,6 +303,7 @@ async function loadStakes() {
 
 async function loadTx() {
   const r = await api('GET', '/wallet/transactions');
+  state.txs = r.transactions;
   const el = $('txList');
   if (!r.transactions.length) {
     el.innerHTML = '<p class="muted center">No activity yet.</p>';
@@ -310,18 +311,21 @@ async function loadTx() {
   }
   const negatives = ['stake', 'send', 'treasury_burn'];
   el.innerHTML = r.transactions
-    .map((t) => {
+    .map((t, i) => {
       const neg = negatives.includes(t.type);
       const cls = neg ? 'minus' : 'plus';
       const sign = neg ? '−' : '+';
       const date = new Date(t.created_at).toLocaleString();
       return `
-      <div class="tx">
+      <div class="tx clickable" data-txi="${i}" title="Inspect transaction">
         <div><div class="type">${t.type.replace(/_/g, ' ')}</div><div class="date">${date}</div></div>
         <div class="amt ${cls}">${sign}${fmt(t.amount)}</div>
       </div>`;
     })
     .join('');
+  el.querySelectorAll('[data-txi]').forEach((row) =>
+    row.addEventListener('click', () => openExplorer({ v: 'wtx', tx: state.txs[Number(row.dataset.txi)] }))
+  );
 }
 
 // ---------- Referrals + Ambassador program ----------
@@ -533,7 +537,7 @@ async function loadChain() {
     $('blockList').innerHTML = blocks.blocks
       .map(
         (b) => `
-      <div class="block-card">
+      <div class="block-card clickable" data-height="${b.height}" title="Open block">
         <div>
           <div class="name">Block #${b.height} <span class="hash">${b.hash.slice(0, 14)}…</span></div>
           <div class="meta">${b.txCount} tx · by ${b.validator} · ${new Date(b.timestamp).toLocaleTimeString()}</div>
@@ -542,6 +546,9 @@ async function loadChain() {
       </div>`
       )
       .join('');
+    $('blockList').querySelectorAll('[data-height]').forEach((card) =>
+      card.addEventListener('click', () => openExplorer({ v: 'block', height: Number(card.dataset.height) }))
+    );
   } catch (e) {
     /* non-critical; ignore */
   }
@@ -786,6 +793,200 @@ $('emailInput').addEventListener('keydown', (e) => {
 });
 $('codeInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') $('verifyBtn').click();
+});
+
+// ---------- Deltix Explorer (fully in-app block explorer) ----------
+const exp = { stack: [] };
+const short = (h, n = 14) => (h ? h.slice(0, n) + '…' : '—');
+const kvRow = (k, v) => `<div class="supply-row"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+
+function openExplorer(view) {
+  exp.stack = [];
+  $('explorer').hidden = false;
+  document.body.style.overflow = 'hidden';
+  expGo(view || { v: 'home' });
+}
+function closeExplorer() {
+  $('explorer').hidden = true;
+  document.body.style.overflow = '';
+  exp.stack = [];
+}
+function expGo(view) {
+  exp.stack.push(view);
+  expRender();
+}
+$('expClose').addEventListener('click', closeExplorer);
+$('expBack').addEventListener('click', () => {
+  if (exp.stack.length > 1) {
+    exp.stack.pop();
+    expRender();
+  } else closeExplorer();
+});
+$('openExplorer').addEventListener('click', () => openExplorer({ v: 'home' }));
+$('seeAllTx').addEventListener('click', () => openExplorer({ v: 'activity' }));
+
+async function expRender() {
+  const v = exp.stack[exp.stack.length - 1];
+  $('expBack').textContent = exp.stack.length > 1 ? '‹ Back' : '‹ Close';
+  const body = $('expBody');
+  body.innerHTML = '<p class="muted center">Loading…</p>';
+  try {
+    if (v.v === 'home') await expHome(body);
+    else if (v.v === 'block') await expBlockView(body, v.height);
+    else if (v.v === 'ctx') await expChainTxView(body, v);
+    else if (v.v === 'wtx') expWalletTxView(body, v.tx);
+    else if (v.v === 'activity') await expActivityView(body);
+  } catch (e) {
+    body.innerHTML = `<p class="muted center">${escapeHtml(e.message)}</p>`;
+  }
+}
+
+async function expHome(body) {
+  $('expCrumb').textContent = 'deltix-1 · latest blocks';
+  const [info, blocks] = await Promise.all([api('GET', '/chain/info'), api('GET', '/chain/blocks?limit=30')]);
+  body.innerHTML =
+    `<div class="card supply-list">` +
+    kvRow('Chain', info.chainId) +
+    kvRow('Height', '#' + info.height) +
+    kvRow('Total transactions', info.totalTxs) +
+    kvRow('Pending', info.pendingTxs) +
+    kvRow('Validators', info.validators.length) +
+    kvRow('Genesis hash', `<span class="hash">${short(info.genesisHash)}</span>`) +
+    `</div><h3 class="section-title">Latest blocks</h3><div id="expBlocks"></div>`;
+  $('expBlocks').innerHTML = blocks.blocks
+    .map(
+      (b) => `
+    <div class="block-card clickable" data-h="${b.height}">
+      <div>
+        <div class="name">Block #${b.height} <span class="hash">${short(b.hash)}</span></div>
+        <div class="meta">${b.txCount} tx · by ${b.validator} · ${new Date(b.timestamp).toLocaleString()}</div>
+      </div>
+      <span class="status-pill activated">sealed</span>
+    </div>`
+    )
+    .join('');
+  $('expBlocks').querySelectorAll('[data-h]').forEach((c) =>
+    c.addEventListener('click', () => expGo({ v: 'block', height: Number(c.dataset.h) }))
+  );
+}
+
+async function expBlockView(body, height) {
+  $('expCrumb').textContent = `block #${height}`;
+  const { block } = await api('GET', '/chain/blocks/' + height);
+  const txs = block.transactions || [];
+  body.innerHTML =
+    `<div class="card supply-list">` +
+    kvRow('Block', '#' + block.height) +
+    kvRow('Hash', `<span class="hash">${short(block.hash, 22)}</span>`) +
+    kvRow('Previous', `<span class="hash">${short(block.prevHash, 22)}</span>`) +
+    kvRow('Validator', escapeHtml(block.validator)) +
+    kvRow('Sealed', new Date(block.timestamp).toLocaleString()) +
+    kvRow('Transactions', txs.length) +
+    `</div><h3 class="section-title">Transactions</h3><div id="expTxs">${txs.length ? '' : '<p class="muted center">Empty block.</p>'}</div>`;
+  $('expTxs').innerHTML = txs
+    .map(
+      (t, i) => `
+    <div class="tx clickable" data-i="${i}">
+      <div><div class="type">${t.type.replace(/_/g, ' ')}</div><div class="date hash">${short(t.id, 20)}</div></div>
+      <div class="amt plus">${fmt(t.amount)}</div>
+    </div>`
+    )
+    .join('');
+  $('expTxs').querySelectorAll('[data-i]').forEach((row) =>
+    row.addEventListener('click', () => {
+      const t = txs[Number(row.dataset.i)];
+      expGo({ v: 'ctx', id: t.id, pre: { status: 'confirmed', blockHeight: block.height, blockHash: block.hash, tx: t } });
+    })
+  );
+}
+
+async function expChainTxView(body, view) {
+  $('expCrumb').textContent = 'transaction';
+  const r = view.pre || (await api('GET', '/chain/tx/' + encodeURIComponent(view.id)));
+  const t = r.tx;
+  const statusPill =
+    r.status === 'confirmed'
+      ? `<span class="status-pill activated">confirmed</span>`
+      : `<span class="status-pill voting">pending</span>`;
+  const metaRows = Object.entries(t.meta || {})
+    .filter(([k]) => k !== 'chainTx')
+    .map(([k, val]) => kvRow(escapeHtml(k), escapeHtml(typeof val === 'object' ? JSON.stringify(val) : String(val))))
+    .join('');
+  body.innerHTML =
+    `<div class="card supply-list">` +
+    kvRow('Status', statusPill) +
+    (r.status === 'confirmed'
+      ? kvRow('Block', `<button class="db-link" id="expTxBlock">#${r.blockHeight} ↗</button>`)
+      : '') +
+    kvRow('Tx hash', `<span class="hash">${short(t.id, 26)}</span>`) +
+    kvRow('Type', t.type.replace(/_/g, ' ')) +
+    kvRow('Amount', fmt(t.amount) + ' $DLTX') +
+    kvRow('From', `<span class="hash">${escapeHtml(short(String(t.from || '—'), 22))}</span>`) +
+    kvRow('To', `<span class="hash">${escapeHtml(short(String(t.to || '—'), 22))}</span>`) +
+    kvRow('Submitted', new Date(t.submittedAt).toLocaleString()) +
+    `</div>` +
+    (metaRows ? `<h3 class="section-title">Details</h3><div class="card supply-list">${metaRows}</div>` : '');
+  const blockBtn = document.getElementById('expTxBlock');
+  if (blockBtn) blockBtn.addEventListener('click', () => expGo({ v: 'block', height: r.blockHeight }));
+}
+
+function expWalletTxView(body, t) {
+  $('expCrumb').textContent = 'my transaction';
+  const meta = t.meta || {};
+  const metaRows = Object.entries(meta)
+    .filter(([k]) => k !== 'chainTx')
+    .map(([k, val]) => kvRow(escapeHtml(k), escapeHtml(typeof val === 'object' ? JSON.stringify(val) : String(val))))
+    .join('');
+  body.innerHTML =
+    `<div class="card supply-list">` +
+    kvRow('Type', t.type.replace(/_/g, ' ')) +
+    kvRow('Amount', fmt(t.amount) + ' $DLTX') +
+    kvRow('Date', new Date(t.created_at).toLocaleString()) +
+    kvRow('Record', '#' + t.id) +
+    `</div>` +
+    (metaRows ? `<h3 class="section-title">Details</h3><div class="card supply-list">${metaRows}</div>` : '') +
+    (meta.chainTx
+      ? `<button class="btn primary" id="expViewOnChain">View on Deltix Chain ◆</button>`
+      : `<p class="muted small-note center">This record predates on-chain linking.</p>`);
+  const btn = document.getElementById('expViewOnChain');
+  if (btn) btn.addEventListener('click', () => expGo({ v: 'ctx', id: meta.chainTx }));
+}
+
+async function expActivityView(body) {
+  $('expCrumb').textContent = 'my activity';
+  const r = await api('GET', '/wallet/transactions?limit=200');
+  if (!r.transactions.length) {
+    body.innerHTML = '<p class="muted center">No activity yet.</p>';
+    return;
+  }
+  const negatives = ['stake', 'send', 'treasury_burn'];
+  body.innerHTML = `<div class="tx-list" id="expAct"></div>`;
+  document.getElementById('expAct').innerHTML = r.transactions
+    .map((t, i) => {
+      const neg = negatives.includes(t.type);
+      return `
+      <div class="tx clickable" data-i="${i}">
+        <div><div class="type">${t.type.replace(/_/g, ' ')}</div><div class="date">${new Date(t.created_at).toLocaleString()}</div></div>
+        <div class="amt ${neg ? 'minus' : 'plus'}">${neg ? '−' : '+'}${fmt(t.amount)}</div>
+      </div>`;
+    })
+    .join('');
+  document.getElementById('expAct').querySelectorAll('[data-i]').forEach((row) =>
+    row.addEventListener('click', () => expGo({ v: 'wtx', tx: r.transactions[Number(row.dataset.i)] }))
+  );
+}
+
+function expSearch() {
+  const q = $('expSearch').value.trim();
+  if (!q) return;
+  $('expSearch').value = '';
+  if (/^#?\d+$/.test(q)) expGo({ v: 'block', height: Number(q.replace('#', '')) });
+  else if (/^[0-9a-f]{8,64}$/i.test(q)) expGo({ v: 'ctx', id: q });
+  else toast('Enter a block height (e.g. 12) or a tx hash');
+}
+$('expSearchBtn').addEventListener('click', expSearch);
+$('expSearch').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') expSearch();
 });
 
 // ---------- Boot ----------
