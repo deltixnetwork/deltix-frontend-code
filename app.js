@@ -8,6 +8,10 @@ const $ = (id) => document.getElementById(id);
 const state = { token: localStorage.getItem('dltx_token') || null, email: null, validators: [] };
 
 // ---------- API helper ----------
+// Self-healing session: if the server ever reports the session/wallet as
+// gone (stale token, or — in local dev — a server restart that wiped
+// in-memory data), sign the user out and return to the sign-in screen
+// instead of leaving stale cached numbers on screen.
 async function api(method, path, body) {
   const res = await fetch(API + path, {
     method,
@@ -19,7 +23,16 @@ async function api(method, path, body) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(json.error || 'Request failed');
+  if (!res.ok) {
+    const staleSession = res.status === 401 || (res.status === 404 && /wallet not found/i.test(json.error || ''));
+    if (staleSession && state.token) {
+      state.token = null;
+      localStorage.removeItem('dltx_token');
+      showScreen('screen-email');
+      toast('Your session has expired — please sign in again.');
+    }
+    throw new Error(json.error || 'Request failed');
+  }
   return json;
 }
 

@@ -957,6 +957,15 @@ GAME_IMPL.ludo = (mount, diff, finish, status) => {
         return pos + roll <= 62;
       });
   }
+  /** Would this move land on and capture an opponent token (non-safe cell)? Pure — no mutation. */
+  function wouldCapture(p, i, roll) {
+    const pos = tokens[p][i];
+    const next = pos === -1 ? 1 : pos + roll;
+    if (next < 1 || next > 55) return false;
+    const ringIdx = (START[p] + next - 1) % 56;
+    if (SAFE.has(ringIdx)) return false;
+    return tokens.some((toks, op) => op !== p && toks.some((opos) => opos >= 1 && opos <= 55 && (START[op] + opos - 1) % 56 === ringIdx));
+  }
   function moveToken(p, i, roll) {
     const pos = tokens[p][i];
     const next = pos === -1 ? 1 : pos + roll;
@@ -1011,8 +1020,12 @@ GAME_IMPL.ludo = (mount, diff, finish, status) => {
     if (opts.length) {
       status(`${names[turn]} rolled ${roll} — thinking…`);
       await new Promise((r) => setTimeout(r, 500));
+      // Hard AI actually knows the rules: prefer a capture, then getting a
+      // token home, then simply the most advanced token — never a coin flip.
+      const capture = opts.find((i) => wouldCapture(turn, i, roll));
+      const finisher = opts.find((i) => (tokens[turn][i] === -1 ? 1 : tokens[turn][i] + roll) === 62);
       const pick = diff === 'hard'
-        ? opts.reduce((best, i) => (tokens[turn][i] > tokens[turn][best] ? i : best), opts[0])
+        ? capture ?? finisher ?? opts.reduce((best, i) => (tokens[turn][i] > tokens[turn][best] ? i : best), opts[0])
         : opts[Math.floor(Math.random() * opts.length)];
       const captured = moveToken(turn, pick, roll);
       render();
@@ -1147,6 +1160,25 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
     for (const row of b) for (const c of row) if (c) s += VAL[c.toUpperCase()] * (isWhite(c) ? 1 : -1);
     return s;
   }
+  function kingPos(b, white) {
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+      if (b[r][c] === (white ? 'K' : 'k')) return [r, c];
+    }
+    return null;
+  }
+  function inCheck(b, white) {
+    const kp = kingPos(b, white);
+    if (!kp) return false; // king already gone (shouldn't happen once checkmate is enforced)
+    return allMoves(!white, b).some(({ to }) => to[0] === kp[0] && to[1] === kp[1]);
+  }
+  /** Legal moves = pseudo-legal moves that don't leave your own king in check. */
+  function legalMoves(white, b = board) {
+    return allMoves(white, b).filter((m) => !inCheck(apply(b, m), white));
+  }
+  function legalMovesFrom(r, c, b = board) {
+    const white = isWhite(b[r][c]);
+    return pseudoMoves(r, c, b).filter(([nr, nc]) => !inCheck(apply(b, { from: [r, c], to: [nr, nc] }), white));
+  }
   function render() {
     board.forEach((row, r) => row.forEach((c, ci) => {
       const el = cells[r * 8 + ci];
@@ -1159,12 +1191,25 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
     for (const row of b) for (const c of row) { if (c === 'K') wk = true; if (c === 'k') bk = true; }
     return !wk ? 'black' : !bk ? 'white' : null;
   }
+  /** Real chess ending: checkmate (win/loss) or stalemate (draw, no reward). */
+  function gameEndFor(white) {
+    if (legalMoves(white).length) return null;
+    return inCheck(board, white) ? 'checkmate' : 'stalemate';
+  }
   function aiMove() {
-    const moves = allMoves(false);
-    if (!moves.length) { over = true; return finish(true, 1); }
+    const moves = legalMoves(false);
+    if (!moves.length) {
+      over = true;
+      const end = gameEndFor(false);
+      status(end === 'checkmate' ? 'Checkmate — you win! ♔' : 'Stalemate — a draw.');
+      return finish(end === 'checkmate', 1);
+    }
     let pick;
     if (diff === 'hard') {
-      pick = moves.reduce((best, m) => {
+      // Prefer checkmate, then captures, then the move that most improves material.
+      const mating = moves.find((m) => legalMoves(true, apply(board, m)).length === 0 && inCheck(apply(board, m), true));
+      if (mating) pick = mating;
+      else pick = moves.reduce((best, m) => {
         const s = evalBoard(apply(board, m));
         const bs = evalBoard(apply(board, best));
         return s < bs ? m : best;
@@ -1176,20 +1221,32 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
     render();
     const winner = kingCaptured(board);
     if (winner) { over = true; return finish(winner === 'white', 1); }
-    status('Your move (white)');
+    const end = gameEndFor(true);
+    if (end) {
+      over = true;
+      status(end === 'checkmate' ? 'Checkmate — Deltix AI wins.' : 'Stalemate — a draw.');
+      return finish(false, 1);
+    }
+    status(inCheck(board, true) ? 'Check! Your move (white)' : 'Your move (white)');
   }
   function onCell(r, c) {
     if (over) return;
     const piece = board[r][c];
     if (sel) {
-      const legal = pseudoMoves(sel[0], sel[1]).some(([nr, nc]) => nr === r && nc === c);
+      const legal = legalMovesFrom(sel[0], sel[1]).some(([nr, nc]) => nr === r && nc === c);
       if (legal) {
         board = apply(board, { from: sel, to: [r, c] });
         sel = null;
         render();
         const winner = kingCaptured(board);
         if (winner) { over = true; return finish(winner === 'white', 1); }
-        status('Deltix AI is thinking…');
+        const end = gameEndFor(false);
+        if (end) {
+          over = true;
+          status(end === 'checkmate' ? 'Checkmate — you win! ♔' : 'Stalemate — a draw.');
+          return finish(end === 'checkmate', 1);
+        }
+        status(inCheck(board, false) ? 'Check! Deltix AI is thinking…' : 'Deltix AI is thinking…');
         setTimeout(aiMove, 350);
         return;
       }
@@ -1249,7 +1306,7 @@ GAME_IMPL.threecard = (mount, diff, finish, status) => {
   }
   function renderHands(you, ai, reveal) {
     const fmtHand = (hand, hide) =>
-      hand.map((c) => `<span class="card ${!hide && (c.s === '♥' || c.s === '♦') ? 'red' : ''}">${hide ? '🂠' : c.r + c.s}</span>`).join('');
+      hand.map((c) => `<span class="pcard ${!hide && (c.s === '♥' || c.s === '♦') ? 'red' : ''}">${hide ? '🂠' : c.r + c.s}</span>`).join('');
     table.innerHTML = `
       <div class="hand-row"><div class="hand-label">Dealer</div><div class="hand">${fmtHand(ai, !reveal)}</div></div>
       <div class="hand-row"><div class="hand-label">You</div><div class="hand">${fmtHand(you, false)}</div></div>`;
