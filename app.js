@@ -60,6 +60,7 @@ function showTab(id) {
   document.querySelectorAll('.tabbtn').forEach((b) =>
     b.classList.toggle('active', b.dataset.tab === id)
   );
+  updateTabAd(id);
 }
 let toastTimer;
 function toast(msg) {
@@ -989,9 +990,51 @@ $('expSearch').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') expSearch();
 });
 
+// ---------- AdMob (native app only — Sustainability Fund banner) ----------
+// Google's official TEST banner unit. Swap for the real unit id once the
+// AdMob account is approved and the app is registered.
+const ADMOB_BANNER_ID = 'ca-app-pub-3940256099942544/6300978111';
+const ADMOB_TESTING = true;
+let adsReady = false;
+
+async function initAds() {
+  try {
+    const cap = window.Capacitor;
+    if (!cap || !cap.isNativePlatform || !cap.isNativePlatform()) return;
+    const AdMob = cap.Plugins && cap.Plugins.AdMob;
+    if (!AdMob) return;
+    await AdMob.initialize({ initializeForTesting: ADMOB_TESTING });
+    adsReady = true;
+  } catch {
+    /* ads are never allowed to break the app */
+  }
+}
+
+/** Banner shows only on the D-Browser tab (the Sustainability Fund slot). */
+async function updateTabAd(tabId) {
+  const cap = window.Capacitor;
+  if (!adsReady || !cap || !cap.Plugins || !cap.Plugins.AdMob) return;
+  try {
+    if (tabId === 'tab-browser') {
+      await cap.Plugins.AdMob.showBanner({
+        adId: ADMOB_BANNER_ID,
+        adSize: 'ADAPTIVE_BANNER',
+        position: 'BOTTOM_CENTER',
+        margin: 64, // sit above the tab bar
+        isTesting: ADMOB_TESTING,
+      });
+    } else {
+      await cap.Plugins.AdMob.hideBanner();
+    }
+  } catch {
+    /* ignore ad errors */
+  }
+}
+
 // ---------- Boot ----------
 (async function boot() {
   if (!(await checkAppVersion())) return; // outdated client — blocked until update
+  initAds();
   if (state.token) {
     try {
       await enterApp();
