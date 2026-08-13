@@ -466,3 +466,38 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .ad-bonus-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .ad-bonus-card .name { font-weight: 700; font-size: 14px; }
 .ad-bonus-card .meta { font-size: 12px; color: var(--muted, #64748b); }
+
+/* -- New Arcade games (Ludo, Chess, Three Card Draw, Carom, Slicer, Soccer, Racing) -- */
+.ludo-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.ludo-track {
+  position: relative; width: 260px; height: 260px; border-radius: 50%;
+  background: #eef3ff; border: 2px solid var(--border, #e6eaf2); margin: 0 auto;
+}
+.ludo-cell {
+  position: absolute; width: 14px; height: 14px; border-radius: 50%; background: #fff;
+  border: 1px solid #cbd5e1; top: 50%; left: 50%;
+  transform: rotate(calc(360deg / 28 * var(--i))) translate(118px) rotate(calc(-360deg / 28 * var(--i)));
+  margin: -7px;
+}
+.ludo-dot { display: block; width: 10px; height: 10px; border-radius: 50%; margin: 1px auto; }
+.ludo-dice { width: auto; padding: 10px 20px; }
+.ludo-tokens { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; font-size: 12px; }
+.ludo-p { padding: 4px 8px; border-radius: 8px; border: 1px solid var(--c); color: var(--c); font-weight: 700; }
+
+.board.chess { max-width: 320px; gap: 0; }
+.board.chess .cell { font-size: 24px; background: #f8fafc; border-radius: 0; border: none; }
+.board.chess .cell.dark { background: #c9d5e6; }
+.board.chess .cell.sel { box-shadow: inset 0 0 0 3px var(--accent); }
+
+.card-table { display: flex; flex-direction: column; gap: 14px; margin-bottom: 14px; }
+.hand-row { display: flex; align-items: center; gap: 10px; }
+.hand-label { width: 60px; font-size: 12px; color: var(--muted, #64748b); font-weight: 700; }
+.hand { display: flex; gap: 6px; }
+.card {
+  display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 58px;
+  border-radius: 8px; border: 1px solid var(--border, #e6eaf2); background: #fff; font-weight: 700; font-size: 15px;
+}
+.card.red { color: #dc2626; }
+
+.kick-row { display: flex; gap: 10px; margin-top: 12px; }
+.kick-row .btn { flex: 1; }

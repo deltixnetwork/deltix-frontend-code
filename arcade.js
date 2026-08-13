@@ -13,6 +13,7 @@ const gel = (id) => document.getElementById(id);
 const ARCADE_ICONS = {
   tictactoe: '◍', memory: '❖', snake: '➰', merge: '⬚', sudoku: '▦',
   minehunt: '☄', slide: '⇄', reversi: '◐', recall: '◌', reaction: '⚡',
+  ludo: '⛃', chess: '♞', threecard: '🂡', carom: '⬤', slicer: '🍉', soccer: '⚽', racing: '🏎',
 };
 
 const arcadeState = { games: [], sessionId: null, currentGame: null, difficulty: 'easy', cleanup: null };
@@ -820,4 +821,663 @@ GAME_IMPL.reaction = (mount, diff, finish, status) => {
     }
   }, 1000);
   return () => clearInterval(clock);
+};
+
+// ---- 11. Delta Ludo (vs 3 AI, simplified classic race-to-home) ----
+GAME_IMPL.ludo = (mount, diff, finish, status) => {
+  const TRACK = 28; // simplified shared circular track length
+  const HOME = 6;   // home-stretch cells per player
+  const START = [0, 7, 14, 21]; // entry offsets around the track for 4 players
+  const players = 4;
+  const target = diff === 'hard' ? 4 : 2; // tokens that must reach home to win
+  const tokens = Array.from({ length: players }, () => [-1, -1, -1, -1]); // -1 = in base, 0..TRACK+HOME-1 = position, TRACK+HOME = home
+  let turn = 0, dice = 0, rolling = false, over = false;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'ludo-wrap';
+  mount.appendChild(wrap);
+  const board = document.createElement('div');
+  board.className = 'ludo-track';
+  wrap.appendChild(board);
+  const cells = [];
+  for (let i = 0; i < TRACK; i++) {
+    const el = document.createElement('div');
+    el.className = 'ludo-cell';
+    el.style.setProperty('--i', i);
+    board.appendChild(el);
+    cells.push(el);
+  }
+  const dice_el = document.createElement('button');
+  dice_el.className = 'btn primary ludo-dice';
+  dice_el.textContent = 'Roll 🎲';
+  wrap.appendChild(dice_el);
+  const tokenRow = document.createElement('div');
+  tokenRow.className = 'ludo-tokens';
+  wrap.appendChild(tokenRow);
+  const colors = ['#1f66f2', '#dc2626', '#16a34a', '#f59e0b'];
+  const names = ['You', 'Ruby', 'Jade', 'Amber'];
+
+  function render() {
+    cells.forEach((c) => (c.innerHTML = ''));
+    tokens.forEach((toks, p) => {
+      toks.forEach((pos, ti) => {
+        if (pos >= 0 && pos < TRACK) {
+          const dot = document.createElement('span');
+          dot.className = 'ludo-dot';
+          dot.style.background = colors[p];
+          cells[pos].appendChild(dot);
+        }
+      });
+    });
+    const homeCount = tokens.map((t) => t.filter((p) => p >= TRACK + HOME).length);
+    tokenRow.innerHTML = names
+      .map((n, i) => `<span class="ludo-p" style="--c:${colors[i]}">${n}: ${homeCount[i]}/${players}${i === turn && !over ? ' ◀' : ''}</span>`)
+      .join('');
+  }
+  function movable(p, roll) {
+    return tokens[p]
+      .map((pos, i) => i)
+      .filter((i) => {
+        const pos = tokens[p][i];
+        if (pos === -1) return roll === 6;
+        return pos + roll <= TRACK + HOME;
+      });
+  }
+  function moveToken(p, i, roll) {
+    const pos = tokens[p][i];
+    if (pos === -1) {
+      tokens[p][i] = START[p];
+    } else {
+      const next = pos + roll;
+      tokens[p][i] = next;
+      if (next < TRACK) {
+        // capture check on shared track
+        for (let op = 0; op < players; op++) {
+          if (op === p) continue;
+          tokens[op].forEach((opos, oi) => {
+            if (opos === next) tokens[op][oi] = -1;
+          });
+        }
+      }
+    }
+  }
+  function endCheck(p) {
+    if (tokens[p].filter((pos) => pos >= TRACK + HOME).length >= target) {
+      over = true;
+      render();
+      status(`${names[p]} reached home first!`);
+      finish(p === 0, tokens[0].filter((pos) => pos >= TRACK + HOME).length);
+      return true;
+    }
+    return false;
+  }
+  function aiTurn() {
+    if (over) return;
+    const roll = 1 + Math.floor(Math.random() * 6);
+    const opts = movable(turn, roll);
+    status(`${names[turn]} rolled ${roll}`);
+    if (opts.length) {
+      const pick = opts[Math.floor(Math.random() * opts.length)];
+      moveToken(turn, pick, roll);
+      render();
+      if (endCheck(turn)) return;
+    }
+    if (roll !== 6) turn = (turn + 1) % players;
+    setTimeout(() => (turn === 0 ? updateHuman() : aiTurn()), 500);
+  }
+  function updateHuman() {
+    dice_el.disabled = false;
+    status('Your turn — roll the dice');
+  }
+  dice_el.addEventListener('click', () => {
+    if (over || turn !== 0 || rolling) return;
+    rolling = true;
+    dice_el.disabled = true;
+    const roll = 1 + Math.floor(Math.random() * 6);
+    dice = roll;
+    const opts = movable(0, roll);
+    status(`You rolled ${roll}`);
+    if (!opts.length) {
+      rolling = false;
+      if (roll !== 6) turn = 1;
+      setTimeout(aiTurn, 400);
+      return;
+    }
+    // Auto-pick the token that advances furthest (keeps control simple on mobile).
+    const pick = opts.reduce((best, i) => (tokens[0][i] > tokens[0][best] ? i : best), opts[0]);
+    moveToken(0, pick, roll);
+    render();
+    rolling = false;
+    if (endCheck(0)) return;
+    if (roll !== 6) turn = 1;
+    setTimeout(() => (turn === 0 ? updateHuman() : aiTurn()), 400);
+  });
+  render();
+  updateHuman();
+  return () => {};
+};
+
+// ---- 12. Chess (simplified rules, vs AI) ----
+GAME_IMPL.chess = (mount, diff, finish, status) => {
+  const P = { K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙' };
+  const p2 = { K: '♚', Q: '♛', R: '♜', B: '♝', N: '♞', P: '♟' };
+  let board = [
+    ['r','n','b','q','k','b','n','r'],
+    ['p','p','p','p','p','p','p','p'],
+    [null,null,null,null,null,null,null,null],
+    [null,null,null,null,null,null,null,null],
+    [null,null,null,null,null,null,null,null],
+    [null,null,null,null,null,null,null,null],
+    ['P','P','P','P','P','P','P','P'],
+    ['R','N','B','Q','K','B','N','R'],
+  ];
+  let sel = null, over = false, human = 'w'; // uppercase = white = human
+  const grid = makeGrid(mount, 8, 'chess');
+  const cells = [];
+  for (let i = 0; i < 64; i++) {
+    const el = document.createElement('button');
+    el.className = 'cell ch-cell' + ((Math.floor(i / 8) + i) % 2 ? ' dark' : '');
+    el.addEventListener('click', () => onCell(Math.floor(i / 8), i % 8));
+    grid.appendChild(el);
+    cells.push(el);
+  }
+  const isWhite = (c) => c && c === c.toUpperCase();
+  const isBlack = (c) => c && c === c.toLowerCase();
+  function pseudoMoves(r, c, b = board) {
+    const piece = b[r][c];
+    if (!piece) return [];
+    const white = isWhite(piece);
+    const type = piece.toUpperCase();
+    const out = [];
+    const push = (nr, nc, captureOnly, noCaptureOnly) => {
+      if (nr < 0 || nr > 7 || nc < 0 || nc > 7) return false;
+      const t = b[nr][nc];
+      if (t && (white ? isWhite(t) : isBlack(t))) return false;
+      if (captureOnly && !t) return false;
+      if (noCaptureOnly && t) return false;
+      out.push([nr, nc]);
+      return !t;
+    };
+    if (type === 'P') {
+      const dir = white ? -1 : 1;
+      const startRow = white ? 6 : 1;
+      push(r + dir, c, false, true);
+      if (r === startRow && !b[r + dir][c]) push(r + 2 * dir, c, false, true);
+      push(r + dir, c - 1, true, false);
+      push(r + dir, c + 1, true, false);
+    } else if (type === 'N') {
+      [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]].forEach(([dr,dc]) => push(r+dr, c+dc));
+    } else if (type === 'K') {
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) if (dr || dc) push(r+dr, c+dc);
+    } else {
+      const dirs = type === 'R' ? [[1,0],[-1,0],[0,1],[0,-1]]
+        : type === 'B' ? [[1,1],[1,-1],[-1,1],[-1,-1]]
+        : [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+      for (const [dr, dc] of dirs) {
+        let nr = r + dr, nc = c + dc;
+        while (push(nr, nc)) { nr += dr; nc += dc; }
+      }
+    }
+    return out;
+  }
+  function allMoves(white, b = board) {
+    const moves = [];
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+      const piece = b[r][c];
+      if (piece && (white ? isWhite(piece) : isBlack(piece))) {
+        pseudoMoves(r, c, b).forEach(([nr, nc]) => moves.push({ from: [r, c], to: [nr, nc] }));
+      }
+    }
+    return moves;
+  }
+  function apply(b, m) {
+    const nb = b.map((row) => row.slice());
+    nb[m.to[0]][m.to[1]] = nb[m.from[0]][m.from[1]];
+    nb[m.from[0]][m.from[1]] = null;
+    // auto-queen promotion
+    if (nb[m.to[0]][m.to[1]] === 'P' && m.to[0] === 0) nb[m.to[0]][m.to[1]] = 'Q';
+    if (nb[m.to[0]][m.to[1]] === 'p' && m.to[0] === 7) nb[m.to[0]][m.to[1]] = 'q';
+    return nb;
+  }
+  const VAL = { P: 1, N: 3, B: 3, R: 5, Q: 9, K: 100 };
+  function evalBoard(b) {
+    let s = 0;
+    for (const row of b) for (const c of row) if (c) s += VAL[c.toUpperCase()] * (isWhite(c) ? 1 : -1);
+    return s;
+  }
+  function render() {
+    board.forEach((row, r) => row.forEach((c, ci) => {
+      const el = cells[r * 8 + ci];
+      el.textContent = c ? (isWhite(c) ? P[c] : p2[c.toUpperCase()]) : '';
+      el.classList.toggle('sel', !!sel && sel[0] === r && sel[1] === ci);
+    }));
+  }
+  function kingCaptured(b) {
+    let wk = false, bk = false;
+    for (const row of b) for (const c of row) { if (c === 'K') wk = true; if (c === 'k') bk = true; }
+    return !wk ? 'black' : !bk ? 'white' : null;
+  }
+  function aiMove() {
+    const moves = allMoves(false);
+    if (!moves.length) { over = true; return finish(true, 1); }
+    let pick;
+    if (diff === 'hard') {
+      pick = moves.reduce((best, m) => {
+        const s = evalBoard(apply(board, m));
+        const bs = evalBoard(apply(board, best));
+        return s < bs ? m : best;
+      }, moves[0]);
+    } else {
+      pick = moves[Math.floor(Math.random() * moves.length)];
+    }
+    board = apply(board, pick);
+    render();
+    const winner = kingCaptured(board);
+    if (winner) { over = true; return finish(winner === 'white', 1); }
+    status('Your move (white)');
+  }
+  function onCell(r, c) {
+    if (over) return;
+    const piece = board[r][c];
+    if (sel) {
+      const legal = pseudoMoves(sel[0], sel[1]).some(([nr, nc]) => nr === r && nc === c);
+      if (legal) {
+        board = apply(board, { from: sel, to: [r, c] });
+        sel = null;
+        render();
+        const winner = kingCaptured(board);
+        if (winner) { over = true; return finish(winner === 'white', 1); }
+        status('Deltix AI is thinking…');
+        setTimeout(aiMove, 350);
+        return;
+      }
+      sel = isWhite(piece) ? [r, c] : null;
+      render();
+      return;
+    }
+    if (isWhite(piece)) { sel = [r, c]; render(); }
+  }
+  status('You are White — tap a piece, then a destination.');
+  render();
+  return () => {};
+};
+
+// ---- 13. Three Card Draw (best-hand comparison, no wagering) ----
+GAME_IMPL.threecard = (mount, diff, finish, status) => {
+  const rounds = diff === 'hard' ? 5 : 3;
+  const winsNeeded = Math.ceil(rounds / 2) + (rounds % 2 === 0 ? 1 : 0) > rounds ? rounds : Math.ceil((rounds + 1) / 2);
+  const RANKS = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+  const SUITS = ['♠','♥','♦','♣'];
+  let wins = 0, losses = 0, round = 0;
+  const table = document.createElement('div');
+  table.className = 'card-table';
+  mount.appendChild(table);
+  const dealBtn = document.createElement('button');
+  dealBtn.className = 'btn primary';
+  dealBtn.textContent = 'Deal';
+  mount.appendChild(dealBtn);
+
+  function draw3() {
+    const deck = [];
+    for (const r of RANKS) for (const s of SUITS) deck.push({ r, s });
+    shuffleArr(deck);
+    return [deck.slice(0, 3), deck.slice(3, 6)];
+  }
+  function handScore(hand) {
+    const vals = hand.map((c) => RANKS.indexOf(c.r) + 2).sort((a, b) => b - a);
+    const counts = {};
+    vals.forEach((v) => (counts[v] = (counts[v] || 0) + 1));
+    const pairVal = Object.entries(counts).find(([, n]) => n >= 2);
+    const trail = Object.entries(counts).find(([, n]) => n === 3);
+    const isSeq = vals[0] - vals[1] === 1 && vals[1] - vals[2] === 1;
+    const isFlush = hand.every((c) => c.s === hand[0].s);
+    let tier = 0;
+    if (trail) tier = 6;
+    else if (isSeq && isFlush) tier = 5;
+    else if (isSeq) tier = 4;
+    else if (isFlush) tier = 3;
+    else if (pairVal) tier = 2;
+    else tier = 1;
+    return { tier, high: vals };
+  }
+  function compare(a, b) {
+    if (a.tier !== b.tier) return a.tier - b.tier;
+    for (let i = 0; i < 3; i++) if (a.high[i] !== b.high[i]) return a.high[i] - b.high[i];
+    return 0;
+  }
+  function renderHands(you, ai, reveal) {
+    const fmtHand = (hand, hide) =>
+      hand.map((c) => `<span class="card ${!hide && (c.s === '♥' || c.s === '♦') ? 'red' : ''}">${hide ? '🂠' : c.r + c.s}</span>`).join('');
+    table.innerHTML = `
+      <div class="hand-row"><div class="hand-label">Dealer</div><div class="hand">${fmtHand(ai, !reveal)}</div></div>
+      <div class="hand-row"><div class="hand-label">You</div><div class="hand">${fmtHand(you, false)}</div></div>`;
+  }
+  dealBtn.addEventListener('click', () => {
+    round++;
+    const [you, ai] = draw3();
+    renderHands(you, ai, false);
+    dealBtn.disabled = true;
+    status(`Round ${round}/${rounds} — revealing…`);
+    setTimeout(() => {
+      renderHands(you, ai, true);
+      const you_s = handScore(you), ai_s = handScore(ai);
+      const cmp = compare(you_s, ai_s);
+      if (cmp > 0) wins++;
+      else if (cmp < 0) losses++;
+      status(`${cmp > 0 ? 'You win the round!' : cmp < 0 ? 'Dealer wins the round.' : 'Push.'} · You ${wins} – Dealer ${losses}`);
+      if (round >= rounds) {
+        setTimeout(() => finish(wins > losses, wins), 900);
+      } else {
+        dealBtn.disabled = false;
+        dealBtn.textContent = 'Deal next round';
+      }
+    }, 900);
+  });
+  status(`Best of ${rounds} hands vs the dealer — no wagering, just skill & luck.`);
+  return () => {};
+};
+
+// ---- 14. Carom Strike (2D physics flick-to-pot) ----
+GAME_IMPL.carom = (mount, diff, finish, status) => {
+  const W = 300, H = 300, R = 8;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  cv.className = 'game-canvas';
+  mount.appendChild(cv);
+  const ctx = cv.getContext('2d');
+  const pocketR = 16;
+  const pockets = [[0,0],[W/2,0],[W,0],[0,H],[W/2,H],[W,H]];
+  const target = diff === 'hard' ? 6 : 3;
+  let pucks = [];
+  for (let i = 0; i < 8; i++) {
+    const ang = (i / 8) * Math.PI * 2;
+    pucks.push({ x: W/2 + Math.cos(ang) * 40, y: H/2 + Math.sin(ang) * 40, vx: 0, vy: 0, out: false });
+  }
+  const striker = { x: W/2, y: H - 30, vx: 0, vy: 0, out: false };
+  let potted = 0, shots = 0, dragging = false, sx = 0, sy = 0, moving = false;
+
+  function pottedCount() { return potted; }
+  function draw() {
+    ctx.fillStyle = '#0f7a3d'; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = '#0a5c2c'; ctx.lineWidth = 10; ctx.strokeRect(5, 5, W - 10, H - 10);
+    pockets.forEach(([x, y]) => { ctx.beginPath(); ctx.arc(x, y, pocketR, 0, 7); ctx.fillStyle = '#0a0a0a'; ctx.fill(); });
+    pucks.forEach((p) => { if (p.out) return; ctx.beginPath(); ctx.arc(p.x, p.y, R, 0, 7); ctx.fillStyle = '#f1f5f9'; ctx.fill(); ctx.strokeStyle = '#94a3b8'; ctx.stroke(); });
+    if (!striker.out) { ctx.beginPath(); ctx.arc(striker.x, striker.y, R + 1, 0, 7); ctx.fillStyle = '#1f66f2'; ctx.fill(); }
+    if (dragging) {
+      ctx.beginPath(); ctx.moveTo(striker.x, striker.y); ctx.lineTo(sx, sy);
+      ctx.strokeStyle = 'rgba(31,102,242,.5)'; ctx.lineWidth = 2; ctx.stroke();
+    }
+  }
+  function physicsStep() {
+    let anyMoving = false;
+    const all = [striker, ...pucks];
+    all.forEach((p) => {
+      if (p.out) return;
+      p.x += p.vx; p.y += p.vy;
+      p.vx *= 0.985; p.vy *= 0.985;
+      if (p.x < 12) { p.x = 12; p.vx *= -0.8; } if (p.x > W - 12) { p.x = W - 12; p.vx *= -0.8; }
+      if (p.y < 12) { p.y = 12; p.vy *= -0.8; } if (p.y > H - 12) { p.y = H - 12; p.vy *= -0.8; }
+      for (const [px, py] of pockets) {
+        if (Math.hypot(p.x - px, p.y - py) < pocketR) { p.out = true; if (p !== striker) potted++; }
+      }
+      if (Math.hypot(p.vx, p.vy) > 0.05) anyMoving = true;
+    });
+    // simple pairwise collision
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
+      const a = all[i], b = all[j];
+      if (a.out || b.out) continue;
+      const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
+      if (d < R * 2 && d > 0) {
+        const nx = dx / d, ny = dy / d, overlap = R * 2 - d;
+        a.x -= nx * overlap / 2; a.y -= ny * overlap / 2;
+        b.x += nx * overlap / 2; b.y += ny * overlap / 2;
+        const avx = a.vx, avy = a.vy;
+        a.vx = b.vx; a.vy = b.vy; b.vx = avx; b.vy = avy;
+      }
+    }
+    return anyMoving;
+  }
+  let raf;
+  function loop() {
+    const anyMoving = physicsStep();
+    draw();
+    moving = anyMoving;
+    if (moving) raf = requestAnimationFrame(loop);
+    else {
+      status(`Potted ${potted}/${target} · shots ${shots}`);
+      if (potted >= target) return finish(true, shots);
+      if (striker.out) return finish(false, shots);
+    }
+  }
+  cv.addEventListener('pointerdown', (e) => {
+    if (moving) return;
+    dragging = true;
+    const rect = cv.getBoundingClientRect();
+    sx = (e.clientX - rect.left) * (W / rect.width); sy = (e.clientY - rect.top) * (H / rect.height);
+  });
+  cv.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const rect = cv.getBoundingClientRect();
+    sx = (e.clientX - rect.left) * (W / rect.width); sy = (e.clientY - rect.top) * (H / rect.height);
+    draw();
+  });
+  cv.addEventListener('pointerup', () => {
+    if (!dragging) return;
+    dragging = false;
+    const dx = striker.x - sx, dy = striker.y - sy;
+    const power = Math.min(14, Math.hypot(dx, dy) / 8);
+    const ang = Math.atan2(dy, dx);
+    striker.vx = Math.cos(ang) * power; striker.vy = Math.sin(ang) * power;
+    shots++;
+    loop();
+  });
+  status(`Drag from the blue striker to aim, release to flick · pot ${target} to win`);
+  draw();
+  return () => cancelAnimationFrame(raf);
+};
+
+// ---- 15. Delta Slicer (swipe-to-slice, dodge bombs) ----
+GAME_IMPL.slicer = (mount, diff, finish, status) => {
+  const W = 300, H = 380;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  cv.className = 'game-canvas';
+  mount.appendChild(cv);
+  const ctx = cv.getContext('2d');
+  const target = diff === 'hard' ? 25 : 15;
+  const spawnMs = diff === 'hard' ? 550 : 800;
+  const glyphs = ['🍉','🍊','🍇','🍓','🍎'];
+  let items = [], score = 0, misses = 0, over = false, trail = [];
+  function spawn() {
+    if (over) return;
+    const isBomb = Math.random() < 0.15;
+    items.push({
+      x: 30 + Math.random() * (W - 60), y: H + 20,
+      vy: -(6 + Math.random() * 2.5), vx: (Math.random() - 0.5) * 2,
+      g: 0.14, bomb: isBomb, glyph: isBomb ? '💣' : glyphs[Math.floor(Math.random() * glyphs.length)],
+      sliced: false, r: 16,
+    });
+    setTimeout(spawn, spawnMs);
+  }
+  function draw() {
+    ctx.fillStyle = '#eef3ff'; ctx.fillRect(0, 0, W, H);
+    ctx.font = '28px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    items.forEach((it) => { if (!it.sliced) ctx.fillText(it.glyph, it.x, it.y); });
+    if (trail.length > 1) {
+      ctx.strokeStyle = 'rgba(31,102,242,.6)'; ctx.lineWidth = 4; ctx.beginPath();
+      ctx.moveTo(trail[0].x, trail[0].y);
+      trail.forEach((p) => ctx.lineTo(p.x, p.y));
+      ctx.stroke();
+    }
+  }
+  let raf;
+  function loop() {
+    items.forEach((it) => { it.vy += it.g; it.x += it.vx; it.y += it.vy; });
+    items = items.filter((it) => {
+      if (it.y < -30 && !it.sliced && !it.bomb) { misses++; return false; }
+      return it.y < H + 40;
+    });
+    draw();
+    status(`${score}/${target} sliced · ${misses} missed`);
+    if (score >= target) { over = true; return finish(true, score); }
+    if (misses >= 8) { over = true; return finish(false, score); }
+    raf = requestAnimationFrame(loop);
+  }
+  function pointAt(e) {
+    const rect = cv.getBoundingClientRect();
+    return { x: (e.clientX - rect.left) * (W / rect.width), y: (e.clientY - rect.top) * (H / rect.height) };
+  }
+  function trySlice(pt) {
+    items.forEach((it) => {
+      if (it.sliced) return;
+      if (Math.hypot(it.x - pt.x, it.y - pt.y) < it.r + 10) {
+        it.sliced = true;
+        if (it.bomb) { over = true; cancelAnimationFrame(raf); return finish(false, score); }
+        score++;
+      }
+    });
+  }
+  cv.addEventListener('pointerdown', (e) => { trail = [pointAt(e)]; trySlice(trail[0]); });
+  cv.addEventListener('pointermove', (e) => {
+    if (!e.buttons) return;
+    const pt = pointAt(e);
+    trail.push(pt);
+    if (trail.length > 8) trail.shift();
+    trySlice(pt);
+  });
+  cv.addEventListener('pointerup', () => (trail = []));
+  status(`Slice ${target} fruit · avoid the bombs 💣`);
+  spawn();
+  loop();
+  return () => cancelAnimationFrame(raf);
+};
+
+// ---- 16. Penalty Kicks (soccer shootout) ----
+GAME_IMPL.soccer = (mount, diff, finish, status) => {
+  const rounds = diff === 'hard' ? 6 : 4;
+  const need = Math.ceil(rounds / 2) + 1;
+  const W = 300, H = 220;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  cv.className = 'game-canvas';
+  mount.appendChild(cv);
+  const ctx = cv.getContext('2d');
+  let round = 0, goals = 0, misses = 0, chosen = null, animating = false;
+  const zones = [W * 0.22, W * 0.5, W * 0.78];
+  function draw(ballPos, keeperX, result) {
+    ctx.fillStyle = '#dff5e3'; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 4;
+    ctx.strokeRect(W * 0.15, 20, W * 0.7, 60);
+    ctx.fillStyle = '#1f66f2';
+    ctx.fillRect(keeperX - 18, 22, 36, 50);
+    ctx.beginPath(); ctx.arc(ballPos.x, ballPos.y, 9, 0, 7); ctx.fillStyle = '#fff'; ctx.strokeStyle = '#0f172a'; ctx.fill(); ctx.stroke();
+    if (result) {
+      ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = result === 'GOAL' ? '#16a34a' : '#dc2626';
+      ctx.fillText(result, W / 2, H - 20);
+    }
+  }
+  function reset() { chosen = null; draw({ x: W / 2, y: H - 30 }, W / 2, null); }
+  function kick(zoneIdx) {
+    if (animating || round >= rounds) return;
+    animating = true;
+    chosen = zoneIdx;
+    const keeperGuess = Math.floor(Math.random() * 3);
+    const targetX = zones[zoneIdx];
+    let t = 0;
+    const startY = H - 30;
+    const anim = setInterval(() => {
+      t += 0.08;
+      const y = startY - t * (startY - 40);
+      draw({ x: W / 2 + (targetX - W / 2) * t, y }, zones[keeperGuess], null);
+      if (t >= 1) {
+        clearInterval(anim);
+        const saved = keeperGuess === zoneIdx && Math.random() < (diff === 'hard' ? 0.55 : 0.35);
+        round++;
+        if (saved) misses++; else goals++;
+        draw({ x: targetX, y: 40 }, zones[keeperGuess], saved ? 'SAVED' : 'GOAL');
+        status(`You ${goals} \u2013 ${misses} missed \u00b7 round ${round}/${rounds}`);
+        setTimeout(() => {
+          if (goals >= need) return finish(true, goals);
+          if (misses >= need) return finish(false, goals);
+          if (round >= rounds) return finish(goals > misses, goals);
+          animating = false;
+          reset();
+        }, 700);
+      }
+    }, 16);
+  }
+  const row = document.createElement('div');
+  row.className = 'kick-row';
+  ['Left', 'Center', 'Right'].forEach((label, i) => {
+    const b = document.createElement('button');
+    b.className = 'btn ghost';
+    b.textContent = label;
+    b.addEventListener('click', () => kick(i));
+    row.appendChild(b);
+  });
+  mount.appendChild(row);
+  status(`Score ${need} to win the shootout \u00b7 tap a side to shoot`);
+  reset();
+  return () => {};
+};
+
+// ---- 17. Delta Racer (lane-dodge endless runner) ----
+GAME_IMPL.racing = (mount, diff, finish, status) => {
+  const W = 260, H = 380, LANES = 3;
+  const laneW = W / LANES;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  cv.className = 'game-canvas';
+  mount.appendChild(cv);
+  const ctx = cv.getContext('2d');
+  const target = diff === 'hard' ? 45 : 25; // seconds to survive
+  let lane = 1, obstacles = [], speed = diff === 'hard' ? 5 : 3.5, t = 0, over = false, dashOffset = 0;
+  const cleanupInput = directionInput(mount, (d) => {
+    if (d === 'left') lane = Math.max(0, lane - 1);
+    if (d === 'right') lane = Math.min(LANES - 1, lane + 1);
+  });
+  function spawnObstacle() {
+    obstacles.push({ lane: Math.floor(Math.random() * LANES), y: -40 });
+  }
+  let raf, spawnTimer;
+  function draw() {
+    ctx.fillStyle = '#1e293b'; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = '#475569'; ctx.setLineDash([16, 14]); ctx.lineDashOffset = -dashOffset;
+    for (let i = 1; i < LANES; i++) { ctx.beginPath(); ctx.moveTo(i * laneW, 0); ctx.lineTo(i * laneW, H); ctx.stroke(); }
+    ctx.setLineDash([]);
+    obstacles.forEach((o) => {
+      ctx.fillStyle = '#dc2626';
+      ctx.fillRect(o.lane * laneW + laneW * 0.2, o.y, laneW * 0.6, 26);
+    });
+    ctx.fillStyle = '#1f66f2';
+    ctx.fillRect(lane * laneW + laneW * 0.25, H - 60, laneW * 0.5, 34);
+  }
+  function loop() {
+    if (over) return;
+    t += 1 / 60;
+    dashOffset += speed;
+    obstacles.forEach((o) => (o.y += speed));
+    obstacles = obstacles.filter((o) => o.y < H + 40);
+    const collided = obstacles.some((o) => o.lane === lane && o.y > H - 90 && o.y < H - 40);
+    if (collided) { over = true; clearTimeout(spawnTimer); cancelAnimationFrame(raf); return finish(false, Math.floor(t)); }
+    draw();
+    status(`Survive ${target}s \u00b7 ${Math.floor(t)}s elapsed`);
+    if (t >= target) { over = true; clearTimeout(spawnTimer); cancelAnimationFrame(raf); return finish(true, Math.floor(t)); }
+    raf = requestAnimationFrame(loop);
+  }
+  function tickSpawn() {
+    if (over) return;
+    spawnObstacle();
+    spawnTimer = setTimeout(tickSpawn, Math.max(450, 900 - t * 15));
+  }
+  status(`Swipe or use the arrows to change lanes \u00b7 survive ${target}s`);
+  draw();
+  tickSpawn();
+  loop();
+  return () => {
+    over = true;
+    cancelAnimationFrame(raf);
+    clearTimeout(spawnTimer);
+    cleanupInput();
+  };
 };
