@@ -28,8 +28,7 @@ async function loadArcade() {
       ['Remaining today', `${fmt(a.remainingToday)} of ${fmt(a.arcade.dailyCap)} $DLTX`],
     ]
       .map(([k, v]) => `<div class="supply-row"><span class="k">${k}</span><span class="v">${v}</span></div>`)
-      .join('');
-    gel('gamesGrid').innerHTML = a.games
+      .join('');    updateAdBonusCard();    gel('gamesGrid').innerHTML = a.games
       .map(
         (g) => `<button class="game-card" data-game="${g.id}">
           <span class="g-icon">${ARCADE_ICONS[g.id] || '◆'}</span>
@@ -122,6 +121,83 @@ async function finishGame(won, score) {
   } catch (e) {
     setGameStatus(e.message);
   }
+  maybeShowInterstitial();
+}
+
+// ---------- Rewarded ad (Sustainability Fund bonus) ----------
+// Never gates faucet, staking, or DAO actions — purely an optional bonus tap
+// on the Arcade tab. Native: real AdMob rewarded ad, reward paid only on the
+// SDK's own "user earned reward" callback. Web/dev: disclosed simulated ad.
+function updateAdBonusCard() {
+  const card = gel('adBonusCard');
+  if (!card) return;
+  card.hidden = false;
+}
+gel('watchAdBtn')?.addEventListener('click', async () => {
+  const btn = gel('watchAdBtn');
+  btn.disabled = true;
+  btn.textContent = 'Loading…';
+  try {
+    const earned = await playRewardedAd();
+    if (!earned) {
+      toast('Ad not completed — no bonus this time.');
+      return;
+    }
+    const r = await api('POST', '/arcade/ad-bonus');
+    toast(`+${fmt(r.reward)} $DLTX bonus · ${r.usedToday}/${r.maxPerDay} today`);
+    Promise.all([loadWallet(), loadTx(), loadArcade()]).catch(() => {});
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Watch';
+  }
+});
+
+function playRewardedAd() {
+  return new Promise((resolve) => {
+    const cap = window.Capacitor;
+    const AdMob = cap && cap.Plugins && cap.Plugins.AdMob;
+    if (cap && cap.isNativePlatform && cap.isNativePlatform() && AdMob) {
+      let earned = false;
+      const onReward = AdMob.addListener?.('onRewardedVideoReward', () => (earned = true));
+      const onDismiss = AdMob.addListener?.('onRewardedVideoAdDismissed', async () => {
+        onReward?.remove?.();
+        onDismiss?.remove?.();
+        resolve(earned);
+      });
+      AdMob.prepareRewardVideoAd({ adId: ADMOB_REWARDED_ID, isTesting: ADMOB_TESTING })
+        .then(() => AdMob.showRewardVideoAd())
+        .catch(() => {
+          onReward?.remove?.();
+          onDismiss?.remove?.();
+          resolve(false);
+        });
+      return;
+    }
+    // Web / dev fallback — disclosed simulated ad so the flow is testable.
+    if (!confirm('▶ Simulated rewarded ad (web preview)\n\nOn a real device this plays a full AdMob rewarded video. Continue to claim the test bonus?')) {
+      return resolve(false);
+    }
+    setTimeout(() => resolve(true), 600);
+  });
+}
+
+// ---------- Interstitial (native only, frequency-capped) ----------
+// Shown at most every 3rd completed game AND never sooner than 60s apart —
+// deliberately conservative to stay well inside AdMob's policy limits.
+function maybeShowInterstitial() {
+  const cap = window.Capacitor;
+  const AdMob = cap && cap.Plugins && cap.Plugins.AdMob;
+  if (!cap || !cap.isNativePlatform || !cap.isNativePlatform() || !AdMob) return;
+  gamesSinceInterstitial++;
+  const cooledDown = Date.now() - lastInterstitialAt > 60000;
+  if (gamesSinceInterstitial < 3 || !cooledDown) return;
+  gamesSinceInterstitial = 0;
+  lastInterstitialAt = Date.now();
+  AdMob.prepareInterstitial({ adId: ADMOB_INTERSTITIAL_ID, isTesting: ADMOB_TESTING })
+    .then(() => AdMob.showInterstitial())
+    .catch(() => {});
 }
 
 // ---------- shared helpers ----------

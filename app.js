@@ -991,11 +991,15 @@ $('expSearch').addEventListener('keydown', (e) => {
 });
 
 // ---------- AdMob (native app only — Sustainability Fund banner) ----------
-// Google's official TEST banner unit. Swap for the real unit id once the
-// AdMob account is approved and the app is registered.
+// Google's official TEST ids. Swap for real unit ids once the AdMob account
+// and Play listing are approved (see mobile-app/README.md).
 const ADMOB_BANNER_ID = 'ca-app-pub-3940256099942544/6300978111';
+const ADMOB_INTERSTITIAL_ID = 'ca-app-pub-3940256099942544/1033173712';
+const ADMOB_REWARDED_ID = 'ca-app-pub-3940256099942544/5224354917';
 const ADMOB_TESTING = true;
 let adsReady = false;
+let gamesSinceInterstitial = 0;
+let lastInterstitialAt = 0;
 
 async function initAds() {
   try {
