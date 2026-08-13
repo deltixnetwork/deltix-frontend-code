@@ -468,21 +468,49 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .ad-bonus-card .meta { font-size: 12px; color: var(--muted, #64748b); }
 
 /* -- New Arcade games (Ludo, Chess, Three Card Draw, Carom, Slicer, Soccer, Racing) -- */
-.ludo-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.ludo-track {
-  position: relative; width: 260px; height: 260px; border-radius: 50%;
-  background: #eef3ff; border: 2px solid var(--border, #e6eaf2); margin: 0 auto;
+.ludo-wrap2 { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.ludo-board {
+  position: relative; display: grid; grid-template-columns: repeat(15, 1fr); grid-template-rows: repeat(15, 1fr);
+  width: 300px; height: 300px; background: #fff; border: 2px solid #0f172a; border-radius: 6px;
 }
-.ludo-cell {
-  position: absolute; width: 14px; height: 14px; border-radius: 50%; background: #fff;
-  border: 1px solid #cbd5e1; top: 50%; left: 50%;
-  transform: rotate(calc(360deg / 28 * var(--i))) translate(118px) rotate(calc(-360deg / 28 * var(--i)));
-  margin: -7px;
+.lb-cell { background: #fff; }
+.lb-cell.yard-g { background: #d9f4e1; } .lb-cell.yard-y { background: #fef3d6; }
+.lb-cell.yard-b { background: #dbe7ff; } .lb-cell.yard-r { background: #fbdada; }
+.lb-cell.lb-path { background: #f8fafc; border: 1px solid #e6eaf2; }
+.lb-cell.lb-start.yard-g { background: #16a34a; } .lb-cell.lb-start.yard-y { background: #f59e0b; }
+.lb-cell.lb-start.yard-b { background: #1f66f2; } .lb-cell.lb-start.yard-r { background: #dc2626; }
+.lb-cell.lb-safe::after { content: '★'; font-size: 7px; color: #94a3b8; display: flex; align-items: center; justify-content: center; height: 100%; }
+.lb-cell.lb-home.yard-g { background: #86e0a6; } .lb-cell.lb-home.yard-y { background: #fbd589; }
+.lb-cell.lb-home.yard-b { background: #9fbcf7; } .lb-cell.lb-home.yard-r { background: #f2a3a3; }
+.lb-cell.lb-center { background: linear-gradient(135deg, #16a34a 25%, #f59e0b 25% 50%, #1f66f2 50% 75%, #dc2626 75%); }
+.ludo-yardbox {
+  border-radius: 10px; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
+  gap: 4px; padding: 4px; pointer-events: none;
 }
-.ludo-dot { display: block; width: 10px; height: 10px; border-radius: 50%; margin: 1px auto; }
-.ludo-dice { width: auto; padding: 10px 20px; }
-.ludo-tokens { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; font-size: 12px; }
-.ludo-p { padding: 4px 8px; border-radius: 8px; border: 1px solid var(--c); color: var(--c); font-weight: 700; }
+.ludo-yardbox.yard-g { background: #16a34a; } .ludo-yardbox.yard-y { background: #f59e0b; }
+.ludo-yardbox.yard-b { background: #1f66f2; } .ludo-yardbox.yard-r { background: #dc2626; }
+.ludo-yardbox::before, .ludo-yardbox::after { content: ''; background: #fff; border-radius: 50%; }
+.ludo-token {
+  width: 70%; height: 70%; align-self: center; justify-self: center; border-radius: 50%;
+  background: var(--c); border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.4); z-index: 2;
+  transition: all .25s ease;
+}
+.ludo-bar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.ludo-avatar {
+  display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px;
+  border: 1.5px solid var(--c); font-size: 12px; font-weight: 700; color: var(--c); background: #fff;
+  transition: box-shadow .15s ease;
+}
+.ludo-avatar .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); }
+.ludo-avatar.active { box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 30%, transparent); background: color-mix(in srgb, var(--c) 8%, #fff); }
+.ludo-avatar .cnt { color: var(--ink, #0f172a); font-weight: 800; }
+.ludo-dice2 {
+  font-size: 34px; width: 56px; height: 56px; border-radius: 12px; border: 1px solid var(--border, #e6eaf2);
+  background: #fff; display: flex; align-items: center; justify-content: center; user-select: none;
+}
+.ludo-dice2.rolling { animation: dice-spin .5s linear; }
+@keyframes dice-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
 
 .board.chess { max-width: 320px; gap: 0; }
 .board.chess .cell { font-size: 24px; background: #f8fafc; border-radius: 0; border: none; }

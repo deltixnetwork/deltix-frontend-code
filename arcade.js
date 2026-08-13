@@ -824,133 +824,235 @@ GAME_IMPL.reaction = (mount, diff, finish, status) => {
 };
 
 // ---- 11. Delta Ludo (vs 3 AI, simplified classic race-to-home) ----
+// ---- 11. Delta Ludo — classic cross-shaped board, vs 3 human-like AI ----
 GAME_IMPL.ludo = (mount, diff, finish, status) => {
-  const TRACK = 28; // simplified shared circular track length
-  const HOME = 6;   // home-stretch cells per player
-  const START = [0, 7, 14, 21]; // entry offsets around the track for 4 players
+  // Verified 56-cell shared ring (every consecutive pair is grid-adjacent —
+  // no diagonal "jumps"), tracing the classic plus-shaped board clockwise.
+  const RING = [
+    [6,1],[6,2],[6,3],[6,4],[6,5],[6,6],
+    [5,6],[4,6],[3,6],[2,6],[1,6],[0,6],
+    [0,7],
+    [0,8],[1,8],[2,8],[3,8],[4,8],[5,8],[6,8],
+    [6,9],[6,10],[6,11],[6,12],[6,13],[6,14],
+    [7,14],
+    [8,14],[8,13],[8,12],[8,11],[8,10],[8,9],[8,8],
+    [9,8],[10,8],[11,8],[12,8],[13,8],[14,8],
+    [14,7],
+    [14,6],[13,6],[12,6],[11,6],[10,6],[9,6],[8,6],
+    [8,5],[8,4],[8,3],[8,2],[8,1],[8,0],
+    [7,0],
+  ];
+  const HOME_COLS = [
+    [[7,1],[7,2],[7,3],[7,4],[7,5],[7,6]],       // green
+    [[1,7],[2,7],[3,7],[4,7],[5,7],[6,7]],       // yellow
+    [[7,13],[7,12],[7,11],[7,10],[7,9],[7,8]],   // blue
+    [[13,7],[12,7],[11,7],[10,7],[9,7],[8,7]],   // red
+  ];
+  const YARD_QUAD = [[0,0],[0,9],[9,9],[9,0]]; // green, yellow, blue, red top-left corner of each 6x6 yard
+  const START = [0, 14, 28, 42];
+  const SAFE = new Set([0, 14, 28, 42, 6, 12, 19, 26, 33, 40, 47, 54]);
+  const CENTER = [7, 7];
   const players = 4;
   const target = diff === 'hard' ? 4 : 2; // tokens that must reach home to win
-  const tokens = Array.from({ length: players }, () => [-1, -1, -1, -1]); // -1 = in base, 0..TRACK+HOME-1 = position, TRACK+HOME = home
-  let turn = 0, dice = 0, rolling = false, over = false;
+  const colors = ['#16a34a', '#f59e0b', '#1f66f2', '#dc2626'];
+  const names = ['You', 'Sunny', 'Aqua', 'Ruby'];
+  // token position: -1 = base, 1..55 = ring step, 56..61 = home column cell, 62 = finished
+  const tokens = Array.from({ length: players }, () => [-1, -1, -1, -1]);
+  let turn = 0, rolling = false, over = false;
 
+  const cellOf = (p, pos) => {
+    if (pos <= 0) return null;
+    if (pos <= 55) return RING[(START[p] + pos - 1) % 56];
+    if (pos <= 61) return HOME_COLS[p][pos - 56];
+    return CENTER;
+  };
+
+  // ---------- board ----------
   const wrap = document.createElement('div');
-  wrap.className = 'ludo-wrap';
+  wrap.className = 'ludo-wrap2';
   mount.appendChild(wrap);
-  const board = document.createElement('div');
-  board.className = 'ludo-track';
-  wrap.appendChild(board);
-  const cells = [];
-  for (let i = 0; i < TRACK; i++) {
-    const el = document.createElement('div');
-    el.className = 'ludo-cell';
-    el.style.setProperty('--i', i);
-    board.appendChild(el);
-    cells.push(el);
+  const boardWrap = document.createElement('div');
+  boardWrap.className = 'ludo-board';
+  wrap.appendChild(boardWrap);
+  const cellEls = {}; // "r,c" -> el
+  for (let r = 0; r < 15; r++) {
+    for (let c = 0; c < 15; c++) {
+      const el = document.createElement('div');
+      el.className = 'lb-cell';
+      el.style.gridRow = r + 1;
+      el.style.gridColumn = c + 1;
+      boardWrap.appendChild(el);
+      cellEls[`${r},${c}`] = el;
+    }
   }
+  const yardColorClass = ['yard-g', 'yard-y', 'yard-b', 'yard-r'];
+  YARD_QUAD.forEach(([r0, c0], p) => {
+    for (let r = r0; r < r0 + 6; r++) for (let c = c0; c < c0 + 6; c++) cellEls[`${r},${c}`].classList.add(yardColorClass[p]);
+  });
+  RING.forEach(([r, c], i) => {
+    const el = cellEls[`${r},${c}`];
+    el.classList.add('lb-path');
+    if (START.includes(i)) el.classList.add('lb-start', yardColorClass[START.indexOf(i)]);
+    else if (SAFE.has(i)) el.classList.add('lb-safe');
+  });
+  HOME_COLS.forEach((cells, p) => cells.forEach(([r, c]) => cellEls[`${r},${c}`].classList.add('lb-home', yardColorClass[p])));
+  cellEls['7,7'].classList.add('lb-center');
+  // yard token-slot dots (visual only, decorative)
+  YARD_QUAD.forEach(([r0, c0], p) => {
+    const box = document.createElement('div');
+    box.className = 'ludo-yardbox ' + yardColorClass[p];
+    box.style.gridRow = `${r0 + 2} / ${r0 + 4}`;
+    box.style.gridColumn = `${c0 + 2} / ${c0 + 4}`;
+    boardWrap.appendChild(box);
+  });
+
+  // ---------- player bar + dice ----------
+  const bar = document.createElement('div');
+  bar.className = 'ludo-bar';
+  wrap.appendChild(bar);
+  const avatars = names.map((n, i) => {
+    const a = document.createElement('div');
+    a.className = 'ludo-avatar';
+    a.style.setProperty('--c', colors[i]);
+    a.innerHTML = `<span class="dot"></span>${n}<b class="cnt"></b>`;
+    bar.appendChild(a);
+    return a;
+  });
   const dice_el = document.createElement('button');
-  dice_el.className = 'btn primary ludo-dice';
-  dice_el.textContent = 'Roll 🎲';
+  dice_el.className = 'ludo-dice2';
+  dice_el.textContent = '⚄';
   wrap.appendChild(dice_el);
-  const tokenRow = document.createElement('div');
-  tokenRow.className = 'ludo-tokens';
-  wrap.appendChild(tokenRow);
-  const colors = ['#1f66f2', '#dc2626', '#16a34a', '#f59e0b'];
-  const names = ['You', 'Ruby', 'Jade', 'Amber'];
+  const rollBtn = document.createElement('button');
+  rollBtn.className = 'btn primary';
+  rollBtn.textContent = 'Roll';
+  wrap.appendChild(rollBtn);
 
   function render() {
-    cells.forEach((c) => (c.innerHTML = ''));
+    boardWrap.querySelectorAll('.ludo-token').forEach((t) => t.remove());
     tokens.forEach((toks, p) => {
-      toks.forEach((pos, ti) => {
-        if (pos >= 0 && pos < TRACK) {
-          const dot = document.createElement('span');
-          dot.className = 'ludo-dot';
-          dot.style.background = colors[p];
-          cells[pos].appendChild(dot);
-        }
+      toks.forEach((pos) => {
+        if (pos < 0 || pos > 61) return;
+        const [r, c] = cellOf(p, pos);
+        const t = document.createElement('div');
+        t.className = 'ludo-token';
+        t.style.setProperty('--c', colors[p]);
+        t.style.gridRow = r + 1;
+        t.style.gridColumn = c + 1;
+        boardWrap.appendChild(t);
       });
     });
-    const homeCount = tokens.map((t) => t.filter((p) => p >= TRACK + HOME).length);
-    tokenRow.innerHTML = names
-      .map((n, i) => `<span class="ludo-p" style="--c:${colors[i]}">${n}: ${homeCount[i]}/${players}${i === turn && !over ? ' ◀' : ''}</span>`)
-      .join('');
+    const homeCount = tokens.map((t) => t.filter((p) => p === 62).length);
+    avatars.forEach((a, i) => {
+      a.classList.toggle('active', i === turn && !over);
+      a.querySelector('.cnt').textContent = `${homeCount[i]}/${players}`;
+    });
   }
   function movable(p, roll) {
     return tokens[p]
-      .map((pos, i) => i)
+      .map((_, i) => i)
       .filter((i) => {
         const pos = tokens[p][i];
         if (pos === -1) return roll === 6;
-        return pos + roll <= TRACK + HOME;
+        if (pos === 62) return false;
+        return pos + roll <= 62;
       });
   }
   function moveToken(p, i, roll) {
     const pos = tokens[p][i];
-    if (pos === -1) {
-      tokens[p][i] = START[p];
-    } else {
-      const next = pos + roll;
-      tokens[p][i] = next;
-      if (next < TRACK) {
-        // capture check on shared track
+    const next = pos === -1 ? 1 : pos + roll;
+    tokens[p][i] = next;
+    let captured = null;
+    if (next >= 1 && next <= 55) {
+      const ringIdx = (START[p] + next - 1) % 56;
+      if (!SAFE.has(ringIdx)) {
         for (let op = 0; op < players; op++) {
           if (op === p) continue;
           tokens[op].forEach((opos, oi) => {
-            if (opos === next) tokens[op][oi] = -1;
+            if (opos >= 1 && opos <= 55 && (START[op] + opos - 1) % 56 === ringIdx) {
+              tokens[op][oi] = -1;
+              captured = names[op];
+            }
           });
         }
       }
     }
+    return captured;
   }
   function endCheck(p) {
-    if (tokens[p].filter((pos) => pos >= TRACK + HOME).length >= target) {
+    if (tokens[p].filter((pos) => pos === 62).length >= target) {
       over = true;
       render();
-      status(`${names[p]} reached home first!`);
-      finish(p === 0, tokens[0].filter((pos) => pos >= TRACK + HOME).length);
+      status(`${names[p]} got ${target} tokens home first!`);
+      finish(p === 0, tokens[0].filter((pos) => pos === 62).length);
       return true;
     }
     return false;
   }
-  function aiTurn() {
+  function rollDice() {
+    return new Promise((resolve) => {
+      dice_el.classList.add('rolling');
+      let n = 0;
+      const spin = setInterval(() => { dice_el.textContent = '⚀⚁⚂⚃⚄⚅'[Math.floor(Math.random() * 6)]; }, 70);
+      setTimeout(() => {
+        clearInterval(spin);
+        dice_el.classList.remove('rolling');
+        n = 1 + Math.floor(Math.random() * 6);
+        dice_el.textContent = '⚀⚁⚂⚃⚄⚅'[n - 1];
+        resolve(n);
+      }, 500);
+    });
+  }
+  async function aiTurn() {
     if (over) return;
-    const roll = 1 + Math.floor(Math.random() * 6);
+    rollBtn.disabled = true;
+    status(`${names[turn]} is rolling…`);
+    const roll = await rollDice();
     const opts = movable(turn, roll);
-    status(`${names[turn]} rolled ${roll}`);
     if (opts.length) {
-      const pick = opts[Math.floor(Math.random() * opts.length)];
-      moveToken(turn, pick, roll);
+      status(`${names[turn]} rolled ${roll} — thinking…`);
+      await new Promise((r) => setTimeout(r, 500));
+      const pick = diff === 'hard'
+        ? opts.reduce((best, i) => (tokens[turn][i] > tokens[turn][best] ? i : best), opts[0])
+        : opts[Math.floor(Math.random() * opts.length)];
+      const captured = moveToken(turn, pick, roll);
       render();
+      status(captured ? `${names[turn]} captured ${captured}'s token!` : `${names[turn]} rolled ${roll} and moved.`);
       if (endCheck(turn)) return;
+    } else {
+      status(`${names[turn]} rolled ${roll} — no valid move.`);
     }
+    await new Promise((r) => setTimeout(r, 600));
     if (roll !== 6) turn = (turn + 1) % players;
-    setTimeout(() => (turn === 0 ? updateHuman() : aiTurn()), 500);
+    if (turn === 0) updateHuman(); else aiTurn();
   }
   function updateHuman() {
-    dice_el.disabled = false;
+    render();
+    rollBtn.disabled = false;
     status('Your turn — roll the dice');
   }
-  dice_el.addEventListener('click', () => {
+  rollBtn.addEventListener('click', async () => {
     if (over || turn !== 0 || rolling) return;
     rolling = true;
-    dice_el.disabled = true;
-    const roll = 1 + Math.floor(Math.random() * 6);
-    dice = roll;
+    rollBtn.disabled = true;
+    const roll = await rollDice();
     const opts = movable(0, roll);
-    status(`You rolled ${roll}`);
     if (!opts.length) {
+      status(`You rolled ${roll} — no valid move.`);
       rolling = false;
+      await new Promise((r) => setTimeout(r, 500));
       if (roll !== 6) turn = 1;
-      setTimeout(aiTurn, 400);
+      aiTurn();
       return;
     }
-    // Auto-pick the token that advances furthest (keeps control simple on mobile).
     const pick = opts.reduce((best, i) => (tokens[0][i] > tokens[0][best] ? i : best), opts[0]);
-    moveToken(0, pick, roll);
+    const captured = moveToken(0, pick, roll);
     render();
+    status(captured ? `You captured ${captured}'s token! 🎯` : `You rolled ${roll} and moved.`);
     rolling = false;
     if (endCheck(0)) return;
+    await new Promise((r) => setTimeout(r, 400));
     if (roll !== 6) turn = 1;
-    setTimeout(() => (turn === 0 ? updateHuman() : aiTurn()), 400);
+    if (turn === 0) updateHuman(); else aiTurn();
   });
   render();
   updateHuman();
