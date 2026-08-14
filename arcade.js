@@ -715,8 +715,14 @@ GAME_IMPL.reversi = (mount, diff, finish, status) => {
     }
     let pick;
     if (diff === 'hard') {
-      pick = opts.reduce((best, i) =>
-        W[i] + flips(b, i, 2).length > W[best] + flips(b, best, 2).length ? i : best, opts[0]);
+      // Position + flips, minus the mobility the move hands to the player.
+      const scoreMove = (i) => {
+        const f = flips(b, i, 2);
+        const sim = b.slice();
+        sim[i] = 2; f.forEach((j) => (sim[j] = 2));
+        return W[i] + 2 * f.length - 3 * movesFor(sim, 1).length;
+      };
+      pick = opts.reduce((best, i) => (scoreMove(i) > scoreMove(best) ? i : best), opts[0]);
     } else pick = opts[Math.floor(Math.random() * opts.length)];
     const f = flips(b, pick, 2);
     b[pick] = 2; f.forEach((j) => (b[j] = 2));
@@ -1021,11 +1027,15 @@ GAME_IMPL.ludo = (mount, diff, finish, status) => {
       status(`${names[turn]} rolled ${roll} — thinking…`);
       await new Promise((r) => setTimeout(r, 500));
       // Hard AI actually knows the rules: prefer a capture, then getting a
-      // token home, then simply the most advanced token — never a coin flip.
+      // token home, then a safe square, then the most advanced token.
       const capture = opts.find((i) => wouldCapture(turn, i, roll));
       const finisher = opts.find((i) => (tokens[turn][i] === -1 ? 1 : tokens[turn][i] + roll) === 62);
+      const safeLanding = opts.find((i) => {
+        const next = tokens[turn][i] === -1 ? 1 : tokens[turn][i] + roll;
+        return next >= 1 && next <= 55 && SAFE.has((START[turn] + next - 1) % 56);
+      });
       const pick = diff === 'hard'
-        ? capture ?? finisher ?? opts.reduce((best, i) => (tokens[turn][i] > tokens[turn][best] ? i : best), opts[0])
+        ? capture ?? finisher ?? safeLanding ?? opts.reduce((best, i) => (tokens[turn][i] > tokens[turn][best] ? i : best), opts[0])
         : opts[Math.floor(Math.random() * opts.length)];
       const captured = moveToken(turn, pick, roll);
       render();
@@ -1206,14 +1216,28 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
     }
     let pick;
     if (diff === 'hard') {
-      // Prefer checkmate, then captures, then the move that most improves material.
+      // 2-ply search: prefer mate, otherwise minimise the player's best reply.
       const mating = moves.find((m) => legalMoves(true, apply(board, m)).length === 0 && inCheck(apply(board, m), true));
       if (mating) pick = mating;
-      else pick = moves.reduce((best, m) => {
-        const s = evalBoard(apply(board, m));
-        const bs = evalBoard(apply(board, best));
-        return s < bs ? m : best;
-      }, moves[0]);
+      else {
+        let bestScore = Infinity;
+        pick = moves[0];
+        for (const m of moves) {
+          const b1 = apply(board, m);
+          const replies = legalMoves(true, b1);
+          let score;
+          if (!replies.length) {
+            score = inCheck(b1, true) ? -Infinity : 0; // mate or stalemate
+          } else {
+            score = -Infinity;
+            for (const r of replies) {
+              const s = evalBoard(apply(b1, r));
+              if (s > score) score = s;
+            }
+          }
+          if (score < bestScore) { bestScore = score; pick = m; }
+        }
+      }
     } else {
       pick = moves[Math.floor(Math.random() * moves.length)];
     }
@@ -1523,6 +1547,7 @@ GAME_IMPL.soccer = (mount, diff, finish, status) => {
   const ctx = cv.getContext('2d');
   let round = 0, goals = 0, misses = 0, chosen = null, animating = false;
   const zones = [W * 0.22, W * 0.5, W * 0.78];
+  const history = [0, 0, 0]; // shots per zone — hard keeper learns your habits
   function draw(ballPos, keeperX, result) {
     ctx.fillStyle = '#dff5e3'; ctx.fillRect(0, 0, W, H);
     ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 4;
@@ -1540,7 +1565,12 @@ GAME_IMPL.soccer = (mount, diff, finish, status) => {
     if (animating || round >= rounds) return;
     animating = true;
     chosen = zoneIdx;
-    const keeperGuess = Math.floor(Math.random() * 3);
+    history[zoneIdx]++;
+    // Hard keeper dives to your favourite zone 60% of the time.
+    const favourite = history.indexOf(Math.max(...history));
+    const keeperGuess = diff === 'hard' && Math.random() < 0.6
+      ? favourite
+      : Math.floor(Math.random() * 3);
     const targetX = zones[zoneIdx];
     let t = 0;
     const startY = H - 30;
