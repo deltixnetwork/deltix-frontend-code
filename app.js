@@ -50,14 +50,28 @@ async function checkAppVersion() {
     const v = await api('GET', '/app/version');
     if (versionLt(APP_VERSION, v.minSupported)) {
       $('updateGate').hidden = false;
-      $('updateReloadBtn').onclick = () => location.reload(true);
+      const isNative = window.Capacitor?.isNativePlatform?.();
+      $('updateReloadBtn').onclick = () => {
+        if (isNative) {
+          // Deep-link straight to the Play listing; falls back to the web URL.
+          window.open('market://details?id=network.deltix.app', '_system');
+          setTimeout(() => window.open(v.updateUrl, '_system'), 400);
+        } else {
+          location.reload(true);
+        }
+      };
       return false;
     }
+    $('updateGate').hidden = true;
   } catch {
     /* offline or server unreachable — do not lock the user out */
   }
   return true;
 }
+// Re-check whenever the app returns to the foreground.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) checkAppVersion();
+});
 
 // ---------- UI helpers ----------
 function showScreen(id) {
