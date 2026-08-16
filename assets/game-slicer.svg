@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="scGem" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#74c0fc"/><stop offset="100%" stop-color="#1f66f2"/>
+    </linearGradient>
+    <linearGradient id="scGem2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8ce99a"/><stop offset="100%" stop-color="#2f9e44"/>
+    </linearGradient>
+  </defs>
+  <!-- Deltix Slicer — gems mid-air split by a glowing slash -->
+  <path d="M34 22 L52 38 L34 58 L18 38 Z" fill="url(#scGem)" stroke="#e7f5ff" stroke-width="2"/>
+  <path d="M18 38 L52 38 M34 22 L34 58" stroke="#ffffff" stroke-width="1.5" opacity=".6"/>
+  <path d="M70 46 L84 58 L72 74 Z" fill="url(#scGem2)" stroke="#ebfbee" stroke-width="2"/>
+  <path d="M64 50 L54 62 L62 74 Z" fill="url(#scGem2)" stroke="#ebfbee" stroke-width="2" transform="rotate(-12 60 62)"/>
+  <line x1="14" y1="82" x2="88" y2="22" stroke="#ffe066" stroke-width="4" stroke-linecap="round"/>
+  <line x1="14" y1="82" x2="88" y2="22" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round"/>
+</svg>

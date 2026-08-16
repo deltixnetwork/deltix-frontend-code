@@ -13,7 +13,7 @@ const gel = (id) => document.getElementById(id);
 const ARCADE_ICONS = {
   tictactoe: '◍', memory: '❖', snake: '➰', merge: '⬚', sudoku: '▦',
   minehunt: '☄', slide: '⇄', reversi: '◐', recall: '◌', reaction: '⚡',
-  ludo: '⛃', chess: '♞', threecard: '🂡', carom: '⬤', slicer: '🍉', soccer: '⚽', racing: '🏎',
+  ludo: '⛃', chess: '♞', threecard: 'Δ', carom: '⬤', slicer: '◈', soccer: '◎', racing: '»',
 };
 
 const ARCADE_3D_IMAGES = {
@@ -23,17 +23,17 @@ const ARCADE_3D_IMAGES = {
   merge: 'assets/game-2048.svg',
   sudoku: 'assets/game-sudoku.svg',
   minehunt: 'assets/game-minehunt.svg',
-  slide: 'assets/dapp-dao.svg',
-  reversi: 'assets/chips-stack.svg',
-  recall: 'assets/dapp-swap.svg',
+  slide: 'assets/game-slide.svg',
+  reversi: 'assets/game-reversi.svg',
+  recall: 'assets/game-recall.svg',
   reaction: 'assets/icon-rewards-trophy.svg',
-  ludo: 'assets/chips-stack.svg',
-  chess: 'assets/shield-purple.svg',
-  threecard: 'assets/dapp-nfts.svg',
-  carom: 'assets/chips-stack.svg',
-  slicer: 'assets/icon-liquid-drop.svg',
-  soccer: 'assets/nav-dbrowser.svg',
-  racing: 'assets/nav-arcade.svg',
+  ludo: 'assets/game-ludo.svg',
+  chess: 'assets/game-chess.svg',
+  threecard: 'assets/game-cards.svg',
+  carom: 'assets/game-carom.svg',
+  slicer: 'assets/game-slicer.svg',
+  soccer: 'assets/game-soccer.svg',
+  racing: 'assets/game-racing.svg',
 };
 
 const arcadeState = { games: [], sessionId: null, currentGame: null, difficulty: 'easy', cleanup: null };
@@ -235,6 +235,15 @@ function shuffleArr(a) {
   }
   return a;
 }
+/** Human-like AI: variable "thinking" pause so opponents never reply instantly. */
+function humanPause(min = 450, max = 1200) {
+  return new Promise((r) => setTimeout(r, min + Math.random() * (max - min)));
+}
+/** A casual, human-sounding "thinking" status line for a named opponent. */
+function aiThinkLine(name) {
+  const lines = ['is thinking…', 'is studying the board…', 'takes a moment…', 'is planning a move…', 'hmm… deciding…'];
+  return `${name} ${lines[Math.floor(Math.random() * lines.length)]}`;
+}
 function makeGrid(mount, cols, cls) {
   const g = document.createElement('div');
   g.className = 'board ' + cls;
@@ -310,7 +319,8 @@ GAME_IMPL.tictactoe = (mount, diff, finish, status) => {
     grid.appendChild(c);
     cells.push(c);
   }
-  status('You are ◆ — take the board!');
+  let aiBusy = false;
+  status('You are ◆, Maya plays ○ — take the board!');
   function render() {
     board.forEach((v, i) => {
       cells[i].textContent = v === 'X' ? '◆' : v === 'O' ? '○' : '';
@@ -320,20 +330,28 @@ GAME_IMPL.tictactoe = (mount, diff, finish, status) => {
   function end(w) {
     over = true;
     if (w === 'X') finish(true, 1);
-    else { status(w === 'draw' ? 'Draw — no reward. Play again!' : 'The AI wins this one.'); finish(false, 0); }
+    else { status(w === 'draw' ? 'Draw — no reward. Play again!' : 'Maya takes this one!'); finish(false, 0); }
   }
   function play(i) {
-    if (over || board[i]) return;
+    if (over || board[i] || aiBusy) return;
     board[i] = 'X';
     render();
     let w = winner(board);
     if (w) return end(w);
-    const empty = board.map((v, j) => (v ? null : j)).filter((v) => v !== null);
-    const move = diff === 'hard' ? minimax(board.slice(), 'O').move : empty[Math.floor(Math.random() * empty.length)];
-    board[move] = 'O';
-    render();
-    w = winner(board);
-    if (w) end(w);
+    aiBusy = true;
+    status(aiThinkLine('Maya'));
+    setTimeout(() => {
+      const empty = board.map((v, j) => (v ? null : j)).filter((v) => v !== null);
+      // Maya plays near-perfect on both modes — on easy she slips like a human once in a while.
+      const slip = diff !== 'hard' && Math.random() < 0.18;
+      const move = slip ? empty[Math.floor(Math.random() * empty.length)] : minimax(board.slice(), 'O').move;
+      board[move] = 'O';
+      render();
+      aiBusy = false;
+      const w2 = winner(board);
+      if (w2) end(w2);
+      else status('Your move — you are ◆');
+    }, 450 + Math.random() * 850);
   }
   return () => {};
 };
@@ -341,11 +359,12 @@ GAME_IMPL.tictactoe = (mount, diff, finish, status) => {
 // ---- 2. Memory Match ----
 GAME_IMPL.memory = (mount, diff, finish, status) => {
   const glyphs = ['◆','●','▲','■','★','✚','☾','⬟','✿','⬢'];
-  const pairs = diff === 'hard' ? 10 : 6;
+  const pairs = diff === 'hard' ? 10 : 8;
+  const moveLimit = diff === 'hard' ? 26 : 20;
   const deck = shuffleArr(glyphs.slice(0, pairs).flatMap((g) => [g, g]));
   const grid = makeGrid(mount, 4, 'memory');
   let open = [], matched = 0, moves = 0, lock = false;
-  status('Find all the pairs.');
+  status(`Find all ${pairs} pairs within ${moveLimit} moves.`);
   deck.forEach((glyph, i) => {
     const c = document.createElement('button');
     c.className = 'cell face-down';
@@ -363,14 +382,17 @@ GAME_IMPL.memory = (mount, diff, finish, status) => {
           els[b].classList.add('done');
           matched++;
           open = [];
-          status(`${matched}/${pairs} pairs · ${moves} moves`);
-          if (matched === pairs) finish(true, moves);
+          status(`${matched}/${pairs} pairs · ${moveLimit - moves} moves left`);
+          if (matched === pairs) return finish(true, moves);
+          if (moves >= moveLimit) return finish(false, moves);
         } else {
           lock = true;
           setTimeout(() => {
             els[a].textContent = ''; els[b].textContent = '';
             els[a].classList.add('face-down'); els[b].classList.add('face-down');
             open = []; lock = false;
+            if (moves >= moveLimit) return finish(false, moves);
+            status(`${matched}/${pairs} pairs · ${moveLimit - moves} moves left`);
           }, 700);
         }
       }
@@ -382,7 +404,7 @@ GAME_IMPL.memory = (mount, diff, finish, status) => {
 
 // ---- 3. Delta Snake ----
 GAME_IMPL.snake = (mount, diff, finish, status) => {
-  const N = 15, target = diff === 'hard' ? 12 : 5, speed = diff === 'hard' ? 110 : 190;
+  const N = 15, target = diff === 'hard' ? 14 : 8, speed = diff === 'hard' ? 100 : 150;
   const cv = document.createElement('canvas');
   cv.width = cv.height = 300;
   cv.className = 'game-canvas';
@@ -436,7 +458,7 @@ GAME_IMPL.snake = (mount, diff, finish, status) => {
 
 // ---- 4. Merge 2048 (slide & merge) ----
 GAME_IMPL.merge = (mount, diff, finish, status) => {
-  const target = diff === 'hard' ? 1024 : 256;
+  const target = diff === 'hard' ? 1024 : 512;
   let grid = Array.from({ length: 4 }, () => Array(4).fill(0));
   let score = 0, over = false;
   const board = makeGrid(mount, 4, 'merge');
@@ -511,7 +533,7 @@ GAME_IMPL.sudoku = (mount, diff, finish, status) => {
   const cols = seq().flatMap((b) => seq().map((c) => b * 3 + c));
   const pattern = (r, c) => (3 * (r % 3) + Math.floor(r / 3) + c) % 9;
   const solved = rows.map((r) => cols.map((c) => digits[pattern(r, c)]));
-  const blanks = diff === 'hard' ? 48 : 34;
+  const blanks = diff === 'hard' ? 52 : 42;
   const puzzle = solved.map((row) => row.slice());
   shuffleArr(Array.from({ length: 81 }, (_, i) => i)).slice(0, blanks)
     .forEach((i) => (puzzle[Math.floor(i / 9)][i % 9] = 0));
@@ -579,7 +601,7 @@ GAME_IMPL.sudoku = (mount, diff, finish, status) => {
 // ---- 6. Mine Hunt ----
 GAME_IMPL.minehunt = (mount, diff, finish, status) => {
   const N = diff === 'hard' ? 10 : 8;
-  const mines = diff === 'hard' ? 18 : 9;
+  const mines = diff === 'hard' ? 22 : 12;
   const board = makeGrid(mount, N, 'mines');
   const isMine = new Set(shuffleArr(Array.from({ length: N * N }, (_, i) => i)).slice(0, mines));
   const revealed = new Set(), flagged = new Set();
@@ -641,11 +663,11 @@ GAME_IMPL.minehunt = (mount, diff, finish, status) => {
 
 // ---- 7. Slide Puzzle (15-puzzle) ----
 GAME_IMPL.slide = (mount, diff, finish, status) => {
-  const N = diff === 'hard' ? 4 : 3;
+  const N = diff === 'hard' ? 5 : 4;
   let tiles = Array.from({ length: N * N }, (_, i) => (i + 1) % (N * N)); // 0 = blank
   // Shuffle with random valid moves so the puzzle is always solvable.
   let blank = N * N - 1;
-  for (let k = 0; k < N * N * 60; k++) {
+  for (let k = 0; k < N * N * 80; k++) {
     const r = Math.floor(blank / N), c = blank % N;
     const opts = [];
     if (r > 0) opts.push(blank - N);
@@ -726,7 +748,7 @@ GAME_IMPL.reversi = (mount, diff, finish, status) => {
       cells[i].classList.toggle('hint', Boolean(hints && hints.includes(i)));
     });
     const you = b.filter((v) => v === 1).length, ai = b.filter((v) => v === 2).length;
-    status(`You ${you} · AI ${ai}`);
+    status(`You ${you} · Victor ${ai}`);
   }
   function gameEnd() {
     const you = b.filter((v) => v === 1).length, ai = b.filter((v) => v === 2).length;
@@ -739,24 +761,27 @@ GAME_IMPL.reversi = (mount, diff, finish, status) => {
       render(movesFor(b, 1));
       return; // AI passes
     }
-    let pick;
-    if (diff === 'hard') {
-      // Position + flips, minus the mobility the move hands to the player.
-      const scoreMove = (i) => {
-        const f = flips(b, i, 2);
-        const sim = b.slice();
-        sim[i] = 2; f.forEach((j) => (sim[j] = 2));
-        return W[i] + 2 * f.length - 3 * movesFor(sim, 1).length;
-      };
-      pick = opts.reduce((best, i) => (scoreMove(i) > scoreMove(best) ? i : best), opts[0]);
-    } else pick = opts[Math.floor(Math.random() * opts.length)];
+    // Both modes play positionally like a person — easy occasionally settles
+    // for a second-best move (a very human slip), hard is ruthless.
+    const scoreMove = (i) => {
+      const f = flips(b, i, 2);
+      const sim = b.slice();
+      sim[i] = 2; f.forEach((j) => (sim[j] = 2));
+      return W[i] + 2 * f.length - 3 * movesFor(sim, 1).length;
+    };
+    const ranked = opts.slice().sort((x, y) => scoreMove(y) - scoreMove(x));
+    let pick = ranked[0];
+    if (diff !== 'hard' && ranked.length > 1 && Math.random() < 0.3) {
+      pick = ranked[1 + Math.floor(Math.random() * Math.min(2, ranked.length - 1))];
+    }
     const f = flips(b, pick, 2);
     b[pick] = 2; f.forEach((j) => (b[j] = 2));
     const yours = movesFor(b, 1);
     render(yours);
     if (!yours.length) {
       if (!movesFor(b, 2).length) return gameEnd();
-      setTimeout(aiTurn, 600); // you pass
+      status('No move for you — Victor plays again…');
+      setTimeout(aiTurn, 700 + Math.random() * 600); // you pass
     }
   }
   function play(i) {
@@ -764,7 +789,8 @@ GAME_IMPL.reversi = (mount, diff, finish, status) => {
     if (!f.length) return;
     b[i] = 1; f.forEach((j) => (b[j] = 1));
     render();
-    setTimeout(aiTurn, 400);
+    status(aiThinkLine('Victor'));
+    setTimeout(aiTurn, 500 + Math.random() * 800);
   }
   render(movesFor(b, 1));
   return () => {};
@@ -772,8 +798,8 @@ GAME_IMPL.reversi = (mount, diff, finish, status) => {
 
 // ---- 9. Pattern Recall ----
 GAME_IMPL.recall = (mount, diff, finish, status) => {
-  const target = diff === 'hard' ? 10 : 6;
-  const speed = diff === 'hard' ? 350 : 600;
+  const target = diff === 'hard' ? 12 : 8;
+  const speed = diff === 'hard' ? 320 : 500;
   const pads = ['#1f66f2', '#16a34a', '#f59e0b', '#dc2626'];
   const grid = makeGrid(mount, 2, 'recall');
   const els = pads.map((color, i) => {
@@ -820,7 +846,7 @@ GAME_IMPL.recall = (mount, diff, finish, status) => {
 // ---- 10. Reaction Rush ----
 GAME_IMPL.reaction = (mount, diff, finish, status) => {
   const N = diff === 'hard' ? 4 : 3;
-  const goal = diff === 'hard' ? 25 : 15;
+  const goal = diff === 'hard' ? 28 : 20;
   const grid = makeGrid(mount, N, 'reaction');
   const cells = [];
   for (let i = 0; i < N * N; i++) {
@@ -885,7 +911,7 @@ GAME_IMPL.ludo = (mount, diff, finish, status) => {
   const SAFE = new Set([0, 14, 28, 42, 6, 12, 19, 26, 33, 40, 47, 54]);
   const CENTER = [7, 7];
   const players = 4;
-  const target = diff === 'hard' ? 4 : 2; // tokens that must reach home to win
+  const target = diff === 'hard' ? 4 : 3; // tokens that must reach home to win
   const colors = ['#16a34a', '#f59e0b', '#1f66f2', '#dc2626'];
   const names = ['You', 'Sunny', 'Aqua', 'Ruby'];
   // token position: -1 = base, 1..55 = ring step, 56..61 = home column cell, 62 = finished
@@ -1051,17 +1077,19 @@ GAME_IMPL.ludo = (mount, diff, finish, status) => {
     const opts = movable(turn, roll);
     if (opts.length) {
       status(`${names[turn]} rolled ${roll} — thinking…`);
-      await new Promise((r) => setTimeout(r, 500));
-      // Hard AI actually knows the rules: prefer a capture, then getting a
-      // token home, then a safe square, then the most advanced token.
+      await new Promise((r) => setTimeout(r, 450 + Math.random() * 750));
+      // The AI players know the rules: prefer a capture, then getting a token
+      // home, then a safe square, then the most advanced token. On easy they
+      // occasionally play a casual (suboptimal) move, like a relaxed human.
       const capture = opts.find((i) => wouldCapture(turn, i, roll));
       const finisher = opts.find((i) => (tokens[turn][i] === -1 ? 1 : tokens[turn][i] + roll) === 62);
       const safeLanding = opts.find((i) => {
         const next = tokens[turn][i] === -1 ? 1 : tokens[turn][i] + roll;
         return next >= 1 && next <= 55 && SAFE.has((START[turn] + next - 1) % 56);
       });
-      const pick = diff === 'hard'
-        ? capture ?? finisher ?? safeLanding ?? opts.reduce((best, i) => (tokens[turn][i] > tokens[turn][best] ? i : best), opts[0])
+      const smart = capture ?? finisher ?? safeLanding ?? opts.reduce((best, i) => (tokens[turn][i] > tokens[turn][best] ? i : best), opts[0]);
+      const pick = diff === 'hard' || Math.random() < 0.7
+        ? smart
         : opts[Math.floor(Math.random() * opts.length)];
       const captured = moveToken(turn, pick, roll);
       render();
@@ -1265,7 +1293,21 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
         }
       }
     } else {
-      pick = moves[Math.floor(Math.random() * moves.length)];
+      // Easy: greedy 1-ply like a club player — grabs material, avoids hanging
+      // the moved piece, but slips into a second-choice move now and then.
+      const scored = moves.map((m) => {
+        const b1 = apply(board, m);
+        let s = -evalBoard(b1); // higher = better for black
+        const movedVal = VAL[(board[m.from[0]][m.from[1]] || 'p').toUpperCase()];
+        const recapture = allMoves(true, b1).some(({ to }) => to[0] === m.to[0] && to[1] === m.to[1]);
+        if (recapture) s -= movedVal * 0.8;
+        if (inCheck(b1, true)) s += 0.5; // likes giving check
+        return { m, s };
+      }).sort((a, z) => z.s - a.s);
+      const slip = Math.random() < 0.2 && scored.length > 1
+        ? 1 + Math.floor(Math.random() * Math.min(3, scored.length - 1))
+        : 0;
+      pick = scored[slip].m;
     }
     board = apply(board, pick);
     render();
@@ -1274,7 +1316,7 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
     const end = gameEndFor(true);
     if (end) {
       over = true;
-      status(end === 'checkmate' ? 'Checkmate — Deltix AI wins.' : 'Stalemate — a draw.');
+      status(end === 'checkmate' ? 'Checkmate — Elena wins.' : 'Stalemate — a draw.');
       return finish(false, 1);
     }
     status(inCheck(board, true) ? 'Check! Your move (white)' : 'Your move (white)');
@@ -1296,8 +1338,8 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
           status(end === 'checkmate' ? 'Checkmate — you win! ♔' : 'Stalemate — a draw.');
           return finish(end === 'checkmate', 1);
         }
-        status(inCheck(board, false) ? 'Check! Deltix AI is thinking…' : 'Deltix AI is thinking…');
-        setTimeout(aiMove, 350);
+        status(inCheck(board, false) ? `Check! ${aiThinkLine('Elena')}` : aiThinkLine('Elena'));
+        setTimeout(aiMove, 500 + Math.random() * 900);
         return;
       }
       sel = isWhite(piece) ? [r, c] : null;
@@ -1306,17 +1348,18 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
     }
     if (isWhite(piece)) { sel = [r, c]; render(); }
   }
-  status('You are White — tap a piece, then a destination.');
+  status('You are White vs Elena — tap a piece, then a destination.');
   render();
   return () => {};
 };
 
-// ---- 13. Three Card Draw (best-hand comparison, no wagering) ----
+// ---- 13. Delta Card Draw (Deltix original suits — best hand, no wagering) ----
 GAME_IMPL.threecard = (mount, diff, finish, status) => {
-  const rounds = diff === 'hard' ? 5 : 3;
-  const winsNeeded = Math.ceil(rounds / 2) + (rounds % 2 === 0 ? 1 : 0) > rounds ? rounds : Math.ceil((rounds + 1) / 2);
+  const rounds = diff === 'hard' ? 7 : 5;
   const RANKS = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
-  const SUITS = ['♠','♥','♦','♣'];
+  // Deltix original suits: Delta Δ, Gem ◆, Node ●, Peak ▲ — no third-party card faces.
+  const SUITS = ['Δ','◆','●','▲'];
+  const RED = new Set(['◆','▲']);
   let wins = 0, losses = 0, round = 0;
   const table = document.createElement('div');
   table.className = 'card-table';
@@ -1356,9 +1399,11 @@ GAME_IMPL.threecard = (mount, diff, finish, status) => {
   }
   function renderHands(you, ai, reveal) {
     const fmtHand = (hand, hide) =>
-      hand.map((c) => `<span class="pcard ${!hide && (c.s === '♥' || c.s === '♦') ? 'red' : ''}">${hide ? '🂠' : c.r + c.s}</span>`).join('');
+      hand.map((c) => hide
+        ? '<span class="pcard back">Δ</span>'
+        : `<span class="pcard ${RED.has(c.s) ? 'red' : ''}">${c.r}<i class="suit">${c.s}</i></span>`).join('');
     table.innerHTML = `
-      <div class="hand-row"><div class="hand-label">Dealer</div><div class="hand">${fmtHand(ai, !reveal)}</div></div>
+      <div class="hand-row"><div class="hand-label">Dealer Rio</div><div class="hand">${fmtHand(ai, !reveal)}</div></div>
       <div class="hand-row"><div class="hand-label">You</div><div class="hand">${fmtHand(you, false)}</div></div>`;
   }
   dealBtn.addEventListener('click', () => {
@@ -1373,7 +1418,7 @@ GAME_IMPL.threecard = (mount, diff, finish, status) => {
       const cmp = compare(you_s, ai_s);
       if (cmp > 0) wins++;
       else if (cmp < 0) losses++;
-      status(`${cmp > 0 ? 'You win the round!' : cmp < 0 ? 'Dealer wins the round.' : 'Push.'} · You ${wins} – Dealer ${losses}`);
+      status(`${cmp > 0 ? 'You win the round!' : cmp < 0 ? 'Rio wins the round.' : 'Push.'} · You ${wins} – Rio ${losses}`);
       if (round >= rounds) {
         setTimeout(() => finish(wins > losses, wins), 900);
       } else {
@@ -1382,7 +1427,7 @@ GAME_IMPL.threecard = (mount, diff, finish, status) => {
       }
     }, 900);
   });
-  status(`Best of ${rounds} hands vs the dealer — no wagering, just skill & luck.`);
+  status(`Best of ${rounds} hands vs Dealer Rio — Deltix suits Δ ◆ ● ▲, no wagering.`);
   return () => {};
 };
 
@@ -1396,7 +1441,8 @@ GAME_IMPL.carom = (mount, diff, finish, status) => {
   const ctx = cv.getContext('2d');
   const pocketR = 16;
   const pockets = [[0,0],[W/2,0],[W,0],[0,H],[W/2,H],[W,H]];
-  const target = diff === 'hard' ? 6 : 3;
+  const target = diff === 'hard' ? 7 : 4;
+  const maxShots = diff === 'hard' ? 14 : 10;
   let pucks = [];
   for (let i = 0; i < 8; i++) {
     const ang = (i / 8) * Math.PI * 2;
@@ -1453,9 +1499,10 @@ GAME_IMPL.carom = (mount, diff, finish, status) => {
     moving = anyMoving;
     if (moving) raf = requestAnimationFrame(loop);
     else {
-      status(`Potted ${potted}/${target} · shots ${shots}`);
+      status(`Potted ${potted}/${target} · shot ${shots}/${maxShots}`);
       if (potted >= target) return finish(true, shots);
       if (striker.out) return finish(false, shots);
+      if (shots >= maxShots) return finish(false, shots);
     }
   }
   cv.addEventListener('pointerdown', (e) => {
@@ -1480,12 +1527,12 @@ GAME_IMPL.carom = (mount, diff, finish, status) => {
     shots++;
     loop();
   });
-  status(`Drag from the blue striker to aim, release to flick · pot ${target} to win`);
+  status(`Drag from the blue striker to aim, release to flick · pot ${target} in ${maxShots} shots`);
   draw();
   return () => cancelAnimationFrame(raf);
 };
 
-// ---- 15. Delta Slicer (swipe-to-slice, dodge bombs) ----
+// ---- 15. Delta Slicer (swipe-to-slice Deltix gems, dodge dark orbs) ----
 GAME_IMPL.slicer = (mount, diff, finish, status) => {
   const W = 300, H = 380;
   const cv = document.createElement('canvas');
@@ -1493,25 +1540,63 @@ GAME_IMPL.slicer = (mount, diff, finish, status) => {
   cv.className = 'game-canvas';
   mount.appendChild(cv);
   const ctx = cv.getContext('2d');
-  const target = diff === 'hard' ? 25 : 15;
-  const spawnMs = diff === 'hard' ? 550 : 800;
-  const glyphs = ['🍉','🍊','🍇','🍓','🍎'];
+  const target = diff === 'hard' ? 28 : 18;
+  const spawnMs = diff === 'hard' ? 500 : 680;
+  const missLimit = diff === 'hard' ? 5 : 6;
+  // Deltix original gems — drawn in brand colours, no third-party art.
+  const GEMS = ['#1f66f2', '#16a34a', '#f59e0b', '#dc2626', '#8b5cf6'];
   let items = [], score = 0, misses = 0, over = false, trail = [];
   function spawn() {
     if (over) return;
-    const isBomb = Math.random() < 0.15;
+    const isBomb = Math.random() < 0.18;
     items.push({
       x: 30 + Math.random() * (W - 60), y: H + 20,
       vy: -(6 + Math.random() * 2.5), vx: (Math.random() - 0.5) * 2,
-      g: 0.14, bomb: isBomb, glyph: isBomb ? '💣' : glyphs[Math.floor(Math.random() * glyphs.length)],
+      g: 0.14, bomb: isBomb, color: GEMS[Math.floor(Math.random() * GEMS.length)],
+      rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.1,
       sliced: false, r: 16,
     });
     setTimeout(spawn, spawnMs);
   }
+  function drawGem(x, y, r, color, rot) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(r * 0.85, -r * 0.15);
+    ctx.lineTo(0, r);
+    ctx.lineTo(-r * 0.85, -r * 0.15);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.8)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.beginPath(); // facet lines
+    ctx.moveTo(-r * 0.85, -r * 0.15); ctx.lineTo(r * 0.85, -r * 0.15);
+    ctx.moveTo(0, -r); ctx.lineTo(0, r);
+    ctx.strokeStyle = 'rgba(255,255,255,.45)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  }
+  function drawOrb(x, y, r) {
+    ctx.beginPath(); ctx.arc(x, y, r * 0.8, 0, 7);
+    ctx.fillStyle = '#0f172a'; ctx.fill();
+    ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.beginPath(); // warning cross
+    ctx.moveTo(x - r * 0.35, y - r * 0.35); ctx.lineTo(x + r * 0.35, y + r * 0.35);
+    ctx.moveTo(x + r * 0.35, y - r * 0.35); ctx.lineTo(x - r * 0.35, y + r * 0.35);
+    ctx.strokeStyle = '#f87171'; ctx.lineWidth = 2.5; ctx.stroke();
+  }
   function draw() {
     ctx.fillStyle = '#eef3ff'; ctx.fillRect(0, 0, W, H);
-    ctx.font = '28px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    items.forEach((it) => { if (!it.sliced) ctx.fillText(it.glyph, it.x, it.y); });
+    items.forEach((it) => {
+      if (it.sliced) return;
+      if (it.bomb) drawOrb(it.x, it.y, it.r);
+      else drawGem(it.x, it.y, it.r, it.color, it.rot);
+    });
     if (trail.length > 1) {
       ctx.strokeStyle = 'rgba(31,102,242,.6)'; ctx.lineWidth = 4; ctx.beginPath();
       ctx.moveTo(trail[0].x, trail[0].y);
@@ -1521,15 +1606,15 @@ GAME_IMPL.slicer = (mount, diff, finish, status) => {
   }
   let raf;
   function loop() {
-    items.forEach((it) => { it.vy += it.g; it.x += it.vx; it.y += it.vy; });
+    items.forEach((it) => { it.vy += it.g; it.x += it.vx; it.y += it.vy; it.rot += it.vr; });
     items = items.filter((it) => {
       if (it.y < -30 && !it.sliced && !it.bomb) { misses++; return false; }
       return it.y < H + 40;
     });
     draw();
-    status(`${score}/${target} sliced · ${misses} missed`);
+    status(`${score}/${target} gems sliced · ${misses}/${missLimit} missed`);
     if (score >= target) { over = true; return finish(true, score); }
-    if (misses >= 8) { over = true; return finish(false, score); }
+    if (misses >= missLimit) { over = true; return finish(false, score); }
     raf = requestAnimationFrame(loop);
   }
   function pointAt(e) {
@@ -1555,7 +1640,7 @@ GAME_IMPL.slicer = (mount, diff, finish, status) => {
     trySlice(pt);
   });
   cv.addEventListener('pointerup', () => (trail = []));
-  status(`Slice ${target} fruit · avoid the bombs 💣`);
+  status(`Slice ${target} Deltix gems · avoid the dark orbs`);
   spawn();
   loop();
   return () => cancelAnimationFrame(raf);
@@ -1563,7 +1648,7 @@ GAME_IMPL.slicer = (mount, diff, finish, status) => {
 
 // ---- 16. Penalty Kicks (soccer shootout) ----
 GAME_IMPL.soccer = (mount, diff, finish, status) => {
-  const rounds = diff === 'hard' ? 6 : 4;
+  const rounds = diff === 'hard' ? 6 : 5;
   const need = Math.ceil(rounds / 2) + 1;
   const W = 300, H = 220;
   const cv = document.createElement('canvas');
@@ -1592,9 +1677,9 @@ GAME_IMPL.soccer = (mount, diff, finish, status) => {
     animating = true;
     chosen = zoneIdx;
     history[zoneIdx]++;
-    // Hard keeper dives to your favourite zone 60% of the time.
+    // The keeper studies your habits — dives to your favourite zone often.
     const favourite = history.indexOf(Math.max(...history));
-    const keeperGuess = diff === 'hard' && Math.random() < 0.6
+    const keeperGuess = Math.random() < (diff === 'hard' ? 0.6 : 0.45)
       ? favourite
       : Math.floor(Math.random() * 3);
     const targetX = zones[zoneIdx];
@@ -1606,7 +1691,7 @@ GAME_IMPL.soccer = (mount, diff, finish, status) => {
       draw({ x: W / 2 + (targetX - W / 2) * t, y }, zones[keeperGuess], null);
       if (t >= 1) {
         clearInterval(anim);
-        const saved = keeperGuess === zoneIdx && Math.random() < (diff === 'hard' ? 0.55 : 0.35);
+        const saved = keeperGuess === zoneIdx && Math.random() < (diff === 'hard' ? 0.6 : 0.5);
         round++;
         if (saved) misses++; else goals++;
         draw({ x: targetX, y: 40 }, zones[keeperGuess], saved ? 'SAVED' : 'GOAL');
@@ -1645,8 +1730,8 @@ GAME_IMPL.racing = (mount, diff, finish, status) => {
   cv.className = 'game-canvas';
   mount.appendChild(cv);
   const ctx = cv.getContext('2d');
-  const target = diff === 'hard' ? 45 : 25; // seconds to survive
-  let lane = 1, obstacles = [], speed = diff === 'hard' ? 5 : 3.5, t = 0, over = false, dashOffset = 0;
+  const target = diff === 'hard' ? 50 : 35; // seconds to survive
+  let lane = 1, obstacles = [], speed = diff === 'hard' ? 5.5 : 4.2, t = 0, over = false, dashOffset = 0;
   const cleanupInput = directionInput(mount, (d) => {
     if (d === 'left') lane = Math.max(0, lane - 1);
     if (d === 'right') lane = Math.min(LANES - 1, lane + 1);

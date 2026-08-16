@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="chKnight" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f8f9fa"/><stop offset="100%" stop-color="#adb5bd"/>
+    </linearGradient>
+  </defs>
+  <!-- Deltix Chess — glossy knight on a checkered plinth -->
+  <g>
+    <rect x="18" y="78" width="64" height="12" rx="4" fill="#343a40" stroke="#dee2e6" stroke-width="2"/>
+    <rect x="26" y="80" width="8" height="8" fill="#e9ecef"/>
+    <rect x="42" y="80" width="8" height="8" fill="#e9ecef"/>
+    <rect x="58" y="80" width="8" height="8" fill="#e9ecef"/>
+    <rect x="74" y="80" width="6" height="8" fill="#e9ecef"/>
+  </g>
+  <path d="M38 78 C36 62 40 52 48 44 C42 42 38 36 40 28 C46 20 58 18 66 26 C72 32 74 42 70 52 L64 48 C66 58 66 68 64 78 Z"
+        fill="url(#chKnight)" stroke="#495057" stroke-width="2.5" stroke-linejoin="round"/>
+  <circle cx="56" cy="30" r="2.8" fill="#212529"/>
+  <path d="M46 34 Q52 36 56 41" fill="none" stroke="#868e96" stroke-width="2" stroke-linecap="round"/>
+  <path d="M50 40 L56 46 L50 52 L44 46 Z" fill="#1f66f2" opacity=".9"/>
+</svg>

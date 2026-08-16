@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="cdBack" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4dabf7"/><stop offset="100%" stop-color="#1864ab"/>
+    </linearGradient>
+  </defs>
+  <!-- Deltix Card Draw — fanned original Δ-suit cards -->
+  <rect x="16" y="26" width="36" height="52" rx="6" fill="url(#cdBack)" stroke="#a5d8ff" stroke-width="2" transform="rotate(-14 34 52)"/>
+  <path d="M28 44 L36 56 L20 56 Z" fill="#fff" opacity=".9" transform="rotate(-14 34 52)"/>
+  <rect x="34" y="22" width="36" height="52" rx="6" fill="#ffffff" stroke="#94a3b8" stroke-width="2" transform="rotate(2 52 48)"/>
+  <text x="42" y="38" font-family="'Segoe UI',sans-serif" font-weight="900" font-size="13" fill="#e03131" transform="rotate(2 52 48)">A</text>
+  <path d="M52 44 L61 52 L52 64 L43 52 Z" fill="#e03131" transform="rotate(2 52 48)"/>
+  <rect x="52" y="28" width="36" height="52" rx="6" fill="#ffffff" stroke="#94a3b8" stroke-width="2" transform="rotate(16 70 54)"/>
+  <text x="59" y="44" font-family="'Segoe UI',sans-serif" font-weight="900" font-size="13" fill="#1f66f2" transform="rotate(16 70 54)">K</text>
+  <path d="M70 50 L78 64 L62 64 Z" fill="#1f66f2" transform="rotate(16 70 54)"/>
+</svg>

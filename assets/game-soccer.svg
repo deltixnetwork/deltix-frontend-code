@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <radialGradient id="fbBall" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#ced4da"/>
+    </radialGradient>
+  </defs>
+  <!-- Deltix Penalty Kicks — goal, keeper and a driven shot -->
+  <rect x="14" y="18" width="72" height="34" fill="none" stroke="#f8f9fa" stroke-width="4"/>
+  <path d="M14 18 L14 52 M86 18 L86 52" stroke="#f8f9fa" stroke-width="4"/>
+  <g stroke="#e9ecef" stroke-width="1" opacity=".55">
+    <line x1="14" y1="27" x2="86" y2="27"/><line x1="14" y1="36" x2="86" y2="36"/><line x1="14" y1="45" x2="86" y2="45"/>
+    <line x1="26" y1="18" x2="26" y2="52"/><line x1="38" y1="18" x2="38" y2="52"/><line x1="50" y1="18" x2="50" y2="52"/>
+    <line x1="62" y1="18" x2="62" y2="52"/><line x1="74" y1="18" x2="74" y2="52"/>
+  </g>
+  <rect x="42" y="24" width="16" height="24" rx="6" fill="#1f66f2" stroke="#a5d8ff" stroke-width="2"/>
+  <circle cx="50" cy="20" r="6" fill="#ffd8a8" stroke="#e8590c" stroke-width="1.5"/>
+  <circle cx="72" cy="70" r="12" fill="url(#fbBall)" stroke="#495057" stroke-width="2"/>
+  <path d="M72 62 L76 68 L74 74 L68 74 L66 68 Z" fill="#212529"/>
+  <line x1="46" y1="86" x2="62" y2="76" stroke="#ffe066" stroke-width="3" stroke-linecap="round" opacity=".9"/>
+</svg>

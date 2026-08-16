@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <radialGradient id="cmStriker" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#74c0fc"/><stop offset="100%" stop-color="#1864ab"/>
+    </radialGradient>
+    <radialGradient id="cmPuck" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#adb5bd"/>
+    </radialGradient>
+  </defs>
+  <!-- Deltix Carom — felt board, corner pockets, striker in motion -->
+  <rect x="12" y="12" width="76" height="76" rx="10" fill="#0f7a3d" stroke="#8ce99a" stroke-width="3"/>
+  <circle cx="18" cy="18" r="7" fill="#0b0e14"/>
+  <circle cx="82" cy="18" r="7" fill="#0b0e14"/>
+  <circle cx="18" cy="82" r="7" fill="#0b0e14"/>
+  <circle cx="82" cy="82" r="7" fill="#0b0e14"/>
+  <circle cx="44" cy="38" r="8" fill="url(#cmPuck)" stroke="#868e96" stroke-width="1.5"/>
+  <circle cx="62" cy="46" r="8" fill="url(#cmPuck)" stroke="#868e96" stroke-width="1.5"/>
+  <circle cx="50" cy="66" r="9" fill="url(#cmStriker)" stroke="#e7f5ff" stroke-width="2"/>
+  <line x1="50" y1="66" x2="46" y2="42" stroke="#ffe066" stroke-width="2.5" stroke-dasharray="4 4" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <radialGradient id="ldDice" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#ced4da"/>
+    </radialGradient>
+  </defs>
+  <!-- Deltix Ludo — plus-shaped board, tokens and a rolling die -->
+  <rect x="10" y="36" width="80" height="28" rx="6" fill="#f1f3f5" stroke="#94a3b8" stroke-width="2"/>
+  <rect x="36" y="10" width="28" height="80" rx="6" fill="#f1f3f5" stroke="#94a3b8" stroke-width="2"/>
+  <rect x="36" y="36" width="28" height="28" fill="#e7f5ff"/>
+  <path d="M50 40 L60 50 L50 60 L40 50 Z" fill="#1f66f2"/>
+  <circle cx="22" cy="50" r="8" fill="#2f9e44" stroke="#fff" stroke-width="2.5"/>
+  <circle cx="50" cy="22" r="8" fill="#fab005" stroke="#fff" stroke-width="2.5"/>
+  <circle cx="78" cy="50" r="8" fill="#1971c2" stroke="#fff" stroke-width="2.5"/>
+  <circle cx="50" cy="78" r="8" fill="#e03131" stroke="#fff" stroke-width="2.5"/>
+  <rect x="64" y="64" width="26" height="26" rx="7" fill="url(#ldDice)" stroke="#868e96" stroke-width="2" transform="rotate(-10 77 77)"/>
+  <circle cx="71" cy="72" r="2.6" fill="#212529" transform="rotate(-10 77 77)"/>
+  <circle cx="83" cy="72" r="2.6" fill="#212529" transform="rotate(-10 77 77)"/>
+  <circle cx="71" cy="83" r="2.6" fill="#212529" transform="rotate(-10 77 77)"/>
+  <circle cx="83" cy="83" r="2.6" fill="#212529" transform="rotate(-10 77 77)"/>
+</svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <radialGradient id="rvW" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#adb5bd"/>
+    </radialGradient>
+    <radialGradient id="rvB" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#495057"/><stop offset="100%" stop-color="#0b0e14"/>
+    </radialGradient>
+  </defs>
+  <!-- Deltix Reversi — green felt board with glossy flipping discs -->
+  <rect x="12" y="12" width="76" height="76" rx="10" fill="#2b8a3e" stroke="#b2f2bb" stroke-width="2.5"/>
+  <line x1="50" y1="12" x2="50" y2="88" stroke="#1e5e28" stroke-width="2"/>
+  <line x1="12" y1="50" x2="88" y2="50" stroke="#1e5e28" stroke-width="2"/>
+  <circle cx="31" cy="31" r="13" fill="url(#rvB)"/>
+  <circle cx="69" cy="31" r="13" fill="url(#rvW)"/>
+  <circle cx="31" cy="69" r="13" fill="url(#rvW)"/>
+  <ellipse cx="69" cy="69" rx="13" ry="9" fill="url(#rvB)"/>
+  <ellipse cx="69" cy="66" rx="13" ry="4" fill="url(#rvW)"/>
+</svg>
