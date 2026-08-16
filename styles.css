@@ -579,6 +579,23 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 }
 .board.ttt .cell { font-size: 30px; color: #64748b; }
 .board.ttt .cell.p1 { color: var(--accent); }
+.board.ttt .cell.p2 { color: #f59e0b; }
+.board .cell.pop { animation: cellPop .28s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes cellPop {
+  0% { transform: scale(.3); }
+  70% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+.board .cell.win {
+  background: #dcfce7;
+  box-shadow: inset 0 0 0 2.5px #16a34a;
+  animation: winGlow .9s ease infinite alternate;
+}
+@keyframes winGlow {
+  from { filter: brightness(1); }
+  to { filter: brightness(1.15); }
+}
+.ad-claim-btn { display: block; width: 100%; margin-top: 12px; }
 .board.memory .cell { font-size: 22px; color: var(--accent); }
 .board.memory .cell.face-down { background: linear-gradient(135deg, #eef3ff, #e3ebff); }
 .board.memory .cell.done { background: var(--green-bg, #e8f8ef); color: var(--green, #16a34a); border-color: transparent; }

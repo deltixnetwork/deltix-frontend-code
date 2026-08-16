@@ -136,6 +136,12 @@ async function finishGame(won, score) {
   arcadeState.sessionId = null;
   try {
     const r = await api('POST', `/arcade/session/${sessionId}/complete`, { won, score });
+    if (r.won && r.tooFast) {
+      // Fast win — reward is claimable by watching a rewarded ad.
+      setGameStatus('You won! Watch a short ad to claim your reward 🎬');
+      offerAdClaim(sessionId, won, score);
+      return; // no interstitial while a rewarded claim is pending
+    }
     if (r.won && r.reward > 0) {
       setGameStatus(`You won! +${fmt(r.reward)} $DLTX earned 🏆`);
       toast(`+${fmt(r.reward)} $DLTX game reward`);
@@ -149,6 +155,39 @@ async function finishGame(won, score) {
     setGameStatus(e.message);
   }
   maybeShowInterstitial();
+}
+
+/** Fast-win reward claim: play a rewarded ad, then settle the session. */
+function offerAdClaim(sessionId, won, score) {
+  const btn = document.createElement('button');
+  btn.className = 'btn primary ad-claim-btn';
+  btn.textContent = '▶ Watch ad · claim reward';
+  gel('gameMount').appendChild(btn);
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = 'Loading ad…';
+    try {
+      const earned = await playRewardedAd();
+      if (!earned) {
+        toast('Ad not completed — reward unclaimed.');
+        btn.disabled = false;
+        btn.textContent = '▶ Watch ad · claim reward';
+        return;
+      }
+      const r = await api('POST', `/arcade/session/${sessionId}/complete`, { won, score, adPlayed: true });
+      btn.remove();
+      if (r.won && r.reward > 0) {
+        setGameStatus(`Reward claimed! +${fmt(r.reward)} $DLTX 🏆`);
+        toast(`+${fmt(r.reward)} $DLTX game reward`);
+        Promise.all([loadWallet(), loadTx(), loadArcade()]).catch(() => {});
+      } else if (r.won && r.capped) {
+        setGameStatus('You won — but today\u2019s reward cap is reached. Come back tomorrow!');
+      }
+    } catch (e) {
+      setGameStatus(e.message);
+      btn.remove();
+    }
+  });
 }
 
 // ---------- Rewarded ad (Sustainability Fund bonus) ----------
@@ -320,38 +359,58 @@ GAME_IMPL.tictactoe = (mount, diff, finish, status) => {
     cells.push(c);
   }
   let aiBusy = false;
-  status('You are ◆, Maya plays ○ — take the board!');
-  function render() {
+  const winLine = (b) => LINES.find(([a, c, d]) => b[a] && b[a] === b[c] && b[a] === b[d]) || null;
+  function render(placed) {
     board.forEach((v, i) => {
       cells[i].textContent = v === 'X' ? '◆' : v === 'O' ? '○' : '';
       cells[i].classList.toggle('p1', v === 'X');
+      cells[i].classList.toggle('p2', v === 'O');
     });
+    if (placed != null) {
+      cells[placed].classList.remove('pop');
+      void cells[placed].offsetWidth; // restart the pop animation
+      cells[placed].classList.add('pop');
+    }
   }
   function end(w) {
     over = true;
-    if (w === 'X') finish(true, 1);
-    else { status(w === 'draw' ? 'Draw — no reward. Play again!' : 'Maya takes this one!'); finish(false, 0); }
+    const L = winLine(board);
+    if (L) L.forEach((i) => cells[i].classList.add('win'));
+    if (w === 'X') { status('You beat Maya! 🏆'); finish(true, 1); }
+    else { status(w === 'draw' ? 'Draw — Maya defends well. No reward, play again!' : 'Maya takes this one!'); finish(false, 0); }
+  }
+  function mayaMove() {
+    aiBusy = true;
+    status(aiThinkLine('Maya'));
+    setTimeout(() => {
+      if (over) return;
+      const empty = board.map((v, j) => (v ? null : j)).filter((v) => v !== null);
+      if (!empty.length) return;
+      // Maya plays near-perfect on both modes — on easy she slips like a human once in a while.
+      const slip = diff !== 'hard' && Math.random() < 0.15;
+      const move = slip ? empty[Math.floor(Math.random() * empty.length)] : minimax(board.slice(), 'O').move;
+      board[move] = 'O';
+      render(move);
+      aiBusy = false;
+      const w = winner(board);
+      if (w) end(w);
+      else status(['Your move — you are ◆', 'Maya waits… your turn.', 'Your turn — pick a square.'][Math.floor(Math.random() * 3)]);
+    }, 500 + Math.random() * 900);
   }
   function play(i) {
     if (over || board[i] || aiBusy) return;
     board[i] = 'X';
-    render();
-    let w = winner(board);
+    render(i);
+    const w = winner(board);
     if (w) return end(w);
-    aiBusy = true;
-    status(aiThinkLine('Maya'));
-    setTimeout(() => {
-      const empty = board.map((v, j) => (v ? null : j)).filter((v) => v !== null);
-      // Maya plays near-perfect on both modes — on easy she slips like a human once in a while.
-      const slip = diff !== 'hard' && Math.random() < 0.18;
-      const move = slip ? empty[Math.floor(Math.random() * empty.length)] : minimax(board.slice(), 'O').move;
-      board[move] = 'O';
-      render();
-      aiBusy = false;
-      const w2 = winner(board);
-      if (w2) end(w2);
-      else status('Your move — you are ◆');
-    }, 450 + Math.random() * 850);
+    mayaMove();
+  }
+  // Coin toss for the opening move — like a real opponent.
+  if (Math.random() < 0.5) {
+    status('Maya won the toss — she opens.');
+    mayaMove();
+  } else {
+    status('You won the toss — you are ◆, Maya plays ○.');
   }
   return () => {};
 };
