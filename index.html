@@ -18,11 +18,7 @@
         <span class="logo">◆</span> Deltix
       </div>
       <div class="topbar-right">
-        <div class="streak-badge" title="Active Validator Score">
-          <span class="streak-icon">↻</span>
-          <span class="streak-num">99</span>
-        </div>
-        <button class="icon-btn" id="logoutBtn" title="Sign out">⎋</button>
+        <button class="logout-btn" id="logoutBtn" title="Sign out of your account">Sign out</button>
       </div>
     </header>
 
@@ -34,6 +30,8 @@
         <p class="tagline">Mobile-first Proof of Stake. Stake, delegate &amp; govern — no mining rigs.</p>
       </div>
       <div class="card">
+        <h3 class="auth-title">Sign in or Sign up</h3>
+        <p class="muted small-note auth-sub">Enter your email — we’ll send a one-time code. New here? Your account and wallet are created automatically.</p>
         <label for="emailInput">Email address</label>
         <input id="emailInput" type="email" inputmode="email" placeholder="you@example.com" autocomplete="email" />
         <label for="refCodeInput">Referral code (optional)</label>
@@ -147,35 +145,35 @@
           </div>
         </div>
         <div class="dapp-grid" id="dappGrid">
-          <div class="dapp dapp-swap" data-url="https://app.uniswap.org" data-name="Swap (DEX)">
+          <div class="dapp dapp-swap" data-url="https://a-network.net/dex" data-name="A-Network DEX" data-direct="1">
             <img src="assets/dapp-swap.svg" class="dapp-3d-icon" alt="Swap" />
             <div class="dapp-title">Swap</div>
-            <div class="dapp-desc">Trade tokens instantly</div>
+            <div class="dapp-desc">Trade on the A-Network DEX</div>
           </div>
-          <div class="dapp dapp-nfts" data-url="https://opensea.io" data-name="NFT Marketplace">
+          <div class="dapp dapp-nfts" data-page="nfts" data-name="Deltix Collectibles">
             <img src="assets/dapp-nfts.svg" class="dapp-3d-icon" alt="NFTs" />
             <div class="dapp-title">NFTs</div>
-            <div class="dapp-desc">Discover, collect and trade</div>
+            <div class="dapp-desc">Your Deltix collectible badges</div>
           </div>
-          <div class="dapp dapp-defi" data-url="https://aave.com" data-name="DeFi Lending">
+          <div class="dapp dapp-defi" data-page="defi" data-name="Deltix DeFi Hub">
             <img src="assets/dapp-defi.svg" class="dapp-3d-icon" alt="DeFi" />
             <div class="dapp-title">DeFi</div>
-            <div class="dapp-desc">Explore DeFi protocols</div>
+            <div class="dapp-desc">Stake, earn &amp; burn on-chain</div>
           </div>
-          <div class="dapp dapp-dao" data-url="https://snapshot.org" data-name="DAO Governance">
+          <div class="dapp dapp-dao" data-page="dao" data-name="Deltix DAO">
             <img src="assets/dapp-dao.svg" class="dapp-3d-icon" alt="DAO" />
             <div class="dapp-title">DAO</div>
-            <div class="dapp-desc">Join and govern communities</div>
+            <div class="dapp-desc">Govern in the Community tab</div>
           </div>
-          <div class="dapp dapp-explorer" data-url="https://etherscan.io" data-name="Block Explorer">
+          <div class="dapp dapp-explorer" data-page="explorer" data-name="Deltix Explorer">
             <img src="assets/dapp-explorer.svg" class="dapp-3d-icon" alt="Explorer" />
             <div class="dapp-title">Explorer</div>
-            <div class="dapp-desc">View blockchain data &amp; stats</div>
+            <div class="dapp-desc">Live Deltix chain data</div>
           </div>
-          <div class="dapp dapp-storage" data-url="https://web3.storage" data-name="Decentralized Storage">
+          <div class="dapp dapp-storage" data-page="storage" data-name="D-Vault">
             <img src="assets/dapp-storage.svg" class="dapp-3d-icon" alt="Storage" />
-            <div class="dapp-title">Storage</div>
-            <div class="dapp-desc">Decentralized file storage</div>
+            <div class="dapp-title">D-Vault</div>
+            <div class="dapp-desc">Back up your account data</div>
           </div>
         </div>
         <div class="ad-slot ad-slot-sustainability">
@@ -282,7 +280,7 @@
           <div class="showcase-title">Deltix Community &amp; DAO</div>
           <div class="showcase-sub">Vote on live DAO proposals, manage your 3 referral slots, and grow your ambassador tier.</div>
         </div>
-        <h3 class="section-title">Deltix DAO <span class="pill live">Live</span></h3>
+        <h3 class="section-title">Deltix DAO <span class="pill live" id="daoPill">Live</span></h3>
         <div class="feature-card">
           <div class="name">Community governance, from day one</div>
           <div class="meta" id="daoMeta">The DAO decides protocol changes by stake-weighted vote —
@@ -291,6 +289,7 @@
         </div>
         <div id="daoList"><p class="muted center">Loading proposals…</p></div>
 
+        <div id="proposeSection">
         <h3 class="section-title">Submit a proposal</h3>
         <div class="card">
           <label for="propTitle">Title</label>
@@ -299,6 +298,7 @@
           <textarea id="propDesc" rows="4" maxlength="2000" placeholder="What should change, and why? The DAO votes for 7 days."></textarea>
           <button class="btn primary" id="proposeBtn">Submit to the DAO</button>
           <p class="hint" id="propHint"></p>
+        </div>
         </div>
 
         <h3 class="section-title">Ambassador program</h3>
@@ -502,8 +502,7 @@
   </div>
 
   <!-- In-app Deltix Explorer -->
-  <div class="dbrowser" id="explorer" hidden>
-    <div class="db-bar">
+  <div class="dbrowser" id="explorer" hidden>    <div class="db-bar">
       <button class="db-btn" id="expBack">‹ Back</button>
       <div class="db-info">
         <b>◆ Deltix Explorer</b>
@@ -516,6 +515,19 @@
       <button class="mini-btn" id="expSearchBtn">Search</button>
     </div>
     <div class="exp-body" id="expBody"></div>
+  </div>
+
+  <!-- In-app native dApp pages (Collectibles, DeFi Hub, D-Vault) -->
+  <div class="dbrowser" id="dappPage" hidden>
+    <div class="db-bar">
+      <button class="db-btn" id="dappPageBack">‹ Back</button>
+      <div class="db-info">
+        <b id="dappPageTitle">Deltix dApp</b>
+        <span class="db-host">🔒 built into Deltix</span>
+      </div>
+      <button class="db-btn" id="dappPageClose">✕</button>
+    </div>
+    <div class="exp-body" id="dappPageBody"></div>
   </div>
 
   <div class="toast" id="toast" hidden></div>

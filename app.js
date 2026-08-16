@@ -524,14 +524,32 @@ function escapeHtml(s) {
 async function loadGovernance() {
   try {
     const g = await api('GET', '/governance');
-    $('daoMeta').textContent =
-      `The DAO decides protocol changes by stake-weighted vote — 1 staked $DLTX = 1 vote. ` +
-      `Your voting power: ${fmt(g.votingPower)} $DLTX. ` +
-      `Proposing requires ${fmt(g.dao.minStakeToPropose)}+ $DLTX staked · voting period ${g.dao.votingPeriodDays} days · quorum ${fmt(g.dao.quorumVotes)} voted stake.`;
+    const paused = !!g.dao.votingPaused;
+    const pill = $('daoPill');
+    if (pill) {
+      pill.textContent = paused ? 'Paused' : 'Live';
+      pill.classList.toggle('paused', paused);
+    }
+    const proposeSection = $('proposeSection');
+    if (proposeSection) proposeSection.hidden = paused;
+
+    if (paused) {
+      $('daoMeta').textContent =
+        'DAO voting is temporarily closed by the protocol steward while governance is being upgraded. ' +
+        'All tallies are reset to zero and will reopen with the next governance cycle. ' +
+        'Your staked $DLTX still counts — 1 staked $DLTX = 1 vote when voting resumes.';
+    } else {
+      $('daoMeta').textContent =
+        `The DAO decides protocol changes by stake-weighted vote — 1 staked $DLTX = 1 vote. ` +
+        `Your voting power: ${fmt(g.votingPower)} $DLTX. ` +
+        `Proposing requires ${fmt(g.dao.minStakeToPropose)}+ $DLTX staked · voting period ${g.dao.votingPeriodDays} days · quorum ${fmt(g.dao.quorumVotes)} voted stake.`;
+    }
 
     const list = $('daoList');
     if (!g.proposals.length) {
-      list.innerHTML = '<p class="muted center">No proposals yet — submit the first one below.</p>';
+      list.innerHTML = paused
+        ? '<p class="muted center">Voting is closed — proposals will appear here when the DAO reopens.</p>'
+        : '<p class="muted center">No proposals yet — submit the first one below.</p>';
       return;
     }
     list.innerHTML = g.proposals
@@ -873,10 +891,16 @@ let pendingDappUrl = null;
 let pendingDappName = '';
 const dbState = { history: [], index: -1, currentUrl: '' };
 const ALLOWED_DAPP_HOSTS = new Set([
-  'app.uniswap.org', 'opensea.io', 'aave.com', 'snapshot.org', 'etherscan.io', 'web3.storage',
+  'a-network.net', 'www.a-network.net', 'deltixllc.com', 'www.deltixllc.com',
 ]);
 document.querySelectorAll('#dappGrid .dapp').forEach((d) =>
   d.addEventListener('click', () => {
+    // Native in-app dApp pages (no external navigation)
+    if (d.dataset.page) {
+      if (d.dataset.page === 'dao') return showTab('tab-community');
+      if (d.dataset.page === 'explorer') return openExplorer({ v: 'home' });
+      return openDappPage(d.dataset.page, d.dataset.name);
+    }
     let url;
     try {
       url = new URL(d.dataset.url);
@@ -884,6 +908,8 @@ document.querySelectorAll('#dappGrid .dapp').forEach((d) =>
       return;
     }
     if (url.protocol !== 'https:' || !ALLOWED_DAPP_HOSTS.has(url.hostname)) return;
+    // Own trusted properties open directly inside D-Browser
+    if (d.dataset.direct === '1') return openDBrowser(url.href, d.dataset.name);
     pendingDappUrl = url.href;
     pendingDappName = d.dataset.name;
     $('dappModalTitle').textContent = `Open ${d.dataset.name}?`;
@@ -1070,6 +1096,135 @@ $('expBack').addEventListener('click', () => {
 });
 $('openExplorer').addEventListener('click', () => openExplorer({ v: 'home' }));
 $('seeAllTx').addEventListener('click', () => openExplorer({ v: 'activity' }));
+
+// ---------- Native in-app dApp pages (Collectibles · DeFi Hub · D-Vault) ----------
+function openDappPage(page, title) {
+  $('dappPageTitle').textContent = title || 'Deltix dApp';
+  $('dappPage').hidden = false;
+  document.body.style.overflow = 'hidden';
+  updateTabAd();
+  renderDappPage(page);
+}
+function closeDappPage() {
+  $('dappPage').hidden = true;
+  document.body.style.overflow = '';
+  updateTabAd();
+}
+$('dappPageClose').addEventListener('click', closeDappPage);
+$('dappPageBack').addEventListener('click', closeDappPage);
+
+function collectibleCard({ icon, name, desc, earned }) {
+  return `
+  <div class="feature-card collectible ${earned ? 'earned' : 'locked'}">
+    <img src="assets/${icon}" class="dapp-3d-icon" alt="" ${earned ? '' : 'style="filter:grayscale(1);opacity:.45"'} />
+    <div>
+      <div class="name">${name} ${earned ? '<span class="pill live">Earned</span>' : '<span class="pill">Locked</span>'}</div>
+      <div class="meta">${desc}</div>
+    </div>
+  </div>`;
+}
+
+async function renderDappPage(page) {
+  const body = $('dappPageBody');
+  body.innerHTML = '<p class="muted center">Loading…</p>';
+  try {
+    if (page === 'nfts') {
+      const bal = state.balances || {};
+      const staked = Number(bal.stakedBalance || 0);
+      const total = Number(bal.totalValue || 0);
+      const claims = Number(state.faucet?.claimsUsed || 0);
+      const txCount = (state.txs || []).length;
+      body.innerHTML = `
+        <div class="feature-card">
+          <div class="name">Deltix Collectibles</div>
+          <div class="meta">On-chain achievement badges tied to your validator activity. Collectibles are
+          utility rewards — they carry no monetary value and cannot be bought, sold, or transferred.</div>
+        </div>
+        ${collectibleCard({ icon: 'shield-blue.svg', name: 'Genesis Wallet', desc: 'Created a Deltix wallet on-chain.', earned: !!state.address })}
+        ${collectibleCard({ icon: 'icon-faucet-tap.svg', name: 'First Claim', desc: 'Claimed $DLTX from the genesis faucet.', earned: claims > 0 })}
+        ${collectibleCard({ icon: 'icon-staked-coins.svg', name: 'Active Validator', desc: 'Delegated a stake to a Deltix validator.', earned: staked > 0 })}
+        ${collectibleCard({ icon: 'icon-rewards-trophy.svg', name: 'Whale Watch', desc: 'Hold 100+ $DLTX combined balance.', earned: total >= 100 })}
+        ${collectibleCard({ icon: 'dapp-explorer.svg', name: 'Chain Native', desc: 'Recorded 5+ transactions on the Deltix chain.', earned: txCount >= 5 })}
+        ${collectibleCard({ icon: 'art-vault-safe.svg', name: 'Vault Keeper', desc: 'Backed up your account data in D-Vault.', earned: localStorage.getItem('dltx_vault_backup') === '1' })}
+      `;
+    } else if (page === 'defi') {
+      const bal = state.balances || {};
+      body.innerHTML = `
+        <div class="feature-card">
+          <div class="name">Deltix DeFi Hub</div>
+          <div class="meta">Every DeFi primitive here runs natively on the Deltix chain — no external
+          wallets or contracts required.</div>
+        </div>
+        <div class="card supply-list">
+          <div class="supply-row"><span class="k">Available</span><span class="v">${fmt(bal.balance || 0)} $DLTX</span></div>
+          <div class="supply-row"><span class="k">Staked</span><span class="v">${fmt(bal.stakedBalance || 0)} $DLTX</span></div>
+          <div class="supply-row"><span class="k">Pending rewards</span><span class="v">${fmt(bal.pendingRewards || 0)} $DLTX</span></div>
+        </div>
+        <div class="feature-card clickable" id="dpGoStake">
+          <img src="assets/dapp-defi.svg" class="dapp-3d-icon" alt="" />
+          <div><div class="name">Staking · up to 15% APY →</div>
+          <div class="meta">Delegate $DLTX to network validators and earn per-minute rewards.</div></div>
+        </div>
+        <div class="feature-card clickable" id="dpGoSend">
+          <img src="assets/icon-liquid-drop.svg" class="dapp-3d-icon" alt="" />
+          <div><div class="name">P2P Transfers · 1% burn →</div>
+          <div class="meta">Send $DLTX wallet-to-wallet. Every transfer burns 1%, making $DLTX deflationary.</div></div>
+        </div>
+        <div class="feature-card clickable" id="dpGoDex">
+          <img src="assets/dapp-swap.svg" class="dapp-3d-icon" alt="" />
+          <div><div class="name">A-Network DEX →</div>
+          <div class="meta">Swap assets on our partner DEX, right inside D-Browser.</div></div>
+        </div>
+      `;
+      $('dpGoStake').addEventListener('click', () => { closeDappPage(); showTab('tab-stake'); });
+      $('dpGoSend').addEventListener('click', () => { closeDappPage(); showTab('tab-wallet'); });
+      $('dpGoDex').addEventListener('click', () => { closeDappPage(); openDBrowser('https://a-network.net/dex', 'A-Network DEX'); });
+    } else if (page === 'storage') {
+      body.innerHTML = `
+        <div class="feature-card">
+          <div class="name">D-Vault — your data, your keys</div>
+          <div class="meta">Export a full, portable backup of your Deltix account: wallet address,
+          balances, stakes, and transaction history as signed JSON. Stored only on your device —
+          Deltix never uploads your backup anywhere.</div>
+        </div>
+        <div class="card">
+          <button class="btn primary" id="dpExportBtn">⬇ Download account backup (JSON)</button>
+          <p class="hint" id="dpExportHint"></p>
+        </div>
+        <div class="feature-card">
+          <div class="name">Decentralized storage — roadmap</div>
+          <div class="meta">Encrypted off-device vault replication across Deltix validator nodes is
+          planned for a future network upgrade, governed by the Deltix DAO.</div>
+        </div>
+      `;
+      $('dpExportBtn').addEventListener('click', async () => {
+        try {
+          const [wallet, txs, stakes] = await Promise.all([
+            api('GET', '/wallet'), api('GET', '/wallet/transactions'), api('GET', '/staking'),
+          ]);
+          const backup = {
+            app: 'Deltix Network', exportedAt: new Date().toISOString(),
+            email: state.email, wallet, transactions: txs, stakes,
+          };
+          const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = `deltix-vault-backup-${Date.now()}.json`;
+          a.click();
+          URL.revokeObjectURL(a.href);
+          localStorage.setItem('dltx_vault_backup', '1');
+          $('dpExportHint').textContent = 'Backup downloaded. Keep it somewhere safe.';
+          $('dpExportHint').className = 'hint ok';
+        } catch (e) {
+          $('dpExportHint').textContent = e.message;
+          $('dpExportHint').className = 'hint error';
+        }
+      });
+    }
+  } catch (e) {
+    body.innerHTML = `<p class="muted center">${escapeHtml(e.message)}</p>`;
+  }
+}
 
 async function expRender() {
   const v = exp.stack[exp.stack.length - 1];
@@ -1275,6 +1430,7 @@ async function updateTabAd(tabId) {
   const isMainScreen = document.getElementById('screen-main')?.classList.contains('active');
   const isOverlayOpen = (!document.getElementById('dbrowser')?.hidden) ||
                         (!document.getElementById('explorer')?.hidden) ||
+                        (!document.getElementById('dappPage')?.hidden) ||
                         (!document.getElementById('gameModal')?.hidden);
 
   // Policy guardrail: Hide banner during full-screen interactive overlays or authentication

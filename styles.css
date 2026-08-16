@@ -53,15 +53,12 @@ body {
 }
 .logo { color: var(--accent); }
 .topbar-right { display: flex; align-items: center; gap: 10px; }
-.streak-badge {
-  display: flex; align-items: center; gap: 2px;
-  font-size: 13px; font-weight: 800; color: #1e293b;
-  padding: 4px 8px; border-radius: 999px;
-  background: #f1f5f9; border: 1px solid #e2e8f0;
-  cursor: pointer;
+.logout-btn {
+  padding: 7px 14px; border-radius: 999px;
+  border: 1px solid #dbe4f5; background: #fff;
+  color: #334155; font-size: 12.5px; font-weight: 700; cursor: pointer;
 }
-.streak-icon { font-size: 14px; color: #0284c7; }
-.streak-num { font-size: 11px; vertical-align: super; font-weight: 800; color: #0f172a; }
+.logout-btn:active { background: #f1f5f9; }
 .icon-btn {
   width: 36px; height: 36px; border-radius: 50%;
   border: 1px solid #dbe4f5; background: #fff;
@@ -333,6 +330,19 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   vertical-align: middle; margin-left: 6px;
 }
 .pill.live { background: var(--green-bg, #e8f8ef); color: var(--green, #16a34a); }
+.pill.paused { background: #fef3c7; color: #b45309; }
+
+/* Auth card clarity */
+.auth-title { margin: 0 0 4px; font-size: 18px; font-weight: 800; color: #0f172a; }
+.auth-sub { margin: 0 0 14px; font-size: 12.5px; line-height: 1.5; }
+
+/* Native dApp pages */
+.feature-card.clickable { cursor: pointer; }
+.feature-card.clickable:active { background: #eef3ff; }
+.feature-card.clickable, .feature-card.collectible { display: flex; align-items: center; gap: 12px; }
+.feature-card.clickable .dapp-3d-icon,
+.feature-card.collectible .dapp-3d-icon { width: 44px; height: 44px; flex: 0 0 44px; }
+.feature-card.collectible.locked .name { color: #64748b; }
 
 /* Deltix DAO */
 .proposal {
