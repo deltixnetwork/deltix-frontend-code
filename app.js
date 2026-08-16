@@ -266,6 +266,7 @@ async function loadWallet() {
 
 // ---------- Privacy: hide / unhide address + balances ----------
 const MASK = '••••••';
+const shortAddr = (a) => (a && a.length > 16 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a || '');
 function renderBalances() {
   const w = state.balances;
   if (!w) return;
@@ -278,7 +279,7 @@ function renderBalances() {
   if (addrTxt) {
     addrTxt.textContent = hide
       ? `0x${'•'.repeat(6)}…${'•'.repeat(4)}`
-      : w.address;
+      : shortAddr(w.address);
   }
   const eye = $('privacyToggle');
   if (eye) {
