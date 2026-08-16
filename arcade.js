@@ -2296,22 +2296,29 @@ GAME_IMPL.slicer = (mount, diff, finish, status) => {
   mount.appendChild(cv);
   const ctx = cv.getContext('2d');
   const target = diff === 'hard' ? 28 : 18;
-  const spawnMs = diff === 'hard' ? 500 : 680;
+  const baseSpawn = diff === 'hard' ? 470 : 650;
+  const minSpawn = diff === 'hard' ? 340 : 430;
   const missLimit = diff === 'hard' ? 5 : 6;
+  const bombP = diff === 'hard' ? 0.2 : 0.12;
   // Deltix original gems — drawn in brand colours, no third-party art.
   const GEMS = ['#1f66f2', '#16a34a', '#f59e0b', '#dc2626', '#8b5cf6'];
-  let items = [], score = 0, misses = 0, over = false, trail = [];
-  function spawn() {
-    if (over) return;
-    const isBomb = Math.random() < 0.18;
+  let items = [], parts = [], score = 0, misses = 0, over = false, trail = [];
+  let spawnTimer, raf, note = '', noteT = 0, recent = [], deadAt = 0;
+  function launch(gemOnly) {
     items.push({
       x: 30 + Math.random() * (W - 60), y: H + 20,
       vy: -(6 + Math.random() * 2.5), vx: (Math.random() - 0.5) * 2,
-      g: 0.14, bomb: isBomb, color: GEMS[Math.floor(Math.random() * GEMS.length)],
+      g: 0.14, bomb: !gemOnly && Math.random() < bombP,
+      color: GEMS[Math.floor(Math.random() * GEMS.length)],
       rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.1,
       sliced: false, r: 16,
     });
-    setTimeout(spawn, spawnMs);
+  }
+  function spawn() {
+    if (over || deadAt) return;
+    launch(false);
+    if (Math.random() < (diff === 'hard' ? 0.3 : 0.22)) launch(true); // paired gem = combo chance
+    spawnTimer = setTimeout(spawn, Math.max(minSpawn, baseSpawn - score * 8));
   }
   function drawGem(x, y, r, color, rot) {
     ctx.save();
@@ -2345,8 +2352,44 @@ GAME_IMPL.slicer = (mount, diff, finish, status) => {
     ctx.moveTo(x + r * 0.35, y - r * 0.35); ctx.lineTo(x - r * 0.35, y + r * 0.35);
     ctx.strokeStyle = '#f87171'; ctx.lineWidth = 2.5; ctx.stroke();
   }
+  function gemBurst(it) {
+    for (const top of [true, false]) {
+      parts.push({ kind: 'half', top, x: it.x, y: it.y, vx: it.vx + (top ? -2 : 2), vy: it.vy - 1,
+        rot: it.rot, vr: top ? -0.25 : 0.25, color: it.color, r: it.r, life: 40 });
+    }
+    for (let i = 0; i < 6; i++) {
+      parts.push({ kind: 'spark', x: it.x, y: it.y, vx: (Math.random() - 0.5) * 6,
+        vy: (Math.random() - 0.5) * 6 - 1, color: it.color, life: 22 });
+    }
+  }
+  function boom(it) {
+    for (let i = 0; i < 14; i++) {
+      parts.push({ kind: 'spark', x: it.x, y: it.y, vx: (Math.random() - 0.5) * 9,
+        vy: (Math.random() - 0.5) * 9, color: i % 2 ? '#f87171' : '#fbbf24', life: 30 });
+    }
+    parts.push({ kind: 'ring', x: it.x, y: it.y, r: 10, life: 20 });
+  }
   function draw() {
     ctx.fillStyle = '#eef3ff'; ctx.fillRect(0, 0, W, H);
+    parts.forEach((p) => {
+      ctx.globalAlpha = Math.max(0, Math.min(1, p.life / 24));
+      if (p.kind === 'half') {
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+        ctx.beginPath();
+        if (p.top) { ctx.moveTo(0, -p.r); ctx.lineTo(p.r * 0.85, -p.r * 0.15); ctx.lineTo(-p.r * 0.85, -p.r * 0.15); }
+        else { ctx.moveTo(p.r * 0.85, -p.r * 0.15); ctx.lineTo(0, p.r); ctx.lineTo(-p.r * 0.85, -p.r * 0.15); }
+        ctx.closePath(); ctx.fillStyle = p.color; ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.restore();
+      } else if (p.kind === 'ring') {
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 7);
+        ctx.strokeStyle = '#f87171'; ctx.lineWidth = 3; ctx.stroke();
+      } else {
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
+      }
+    });
+    ctx.globalAlpha = 1;
     items.forEach((it) => {
       if (it.sliced) return;
       if (it.bomb) drawOrb(it.x, it.y, it.r);
@@ -2359,17 +2402,34 @@ GAME_IMPL.slicer = (mount, diff, finish, status) => {
       ctx.stroke();
     }
   }
-  let raf;
   function loop() {
+    if (over) return;
     items.forEach((it) => { it.vy += it.g; it.x += it.vx; it.y += it.vy; it.rot += it.vr; });
+    parts.forEach((p) => {
+      if (p.kind === 'ring') { p.r += 2.2; }
+      else { p.vy += 0.18; p.x += p.vx; p.y += p.vy; if (p.kind === 'half') p.rot += p.vr; }
+      p.life--;
+    });
+    parts = parts.filter((p) => p.life > 0);
     items = items.filter((it) => {
-      if (it.y < -30 && !it.sliced && !it.bomb) { misses++; return false; }
-      return it.y < H + 40;
+      if (it.sliced) return false;
+      if (it.y > H + 40 && it.vy > 0) {
+        if (!it.bomb && !deadAt) { misses++; note = 'missed a gem'; noteT = 50; }
+        return false;
+      }
+      return true;
     });
     draw();
-    status(`${score}/${target} gems sliced · ${misses}/${missLimit} missed`);
-    if (score >= target) { over = true; return finish(true, score); }
-    if (misses >= missLimit) { over = true; return finish(false, score); }
+    if (deadAt) {
+      if (performance.now() > deadAt) { over = true; return finish(false, score); }
+      status('💥 Dark orb!');
+      raf = requestAnimationFrame(loop);
+      return;
+    }
+    if (noteT > 0) noteT--;
+    status(`${score}/${target} gems · ${misses}/${missLimit} missed${noteT > 0 ? ' · ' + note : ''}`);
+    if (score >= target) { over = true; clearTimeout(spawnTimer); return finish(true, score); }
+    if (misses >= missLimit) { over = true; clearTimeout(spawnTimer); return finish(false, score); }
     raf = requestAnimationFrame(loop);
   }
   function pointAt(e) {
@@ -2377,16 +2437,27 @@ GAME_IMPL.slicer = (mount, diff, finish, status) => {
     return { x: (e.clientX - rect.left) * (W / rect.width), y: (e.clientY - rect.top) * (H / rect.height) };
   }
   function trySlice(pt) {
+    if (over || deadAt) return;
     items.forEach((it) => {
-      if (it.sliced) return;
+      if (it.sliced || deadAt) return;
       if (Math.hypot(it.x - pt.x, it.y - pt.y) < it.r + 10) {
         it.sliced = true;
-        if (it.bomb) { over = true; cancelAnimationFrame(raf); return finish(false, score); }
+        if (it.bomb) {
+          boom(it);
+          if (diff === 'hard') { clearTimeout(spawnTimer); deadAt = performance.now() + 650; }
+          else { misses += 2; note = '💥 orb hit — 2 misses'; noteT = 90; }
+          return;
+        }
+        gemBurst(it);
         score++;
+        const now = performance.now();
+        recent = recent.filter((t) => now - t < 400);
+        recent.push(now);
+        if (recent.length === 3) { score++; note = '⚡ combo +1'; noteT = 90; }
       }
     });
   }
-  cv.addEventListener('pointerdown', (e) => { trail = [pointAt(e)]; trySlice(trail[0]); });
+  cv.addEventListener('pointerdown', (e) => { trail = [pointAt(e)]; }); // must swipe — taps don't slice
   cv.addEventListener('pointermove', (e) => {
     if (!e.buttons) return;
     const pt = pointAt(e);
@@ -2395,10 +2466,10 @@ GAME_IMPL.slicer = (mount, diff, finish, status) => {
     trySlice(pt);
   });
   cv.addEventListener('pointerup', () => (trail = []));
-  status(`Slice ${target} Deltix gems · avoid the dark orbs`);
+  status(`Swipe to slice ${target} gems · avoid the dark orbs`);
   spawn();
   loop();
-  return () => cancelAnimationFrame(raf);
+  return () => { over = true; clearTimeout(spawnTimer); cancelAnimationFrame(raf); };
 };
 
 // ---- 16. Penalty Kicks (soccer shootout) ----
