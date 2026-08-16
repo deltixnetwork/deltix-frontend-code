@@ -1251,8 +1251,13 @@ GAME_IMPL.reversi = (mount, diff, finish, status) => {
 // ---- 9. Pattern Recall ----
 GAME_IMPL.recall = (mount, diff, finish, status) => {
   const target = diff === 'hard' ? 12 : 8;
-  const speed = diff === 'hard' ? 320 : 500;
+  const startSpeed = diff === 'hard' ? 420 : 560;
+  const minSpeed = diff === 'hard' ? 230 : 320;
+  const stepTime = diff === 'hard' ? 2200 : 3000;
+  // Hard reverses every 4th round; easy saves one reverse for the finale.
+  const reverseRound = (n) => (diff === 'hard' ? n % 4 === 0 : n === target);
   const pads = ['#1f66f2', '#16a34a', '#f59e0b', '#dc2626'];
+  const padName = ['blue', 'green', 'amber', 'red'];
   const grid = makeGrid(mount, 2, 'recall');
   const els = pads.map((color, i) => {
     const el = document.createElement('button');
@@ -1262,37 +1267,70 @@ GAME_IMPL.recall = (mount, diff, finish, status) => {
     grid.appendChild(el);
     return el;
   });
-  let seq = [], pos = 0, accepting = false, timers = [];
+  let seq = [], pos = 0, accepting = false, reversed = false, timers = [], stepTimer = null;
+  const speedNow = () => Math.max(minSpeed, startSpeed - (seq.length - 1) * 25);
   function flash(i, ms) {
     els[i].classList.add('lit');
     timers.push(setTimeout(() => els[i].classList.remove('lit'), ms));
   }
+  function armStepTimer() {
+    clearTimeout(stepTimer);
+    stepTimer = setTimeout(() => {
+      if (!accepting) return;
+      accepting = false;
+      status(`Too slow — ${stepTime / 1000}s per step. You reached round ${seq.length - 1}.`);
+      timers.push(setTimeout(() => finish(false, seq.length - 1), 1000));
+    }, stepTime);
+    timers.push(stepTimer);
+  }
   function playback() {
     accepting = false;
-    status(`Watch… round ${seq.length}/${target}`);
-    seq.forEach((p, k) => timers.push(setTimeout(() => flash(p, speed * 0.6), k * speed + 300)));
+    reversed = reverseRound(seq.length);
+    const sp = speedNow();
+    status(`Watch… round ${seq.length}/${target}${reversed ? ' · ⟲ REVERSE round!' : ''}`);
+    seq.forEach((p, k) => timers.push(setTimeout(() => flash(p, sp * 0.6), k * sp + 300)));
     timers.push(setTimeout(() => {
-      accepting = true; pos = 0;
-      status(`Your turn — repeat ${seq.length} steps`);
-    }, seq.length * speed + 400));
+      accepting = true;
+      pos = 0;
+      status(reversed
+        ? `Your turn — ${seq.length} steps BACKWARD ⟲`
+        : `Your turn — repeat ${seq.length} steps`);
+      armStepTimer();
+    }, seq.length * sp + 400));
   }
   function nextRound() {
     seq.push(Math.floor(Math.random() * 4));
     playback();
   }
+  const expected = () => (reversed ? seq[seq.length - 1 - pos] : seq[pos]);
   function tap(i) {
     if (!accepting) return;
     flash(i, 180);
-    if (i !== seq[pos]) { accepting = false; return finish(false, seq.length - 1); }
+    if (i !== expected()) {
+      accepting = false;
+      clearTimeout(stepTimer);
+      const right = expected();
+      els[right].classList.add('lit');
+      status(`Step ${pos + 1} was the ${padName[right]} pad — round ${seq.length} got you`);
+      timers.push(setTimeout(() => {
+        els[right].classList.remove('lit');
+        finish(false, seq.length - 1);
+      }, 1000));
+      return;
+    }
     pos++;
     if (pos === seq.length) {
       accepting = false;
+      clearTimeout(stepTimer);
       if (seq.length >= target) return finish(true, seq.length);
-      timers.push(setTimeout(nextRound, 700));
+      status(`Round ${seq.length} clear ✓`);
+      timers.push(setTimeout(nextRound, 750));
+    } else {
+      armStepTimer();
     }
   }
   nextRound();
-  return () => timers.forEach(clearTimeout);
+  return () => { timers.forEach(clearTimeout); clearTimeout(stepTimer); };
 };
 
 // ---- 10. Reaction Rush ----
