@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <radialGradient id="snkHead" cx="35%" cy="30%" r="65%">
+      <stop offset="0%" stop-color="#a9e34b"/><stop offset="60%" stop-color="#40c057"/><stop offset="100%" stop-color="#2b8a3e"/>
+    </radialGradient>
+  </defs>
+  <!-- Cute Emerald 3D Cartoon Snake with Coins -->
+  <!-- Body S-Curves -->
+  <path d="M20 74 Q32 86 48 76 Q64 64 64 48 Q64 34 50 26 Q36 20 34 36 Q32 50 48 58 Q66 66 84 60" fill="none" stroke="url(#snkHead)" stroke-width="14" stroke-linecap="round"/>
+  <!-- Head -->
+  <circle cx="34" cy="30" r="16" fill="url(#snkHead)"/>
+  <ellipse cx="28" cy="24" rx="4" ry="5" fill="#ffffff"/>
+  <ellipse cx="40" cy="24" rx="4" ry="5" fill="#ffffff"/>
+  <circle cx="29" cy="24" r="2.5" fill="#212529"/>
+  <circle cx="41" cy="24" r="2.5" fill="#212529"/>
+  <path d="M28 34 Q34 40 40 34" fill="none" stroke="#212529" stroke-width="2" stroke-linecap="round"/>
+  <!-- Gold Coins Floating -->
+  <circle cx="78" cy="24" r="8" fill="#ffd43b" stroke="#f08c00" stroke-width="2"/>
+  <circle cx="82" cy="74" r="6" fill="#ffd43b" stroke="#f08c00" stroke-width="1.5"/>
+</svg>

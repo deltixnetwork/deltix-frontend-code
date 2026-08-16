@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
+  <defs>
+    <linearGradient id="chipBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#74c0fc"/><stop offset="100%" stop-color="#1864ab"/>
+    </linearGradient>
+  </defs>
+  <!-- Stack of 4 Poker/Casino Chips -->
+  <g transform="translate(10, 8)">
+    <path d="M6 46 C6 40 54 40 54 46 L54 54 C54 60 6 60 6 54 Z" fill="#0b469e"/>
+    <ellipse cx="30" cy="46" rx="24" ry="7" fill="url(#chipBlue)"/>
+    <path d="M6 34 C6 28 54 28 54 34 L54 42 C54 48 6 48 6 42 Z" fill="#0b469e"/>
+    <ellipse cx="30" cy="34" rx="24" ry="7" fill="url(#chipBlue)"/>
+    <path d="M6 22 C6 16 54 16 54 22 L54 30 C54 36 6 36 6 30 Z" fill="#0b469e"/>
+    <ellipse cx="30" cy="22" rx="24" ry="7" fill="url(#chipBlue)"/>
+    <path d="M6 10 C6 4 54 4 54 10 L54 18 C54 24 6 24 6 18 Z" fill="#0b469e"/>
+    <ellipse cx="30" cy="10" rx="24" ry="7" fill="url(#chipBlue)"/>
+    <ellipse cx="30" cy="10" rx="16" ry="4.5" fill="none" stroke="#ffffff" stroke-width="2" stroke-dasharray="4 3"/>
+  </g>
+</svg>

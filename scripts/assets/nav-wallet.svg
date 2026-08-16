@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="wallBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4dabf7"/>
+      <stop offset="40%" stop-color="#1c7ed6"/>
+      <stop offset="100%" stop-color="#0b469e"/>
+    </linearGradient>
+    <filter id="wallShadow"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#0b469e" flood-opacity="0.3"/></filter>
+  </defs>
+  <g filter="url(#wallShadow)">
+    <rect x="14" y="26" width="72" height="52" rx="12" fill="url(#wallBlue)"/>
+    <path d="M14 38 C14 30 22 24 32 24 L76 24 C82 24 86 28 86 34 L14 34 Z" fill="#74c0fc" opacity="0.8"/>
+    <!-- Clasp flap -->
+    <path d="M56 42 L86 42 C88 42 90 44 90 47 L90 59 C90 62 88 64 86 64 L56 64 C50 64 46 59 46 53 C46 47 50 42 56 42 Z" fill="#1864ab"/>
+    <circle cx="62" cy="53" r="5" fill="#ffd43b"/>
+    <line x1="22" y1="38" x2="52" y2="38" stroke="#ffffff" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
+  </g>
+</svg>

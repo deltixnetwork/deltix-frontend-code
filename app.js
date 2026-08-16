@@ -226,6 +226,16 @@ async function enterApp() {
   await Promise.all([loadWallet(), loadStats(), loadValidators(), loadStakes(), loadTx(), loadReferrals(), loadGovernance(), loadChain(), loadArcade()]);
 }
 
+function getValidatorShield(name, index = 0) {
+  const n = String(name || '').toLowerCase();
+  if (n.includes('nova')) return 'assets/shield-blue.svg';
+  if (n.includes('helios')) return 'assets/shield-orange.svg';
+  if (n.includes('genesis')) return 'assets/shield-purple.svg';
+  if (n.includes('aurora') || n.includes('guardian')) return 'assets/shield-green.svg';
+  const colors = ['assets/shield-blue.svg', 'assets/shield-green.svg', 'assets/shield-orange.svg', 'assets/shield-purple.svg', 'assets/shield-red.svg'];
+  return colors[index % colors.length];
+}
+
 async function loadWallet() {
   try {
     const w = await api('GET', '/wallet');
@@ -234,7 +244,9 @@ async function loadWallet() {
     $('stakedBalance').textContent = fmt(w.stakedBalance);
     $('pendingRewards').textContent = fmt(w.pendingRewards);
     const addr = $('walletAddress');
-    addr.textContent = w.address;
+    const addrTxt = $('walletAddressTxt');
+    if (addrTxt) addrTxt.textContent = w.address;
+    else addr.textContent = w.address;
     addr.onclick = () => {
       navigator.clipboard?.writeText(w.address);
       toast('Address copied');
@@ -285,22 +297,29 @@ async function loadValidators() {
   state.validators = r.validators;
   const list = $('validatorList');
   list.innerHTML = r.validators
-    .map((v) => {
+    .map((v, i) => {
       const apy = (0.08 * (1 - v.commission) * 100).toFixed(1);
+      const shield = getValidatorShield(v.name, i);
       return `
-      <div class="validator">
-        <div>
-          <div class="name">${v.name}</div>
-          <div class="meta">Commission ${(v.commission * 100).toFixed(0)}% · Uptime ${v.uptime}% · Staked ${fmt(v.total_staked)}</div>
+      <div class="validator-card-3d">
+        <div class="val-left">
+          <img src="${shield}" class="val-3d-shield" alt="Shield"/>
+          <div class="val-info">
+            <div class="val-title-row">
+              <span class="val-name ${v.name.toLowerCase().includes('genesis') ? 'genesis-txt' : ''}">${v.name}</span>
+              <span class="timer-badge">⏱ 11:58:59</span>
+            </div>
+            <div class="meta">Commission ${(v.commission * 100).toFixed(0)}% · Uptime ${v.uptime}% · Staked ${fmt(v.total_staked)}</div>
+          </div>
         </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <span class="apy-badge">~${apy}% APY</span>
-          <button class="mini-btn" data-validator="${v.id}" data-name="${v.name}">Delegate</button>
+        <div class="val-actions-col">
+          <span class="apy-badge-red">~${apy}% APY</span>
+          <button class="delegate-btn-red" data-validator="${v.id}" data-name="${v.name}">Delegate</button>
         </div>
       </div>`;
     })
     .join('');
-  list.querySelectorAll('.mini-btn').forEach((btn) =>
+  list.querySelectorAll('[data-validator]').forEach((btn) =>
     btn.addEventListener('click', () => openStakeModal(btn.dataset.validator, btn.dataset.name))
   );
 }
@@ -315,17 +334,28 @@ async function loadStakes() {
   }
   el.innerHTML = active
     .map(
-      (s) => `
-    <div class="stake-card">
-      <div>
-        <div class="name">${s.validator}</div>
-        <div class="meta">${fmt(s.amount)} $DLTX · ${(s.apy * 100).toFixed(1)}% APY · x${s.multiplier.toFixed(2)}<br/>Rewards: ${fmt(s.pendingRewards)} $DLTX</div>
+      (s, i) => {
+        const shield = getValidatorShield(s.validator, i);
+        return `
+    <div class="stake-card-3d">
+      <div class="stake-card-top">
+        <img src="${shield}" class="stake-3d-shield" alt="Shield"/>
+        <div class="stake-info">
+          <div class="stake-title-row">
+            <span class="stake-val-name">${s.validator}</span>
+            <span class="timer-badge">⏱ 11:59:${String((47 - i * 11 + 60) % 60).padStart(2, '0')}</span>
+          </div>
+          <div class="meta">${fmt(s.amount)} $DLTX · ${(s.apy * 100).toFixed(1)}% APY · x${s.multiplier.toFixed(2)}</div>
+          <div class="stake-rewards-txt">Rewards: ${fmt(s.pendingRewards)} $DLTX</div>
+        </div>
+        <img src="assets/chips-stack.svg" class="stake-3d-chips" alt="Chips"/>
       </div>
-      <div class="stake-actions">
-        <button class="mini-btn ghost" data-claim="${s.id}">Claim</button>
-        <button class="mini-btn" data-unstake="${s.id}">Unstake</button>
+      <div class="stake-actions-row">
+        <button class="stake-action-btn ghost" data-claim="${s.id}">Claim</button>
+        <button class="stake-action-btn primary" data-unstake="${s.id}">Unstake</button>
       </div>
-    </div>`
+    </div>`;
+      }
     )
     .join('');
   el.querySelectorAll('[data-claim]').forEach((b) =>
@@ -1172,10 +1202,27 @@ async function updateTabAd(tabId) {
 }
 window.updateTabAd = updateTabAd;
 
+function startFaucetTimer() {
+  const el = $('faucetCountdown');
+  if (!el) return;
+  const pad = (n) => String(n).padStart(2, '0');
+  const tick = () => {
+    const now = Date.now();
+    const msLeft = 43200000 - (now % 43200000);
+    const hrs = Math.floor(msLeft / 3600000);
+    const mins = Math.floor((msLeft % 3600000) / 60000);
+    const secs = Math.floor((msLeft % 60000) / 1000);
+    el.textContent = `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
+  };
+  tick();
+  setInterval(tick, 1000);
+}
+
 // ---------- Boot ----------
 (async function boot() {
   if (!(await checkAppVersion())) return; // outdated client — blocked until update
   initAds();
+  startFaucetTimer();
   if (state.token) {
     try {
       await enterApp();

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="lensGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/><stop offset="40%" stop-color="#a5d8ff"/><stop offset="100%" stop-color="#339af0"/>
+    </linearGradient>
+    <linearGradient id="handleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#868e96"/><stop offset="100%" stop-color="#212529"/>
+    </linearGradient>
+  </defs>
+  <!-- 3D Magnifying Glass -->
+  <g transform="rotate(-15 50 50)">
+    <circle cx="42" cy="42" r="26" fill="none" stroke="#adb5bd" stroke-width="8"/>
+    <circle cx="42" cy="42" r="22" fill="url(#lensGrad)" opacity="0.85"/>
+    <ellipse cx="34" cy="34" rx="8" ry="4" transform="rotate(-40 34 34)" fill="#ffffff" opacity="0.7"/>
+    <rect x="58" y="58" width="12" height="34" rx="5" transform="rotate(45 64 75)" fill="url(#handleGrad)"/>
+    <rect x="58" y="58" width="12" height="8" rx="2" transform="rotate(45 64 62)" fill="#ffd43b"/>
+  </g>
+</svg>

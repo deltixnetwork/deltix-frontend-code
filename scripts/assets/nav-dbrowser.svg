@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <radialGradient id="globeGrad" cx="35%" cy="30%" r="65%">
+      <stop offset="0%" stop-color="#91a7ff"/>
+      <stop offset="40%" stop-color="#4c6ef5"/>
+      <stop offset="100%" stop-color="#182b8a"/>
+    </radialGradient>
+    <filter id="globeShadow"><feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#182b8a" flood-opacity="0.35"/></filter>
+  </defs>
+  <g filter="url(#globeShadow)">
+    <circle cx="50" cy="50" r="36" fill="url(#globeGrad)"/>
+    <!-- Continents in Green -->
+    <path d="M32 30 C38 26 44 28 46 36 C48 42 42 46 38 48 C34 50 30 46 26 42 C24 36 28 32 32 30 Z" fill="#51cf66"/>
+    <path d="M52 38 C60 34 68 36 72 44 C74 52 68 62 60 64 C56 60 56 50 52 46 Z" fill="#40c057"/>
+    <path d="M34 62 C40 58 48 62 46 72 C44 78 36 82 30 76 C28 70 30 64 34 62 Z" fill="#37b24d"/>
+    <!-- Glass shine -->
+    <ellipse cx="38" cy="32" rx="14" ry="7" transform="rotate(-30 38 32)" fill="#ffffff" opacity="0.5"/>
+  </g>
+</svg>

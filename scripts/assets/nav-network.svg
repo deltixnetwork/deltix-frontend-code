@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <radialGradient id="nodeBlue" cx="35%" cy="30%" r="65%">
+      <stop offset="0%" stop-color="#74c0fc"/>
+      <stop offset="60%" stop-color="#1c7ed6"/>
+      <stop offset="100%" stop-color="#0c4a9e"/>
+    </radialGradient>
+    <filter id="netShadow"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#0c4a9e" flood-opacity="0.3"/></filter>
+  </defs>
+  <g filter="url(#netShadow)">
+    <line x1="50" y1="50" x2="22" y2="30" stroke="#4dabf7" stroke-width="4"/>
+    <line x1="50" y1="50" x2="78" y2="30" stroke="#4dabf7" stroke-width="4"/>
+    <line x1="50" y1="50" x2="82" y2="70" stroke="#4dabf7" stroke-width="4"/>
+    <line x1="50" y1="50" x2="18" y2="70" stroke="#4dabf7" stroke-width="4"/>
+    <line x1="50" y1="50" x2="50" y2="84" stroke="#4dabf7" stroke-width="4"/>
+    <!-- Center orb -->
+    <circle cx="50" cy="50" r="16" fill="url(#nodeBlue)"/>
+    <!-- Outer orbs -->
+    <circle cx="22" cy="30" r="10" fill="url(#nodeBlue)"/>
+    <circle cx="78" cy="30" r="10" fill="url(#nodeBlue)"/>
+    <circle cx="82" cy="70" r="9" fill="url(#nodeBlue)"/>
+    <circle cx="18" cy="70" r="9" fill="url(#nodeBlue)"/>
+    <circle cx="50" cy="84" r="8" fill="url(#nodeBlue)"/>
+    <!-- Sheen -->
+    <circle cx="46" cy="45" r="4" fill="#ffffff" opacity="0.75"/>
+  </g>
+</svg>

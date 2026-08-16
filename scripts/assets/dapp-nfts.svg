@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="nftFrame" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fff3bf"/><stop offset="50%" stop-color="#fcc419"/><stop offset="100%" stop-color="#d9480f"/>
+    </linearGradient>
+    <linearGradient id="nftSky" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#74c0fc"/><stop offset="100%" stop-color="#a9e34b"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="68" height="68" rx="8" fill="url(#nftFrame)"/>
+  <rect x="24" y="24" width="52" height="52" rx="4" fill="url(#nftSky)"/>
+  <circle cx="38" cy="38" r="6" fill="#ffd43b"/>
+  <polygon points="24,68 44,46 58,60 66,52 76,68" fill="#2b8a3e"/>
+  <polygon points="42,68 56,54 70,68" fill="#40c057"/>
+</svg>

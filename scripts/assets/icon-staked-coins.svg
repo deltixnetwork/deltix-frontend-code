@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="goldRim" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fff3bf"/>
+      <stop offset="50%" stop-color="#fcc419"/>
+      <stop offset="100%" stop-color="#d9480f"/>
+    </linearGradient>
+    <linearGradient id="goldFace" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ffd43b"/>
+      <stop offset="50%" stop-color="#ffe066"/>
+      <stop offset="100%" stop-color="#fab005"/>
+    </linearGradient>
+    <filter id="coinShadow">
+      <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#7f3800" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  <g filter="url(#coinShadow)">
+    <!-- Bottom coin -->
+    <path d="M22 64 C22 56 78 56 78 64 L78 76 C78 84 22 84 22 76 Z" fill="url(#goldRim)"/>
+    <ellipse cx="50" cy="64" rx="28" ry="10" fill="url(#goldFace)"/>
+    <!-- Middle coin -->
+    <path d="M22 46 C22 38 78 38 78 46 L78 58 C78 66 22 66 22 58 Z" fill="url(#goldRim)"/>
+    <ellipse cx="50" cy="46" rx="28" ry="10" fill="url(#goldFace)"/>
+    <!-- Top coin -->
+    <path d="M22 28 C22 20 78 20 78 28 L78 40 C78 48 22 48 22 40 Z" fill="url(#goldRim)"/>
+    <ellipse cx="50" cy="28" rx="28" ry="10" fill="url(#goldFace)"/>
+    <ellipse cx="50" cy="28" rx="22" ry="7" fill="none" stroke="#f08c00" stroke-width="2"/>
+    <text x="50" y="32" font-family="'Segoe UI',sans-serif" font-weight="900" font-size="12" fill="#d9480f" text-anchor="middle">★</text>
+  </g>
+</svg>

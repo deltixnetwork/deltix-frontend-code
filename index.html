@@ -17,7 +17,13 @@
       <div class="brand">
         <span class="logo">◆</span> Deltix
       </div>
-      <button class="icon-btn" id="logoutBtn" title="Sign out">⎋</button>
+      <div class="topbar-right">
+        <div class="streak-badge" title="Active Validator Score">
+          <span class="streak-icon">↻</span>
+          <span class="streak-num">99</span>
+        </div>
+        <button class="icon-btn" id="logoutBtn" title="Sign out">⎋</button>
+      </div>
     </header>
 
     <!-- ============ AUTH: EMAIL ============ -->
@@ -66,30 +72,42 @@
     <main class="screen" id="screen-main">
       <!-- Dashboard -->
       <div class="tab active" id="tab-wallet">
-        <div class="showcase-banner wallet-showcase">
-          <div class="showcase-art" aria-hidden="true">
-            <span class="art-kid art-kid-left"></span>
-            <span class="art-chest"></span>
-            <span class="art-kid art-kid-right"></span>
-          </div>
-          <div class="showcase-title">Deltix Wallet</div>
-          <div class="showcase-sub">Track balance, faucet timer, staking totals, and rewards in one clear view.</div>
-        </div>
         <div class="balance-card">
-          <span class="muted">Total balance</span>
+          <span class="muted balance-lbl">Total balance</span>
           <div class="balance" id="totalBalance">0.00 <small>$DLTX</small></div>
-          <div class="address" id="walletAddress" title="Tap to copy"></div>
+          <div class="address" id="walletAddress" title="Tap to copy">
+            <span class="addr-eye-icon">👁</span>
+            <span id="walletAddressTxt">0x…</span>
+          </div>
           <div class="balance-row">
-            <div><span class="muted">Liquid</span><b id="liquidBalance">0</b></div>
-            <div><span class="muted">Staked</span><b id="stakedBalance">0</b></div>
-            <div><span class="muted">Rewards</span><b id="pendingRewards">0</b></div>
+            <div class="bal-col">
+              <img src="assets/icon-liquid-drop.svg" class="bal-3d-icon" alt="Liquid"/>
+              <span class="muted">Liquid</span>
+              <b id="liquidBalance">0</b>
+            </div>
+            <div class="bal-col">
+              <img src="assets/icon-staked-coins.svg" class="bal-3d-icon" alt="Staked"/>
+              <span class="muted">Staked</span>
+              <b id="stakedBalance">0</b>
+            </div>
+            <div class="bal-col">
+              <img src="assets/icon-rewards-trophy.svg" class="bal-3d-icon" alt="Rewards"/>
+              <span class="muted">Rewards</span>
+              <b id="pendingRewards">0</b>
+            </div>
           </div>
         </div>
         <div class="action-row">
-          <button class="btn primary" id="sendBtn">↑ Send</button>
-          <button class="btn ghost" id="receiveBtn">↓ Receive</button>
+          <button class="btn primary pill-btn" id="sendBtn">↑ Send</button>
+          <button class="btn ghost pill-btn" id="receiveBtn">↓ Receive</button>
         </div>
-        <button class="btn faucet" id="faucetBtn">＋ Genesis faucet (+500 $DLTX)</button>
+        <div class="faucet-card" id="faucetBtn" title="Claim Genesis Faucet">
+          <img src="assets/icon-faucet-tap.svg" class="faucet-3d-tap" alt="Faucet"/>
+          <div class="faucet-content">
+            <div class="faucet-title">Genesis faucet (+500 $DLTX)</div>
+            <div class="faucet-timer" id="faucetTimer">Next claim in <span class="faucet-clock">⏱</span> <span id="faucetCountdown">11:59:47</span></div>
+          </div>
+        </div>
 
         <h3 class="section-title">Network snapshot</h3>
         <div class="stats-grid" id="statsGrid"></div>
@@ -100,14 +118,8 @@
 
       <!-- Staking -->
       <div class="tab" id="tab-stake">
-        <div class="showcase-banner stake-showcase">
-          <div class="showcase-art" aria-hidden="true">
-            <span class="art-kid art-kid-left"></span>
-            <span class="art-chest"></span>
-            <span class="art-kid art-kid-right"></span>
-          </div>
-          <div class="showcase-title">Stake with trusted validators</div>
-          <div class="showcase-sub">Delegate, monitor rewards, and unstake anytime from one clean dashboard.</div>
+        <div class="banner-3d-wrap">
+          <img src="assets/art-staking-banner.svg" class="banner-3d-img" alt="Staking rewards" />
         </div>
         <h3 class="section-title">Your delegations</h3>
         <div id="myStakes"><p class="muted center">You have no active stakes.</p></div>
@@ -127,32 +139,61 @@
 
       <!-- D-Browser -->
       <div class="tab" id="tab-browser">
-        <div class="showcase-banner browser-showcase">
-          <div class="showcase-title">D-Browser</div>
-          <div class="showcase-sub">Your gateway to Web3 dApps with a security confirmation before every external connection.</div>
+        <div class="dbrowser-head-banner">
+          <img src="assets/nav-dbrowser.svg" class="dbrowser-head-icon" alt="D-Browser" />
+          <div>
+            <h3 class="section-title dbrowser-title">D-Browser</h3>
+            <p class="muted small-note">Your gateway to Web3 dApps — browsed inside Deltix after a security confirmation.</p>
+          </div>
         </div>
         <div class="dapp-grid" id="dappGrid">
-          <div class="dapp" data-url="https://app.uniswap.org" data-name="Swap (DEX)"><span>🦄</span>Swap</div>
-          <div class="dapp" data-url="https://opensea.io" data-name="NFT Marketplace"><span>🖼️</span>NFTs</div>
-          <div class="dapp" data-url="https://aave.com" data-name="DeFi Lending"><span>👻</span>DeFi</div>
-          <div class="dapp" data-url="https://snapshot.org" data-name="DAO Governance"><span>🗳️</span>DAO</div>
-          <div class="dapp" data-url="https://etherscan.io" data-name="Block Explorer"><span>🔎</span>Explorer</div>
-          <div class="dapp" data-url="https://web3.storage" data-name="Decentralized Storage"><span>📦</span>Storage</div>
+          <div class="dapp dapp-swap" data-url="https://app.uniswap.org" data-name="Swap (DEX)">
+            <img src="assets/dapp-swap.svg" class="dapp-3d-icon" alt="Swap" />
+            <div class="dapp-title">Swap</div>
+            <div class="dapp-desc">Trade tokens instantly</div>
+          </div>
+          <div class="dapp dapp-nfts" data-url="https://opensea.io" data-name="NFT Marketplace">
+            <img src="assets/dapp-nfts.svg" class="dapp-3d-icon" alt="NFTs" />
+            <div class="dapp-title">NFTs</div>
+            <div class="dapp-desc">Discover, collect and trade</div>
+          </div>
+          <div class="dapp dapp-defi" data-url="https://aave.com" data-name="DeFi Lending">
+            <img src="assets/dapp-defi.svg" class="dapp-3d-icon" alt="DeFi" />
+            <div class="dapp-title">DeFi</div>
+            <div class="dapp-desc">Explore DeFi protocols</div>
+          </div>
+          <div class="dapp dapp-dao" data-url="https://snapshot.org" data-name="DAO Governance">
+            <img src="assets/dapp-dao.svg" class="dapp-3d-icon" alt="DAO" />
+            <div class="dapp-title">DAO</div>
+            <div class="dapp-desc">Join and govern communities</div>
+          </div>
+          <div class="dapp dapp-explorer" data-url="https://etherscan.io" data-name="Block Explorer">
+            <img src="assets/dapp-explorer.svg" class="dapp-3d-icon" alt="Explorer" />
+            <div class="dapp-title">Explorer</div>
+            <div class="dapp-desc">View blockchain data &amp; stats</div>
+          </div>
+          <div class="dapp dapp-storage" data-url="https://web3.storage" data-name="Decentralized Storage">
+            <img src="assets/dapp-storage.svg" class="dapp-3d-icon" alt="Storage" />
+            <div class="dapp-title">Storage</div>
+            <div class="dapp-desc">Decentralized file storage</div>
+          </div>
         </div>
-        <div class="ad-slot">Sustainability Fund · Ad slot<br/><small>Ad revenue funds infrastructure — it is not a protocol reward.</small></div>
+        <div class="ad-slot ad-slot-sustainability">
+          <img src="assets/art-vault-safe.svg" class="vault-3d-icon" alt="Vault Safe" />
+          <div class="ad-slot-text">
+            <b>Sustainability Fund · Ad slot</b>
+            <p>Ad revenue funds infrastructure — it is not a protocol reward.</p>
+          </div>
+        </div>
       </div>
 
       <!-- Deltix Arcade -->
       <div class="tab" id="tab-arcade">
-        <div class="showcase-banner arcade-showcase">
-          <div class="showcase-art" aria-hidden="true">
-            <span class="art-kid art-kid-left"></span>
-            <span class="art-chest"></span>
-            <span class="art-kid art-kid-right"></span>
-          </div>
-          <div class="showcase-title">Deltix Arcade <span class="pill live">Live</span></div>
-          <div class="showcase-sub">17 original skill games with daily reward caps and stronger hard-mode AI. Win $DLTX.</div>
+        <div class="banner-3d-wrap">
+          <img src="assets/art-arcade-banner.svg" class="banner-3d-img" alt="Arcade" />
         </div>
+        <h3 class="section-title">Deltix Arcade <span class="pill live">Live</span></h3>
+        <p class="muted small-note">Seventeen original Deltix games — classic, ownerless game concepts rebuilt in our own style. Win to earn $DLTX.</p>
         <div class="card supply-list" id="arcadeMeta"></div>
         <div class="card ad-bonus-card" id="adBonusCard" hidden>
           <div>
@@ -313,14 +354,32 @@
       </div>
     </main>
 
-    <!-- Bottom nav -->
+    <!-- Bottom nav with 3D Icons -->
     <nav class="tabbar" id="tabbar" hidden>
-      <button class="tabbtn active" data-tab="tab-wallet"><span>◈</span>Wallet</button>
-      <button class="tabbtn" data-tab="tab-stake"><span>⛃</span>Stake</button>
-      <button class="tabbtn" data-tab="tab-arcade"><span>▷</span>Arcade</button>
-      <button class="tabbtn" data-tab="tab-browser"><span>⬡</span>D-Browser</button>
-      <button class="tabbtn" data-tab="tab-community"><span>✿</span>Community</button>
-      <button class="tabbtn" data-tab="tab-network"><span>◎</span>Network</button>
+      <button class="tabbtn active" data-tab="tab-wallet">
+        <img src="assets/nav-wallet.svg" class="nav-3d-icon" alt="Wallet" />
+        <span>Wallet</span>
+      </button>
+      <button class="tabbtn" data-tab="tab-stake">
+        <img src="assets/nav-stake.svg" class="nav-3d-icon" alt="Stake" />
+        <span>Stake</span>
+      </button>
+      <button class="tabbtn" data-tab="tab-arcade">
+        <img src="assets/nav-arcade.svg" class="nav-3d-icon" alt="Arcade" />
+        <span>Arcade</span>
+      </button>
+      <button class="tabbtn" data-tab="tab-browser">
+        <img src="assets/nav-dbrowser.svg" class="nav-3d-icon" alt="D-Browser" />
+        <span>D-Browser</span>
+      </button>
+      <button class="tabbtn" data-tab="tab-community">
+        <img src="assets/nav-community.svg" class="nav-3d-icon" alt="Community" />
+        <span>Community</span>
+      </button>
+      <button class="tabbtn" data-tab="tab-network">
+        <img src="assets/nav-network.svg" class="nav-3d-icon" alt="Network" />
+        <span>Network</span>
+      </button>
     </nav>
   </div>
 

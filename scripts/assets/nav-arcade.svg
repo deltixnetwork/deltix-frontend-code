@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="padBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38d9a9"/>
+      <stop offset="30%" stop-color="#228be6"/>
+      <stop offset="100%" stop-color="#1864ab"/>
+    </linearGradient>
+    <filter id="padShadow"><feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#1864ab" flood-opacity="0.35"/></filter>
+  </defs>
+  <g filter="url(#padShadow)">
+    <path d="M24 36 C34 32 66 32 76 36 C86 40 92 68 84 80 C78 88 66 78 58 72 C54 69 46 69 42 72 C34 78 22 88 16 80 C8 68 14 40 24 36 Z" fill="url(#padBlue)"/>
+    <!-- D-Pad -->
+    <path d="M30 46 L36 46 L36 40 L42 40 L42 46 L48 46 L48 52 L42 52 L42 58 L36 58 L36 52 L30 52 Z" fill="#0b469e"/>
+    <!-- Action buttons -->
+    <circle cx="68" cy="44" r="3.5" fill="#ff6b6b"/>
+    <circle cx="76" cy="50" r="3.5" fill="#ffd43b"/>
+    <circle cx="68" cy="56" r="3.5" fill="#51cf66"/>
+    <circle cx="60" cy="50" r="3.5" fill="#cc5de8"/>
+  </g>
+</svg>

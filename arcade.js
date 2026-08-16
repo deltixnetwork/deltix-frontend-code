@@ -16,6 +16,26 @@ const ARCADE_ICONS = {
   ludo: '⛃', chess: '♞', threecard: '🂡', carom: '⬤', slicer: '🍉', soccer: '⚽', racing: '🏎',
 };
 
+const ARCADE_3D_IMAGES = {
+  tictactoe: 'assets/game-tictactoe.svg',
+  memory: 'assets/game-memory.svg',
+  snake: 'assets/game-snake.svg',
+  merge: 'assets/game-2048.svg',
+  sudoku: 'assets/game-sudoku.svg',
+  minehunt: 'assets/game-minehunt.svg',
+  slide: 'assets/dapp-dao.svg',
+  reversi: 'assets/chips-stack.svg',
+  recall: 'assets/dapp-swap.svg',
+  reaction: 'assets/icon-rewards-trophy.svg',
+  ludo: 'assets/chips-stack.svg',
+  chess: 'assets/shield-purple.svg',
+  threecard: 'assets/dapp-nfts.svg',
+  carom: 'assets/chips-stack.svg',
+  slicer: 'assets/icon-liquid-drop.svg',
+  soccer: 'assets/nav-dbrowser.svg',
+  racing: 'assets/nav-arcade.svg',
+};
+
 const arcadeState = { games: [], sessionId: null, currentGame: null, difficulty: 'easy', cleanup: null };
 
 // ---------- Arcade tab ----------
@@ -29,12 +49,16 @@ async function loadArcade() {
       ['Remaining today', `${fmt(a.remainingToday)} of ${fmt(a.arcade.dailyCap)} $DLTX`],
     ]
       .map(([k, v]) => `<div class="supply-row"><span class="k">${k}</span><span class="v">${v}</span></div>`)
-      .join('');    updateAdBonusCard();    gel('gamesGrid').innerHTML = a.games
+      .join('');
+    updateAdBonusCard();
+    gel('gamesGrid').innerHTML = a.games
       .map(
-        (g) => `<button class="game-card" data-game="${g.id}">
-          <span class="g-icon">${ARCADE_ICONS[g.id] || '◆'}</span>
-          <span class="g-name">${g.name}</span>
-          <span class="g-tag">${g.tagline}</span>
+        (g) => `<button class="game-card game-card-${g.id}" data-game="${g.id}">
+          <div class="game-card-img-wrap"><img src="${ARCADE_3D_IMAGES[g.id] || 'assets/nav-arcade.svg'}" class="game-card-3d-img" alt="${g.name}" /></div>
+          <div class="game-card-info">
+            <span class="g-name">${g.name}</span>
+            <span class="g-tag">${g.tagline}</span>
+          </div>
         </button>`
       )
       .join('');

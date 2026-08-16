@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Sudoku Number Grid + 3D Pencil -->
+  <rect x="8" y="16" width="56" height="56" rx="8" fill="#1c7ed6" stroke="#ffffff" stroke-width="2"/>
+  <rect x="12" y="20" width="14" height="14" rx="3" fill="#ffffff"/>
+  <text x="19" y="31" font-family="'Segoe UI',sans-serif" font-weight="900" font-size="11" fill="#1864ab" text-anchor="middle">5</text>
+  <rect x="29" y="20" width="14" height="14" rx="3" fill="#ffffff"/>
+  <text x="36" y="31" font-family="'Segoe UI',sans-serif" font-weight="900" font-size="11" fill="#1864ab" text-anchor="middle">3</text>
+  <rect x="46" y="20" width="14" height="14" rx="3" fill="#ffffff"/>
+  <text x="53" y="31" font-family="'Segoe UI',sans-serif" font-weight="900" font-size="11" fill="#1864ab" text-anchor="middle">8</text>
+
+  <rect x="12" y="37" width="14" height="14" rx="3" fill="#ffffff"/>
+  <text x="19" y="48" font-family="'Segoe UI',sans-serif" font-weight="900" font-size="11" fill="#1864ab" text-anchor="middle">6</text>
+  <rect x="29" y="37" width="14" height="14" rx="3" fill="#ffffff"/>
+  <text x="36" y="48" font-family="'Segoe UI',sans-serif" font-weight="900" font-size="11" fill="#1864ab" text-anchor="middle">1</text>
+  <rect x="46" y="37" width="14" height="14" rx="3" fill="#ffffff"/>
+  <text x="53" y="48" font-family="'Segoe UI',sans-serif" font-weight="900" font-size="11" fill="#1864ab" text-anchor="middle">9</text>
+
+  <!-- 3D Pencil on Right -->
+  <g transform="translate(60, 20) rotate(40)">
+    <polygon points="6,0 16,0 16,50 6,50" fill="#fcc419"/>
+    <polygon points="6,0 16,0 11,-12" fill="#ffd8a8"/>
+    <polygon points="9,-8 13,-8 11,-12" fill="#212529"/>
+    <rect x="6" y="50" width="10" height="10" rx="3" fill="#ff8787"/>
+    <rect x="6" y="46" width="10" height="4" fill="#ced4da"/>
+  </g>
+</svg>

@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 120">
+  <defs>
+    <linearGradient id="vaultGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fff9db"/>
+      <stop offset="30%" stop-color="#ffd43b"/>
+      <stop offset="70%" stop-color="#f59f00"/>
+      <stop offset="100%" stop-color="#b45309"/>
+    </linearGradient>
+    <radialGradient id="dialGrad" cx="35%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="40%" stop-color="#fcc419"/>
+      <stop offset="100%" stop-color="#7f3800"/>
+    </radialGradient>
+  </defs>
+  <!-- Safe Body -->
+  <rect x="20" y="15" width="80" height="85" rx="14" fill="url(#vaultGold)" stroke="#d9480f" stroke-width="2"/>
+  <rect x="28" y="23" width="64" height="69" rx="10" fill="#f08c00"/>
+  <!-- Vault Door Wheel -->
+  <circle cx="60" cy="57" r="22" fill="url(#dialGrad)"/>
+  <circle cx="60" cy="57" r="16" fill="#7f3800"/>
+  <!-- Spoke Handles -->
+  <line x1="60" y1="36" x2="60" y2="78" stroke="#ffd43b" stroke-width="4" stroke-linecap="round"/>
+  <line x1="39" y1="57" x2="81" y2="57" stroke="#ffd43b" stroke-width="4" stroke-linecap="round"/>
+  <line x1="45" y1="42" x2="75" y2="72" stroke="#ffd43b" stroke-width="4" stroke-linecap="round"/>
+  <line x1="45" y1="72" x2="75" y2="42" stroke="#ffd43b" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="60" cy="57" r="6" fill="#ffffff"/>
+  <!-- Gold Coins Stack Left -->
+  <ellipse cx="22" cy="100" rx="16" ry="6" fill="#fab005"/>
+  <ellipse cx="22" cy="94" rx="16" ry="6" fill="#ffd43b"/>
+  <ellipse cx="22" cy="88" rx="16" ry="6" fill="#ffe066"/>
+  <!-- Green Sprout -->
+  <path d="M22 88 Q14 74 8 76 Q14 84 22 88 Z" fill="#51cf66"/>
+  <path d="M22 88 Q28 72 36 74 Q28 82 22 88 Z" fill="#40c057"/>
+  <path d="M22 88 L22 76" stroke="#2b8a3e" stroke-width="2" stroke-linecap="round"/>
+  <!-- Gold Coins Stack Right -->
+  <ellipse cx="106" cy="100" rx="16" ry="6" fill="#fab005"/>
+  <ellipse cx="106" cy="94" rx="16" ry="6" fill="#ffd43b"/>
+</svg>

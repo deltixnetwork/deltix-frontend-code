@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 240">
+  <defs>
+    <linearGradient id="arcBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#e7f5ff"/>
+      <stop offset="60%" stop-color="#d0ebff"/>
+      <stop offset="100%" stop-color="#ffffff"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="240" fill="url(#arcBg)"/>
+  <!-- Sparkles & Confetti -->
+  <circle cx="300" cy="80" r="120" fill="#ffd43b" opacity="0.2"/>
+  <circle cx="100" cy="35" r="6" fill="#ff6b6b"/>
+  <circle cx="500" cy="45" r="5" fill="#51cf66"/>
+  <circle cx="280" cy="25" r="5" fill="#845ef7"/>
+  <circle cx="340" cy="20" r="6" fill="#fcc419"/>
+
+  <!-- Gamer Boy with Video Game Controller -->
+  <g transform="translate(50, 30)">
+    <!-- Face -->
+    <ellipse cx="65" cy="65" rx="38" ry="40" fill="#ffd8a8"/>
+    <!-- Hair -->
+    <path d="M25 60 C20 15 45 8 65 8 C85 8 110 15 105 60 C95 32 80 26 65 26 C50 26 35 32 25 60 Z" fill="#422800"/>
+    <!-- Eyes -->
+    <ellipse cx="52" cy="62" rx="6" ry="8" fill="#2b1a04"/>
+    <ellipse cx="78" cy="62" rx="6" ry="8" fill="#2b1a04"/>
+    <circle cx="54" cy="59" r="2.5" fill="#ffffff"/>
+    <circle cx="80" cy="59" r="2.5" fill="#ffffff"/>
+    <!-- Smile & Blush -->
+    <ellipse cx="44" cy="74" rx="6" ry="3" fill="#ff8787" opacity="0.6"/>
+    <ellipse cx="86" cy="74" rx="6" ry="3" fill="#ff8787" opacity="0.6"/>
+    <path d="M56 76 Q65 86 74 76" fill="none" stroke="#2b1a04" stroke-width="3" stroke-linecap="round"/>
+    <!-- Blue Hoodie -->
+    <path d="M30 105 C30 92 45 88 65 88 C85 88 100 92 100 105 L105 180 L25 180 Z" fill="#1864ab"/>
+    <!-- Video Game Controller held in both hands -->
+    <rect x="42" y="118" width="46" height="26" rx="8" fill="#212529"/>
+    <circle cx="52" cy="131" r="5" fill="#495057"/>
+    <circle cx="78" cy="127" r="3" fill="#ff6b6b"/>
+    <circle cx="72" cy="133" r="3" fill="#51cf66"/>
+  </g>
+
+  <!-- Center Gold Treasure Chest & Deltix Gold Trophy -->
+  <g transform="translate(205, 45)">
+    <!-- Chest -->
+    <rect x="25" y="75" width="120" height="70" rx="12" fill="#c92a2a" stroke="#fab005" stroke-width="4"/>
+    <rect x="25" y="75" width="120" height="14" fill="#fab005"/>
+    <ellipse cx="85" cy="64" rx="50" ry="18" fill="#ffd43b"/>
+    <circle cx="65" cy="58" r="8" fill="#ffe066" stroke="#f08c00" stroke-width="2"/>
+    <circle cx="85" cy="52" r="9" fill="#ffd43b" stroke="#f08c00" stroke-width="2"/>
+    <circle cx="105" cy="56" r="8" fill="#ffe066" stroke="#f08c00" stroke-width="2"/>
+    <!-- Trophy with D logo -->
+    <g transform="translate(130, 40)">
+      <path d="M12 10 L48 10 C48 34 38 44 30 44 C22 44 12 34 12 10 Z" fill="#fcc419" stroke="#d9480f" stroke-width="2"/>
+      <path d="M6 16 C0 16 0 32 14 34 M54 16 C60 16 60 32 46 34" fill="none" stroke="#fcc419" stroke-width="4"/>
+      <rect x="24" y="44" width="12" height="12" fill="#f59f00"/>
+      <rect x="16" y="56" width="28" height="10" rx="3" fill="#495057"/>
+      <text x="30" y="32" font-family="'Segoe UI',sans-serif" font-weight="900" font-size="14" fill="#1864ab" text-anchor="middle">D</text>
+    </g>
+  </g>
+
+  <!-- Gamer Girl with Video Game Controller -->
+  <g transform="translate(425, 30)">
+    <!-- Face -->
+    <ellipse cx="65" cy="65" rx="38" ry="40" fill="#ffd8a8"/>
+    <!-- Long Hair & Pink Bow -->
+    <path d="M22 50 C20 15 45 8 65 8 C85 8 110 15 108 50 C114 75 114 120 104 140 C90 105 88 40 65 30 C42 40 40 105 26 140 C16 120 16 75 22 50 Z" fill="#422800"/>
+    <polygon points="90,20 102,10 102,30" fill="#f06595"/>
+    <polygon points="90,20 78,10 78,30" fill="#f06595"/>
+    <circle cx="90" cy="20" r="4" fill="#c2255c"/>
+    <!-- Eyes -->
+    <ellipse cx="52" cy="62" rx="6" ry="8" fill="#2b1a04"/>
+    <ellipse cx="78" cy="62" rx="6" ry="8" fill="#2b1a04"/>
+    <circle cx="54" cy="59" r="2.5" fill="#ffffff"/>
+    <circle cx="80" cy="59" r="2.5" fill="#ffffff"/>
+    <!-- Smile & Blush -->
+    <ellipse cx="44" cy="74" rx="6" ry="3" fill="#ff8787" opacity="0.6"/>
+    <ellipse cx="86" cy="74" rx="6" ry="3" fill="#ff8787" opacity="0.6"/>
+    <path d="M56 76 Q65 86 74 76" fill="none" stroke="#2b1a04" stroke-width="3" stroke-linecap="round"/>
+    <!-- Pink Hoodie -->
+    <path d="M30 105 C30 92 45 88 65 88 C85 88 100 92 100 105 L105 180 L25 180 Z" fill="#d6336c"/>
+    <!-- Video Game Controller held in both hands -->
+    <rect x="42" y="118" width="46" height="26" rx="8" fill="#212529"/>
+    <circle cx="52" cy="131" r="5" fill="#495057"/>
+    <circle cx="78" cy="127" r="3" fill="#ff6b6b"/>
+    <circle cx="72" cy="133" r="3" fill="#51cf66"/>
+  </g>
+</svg>

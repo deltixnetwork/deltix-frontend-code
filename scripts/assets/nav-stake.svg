@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="nGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fff3bf"/>
+      <stop offset="50%" stop-color="#fcc419"/>
+      <stop offset="100%" stop-color="#e67700"/>
+    </linearGradient>
+    <filter id="nShadow"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#7f3800" flood-opacity="0.3"/></filter>
+  </defs>
+  <g filter="url(#nShadow)">
+    <path d="M26 60 C26 53 74 53 74 60 L74 72 C74 79 26 79 26 72 Z" fill="#d9480f"/>
+    <ellipse cx="50" cy="60" rx="24" ry="8" fill="url(#nGold)"/>
+    <path d="M26 44 C26 37 74 37 74 44 L74 56 C74 63 26 63 26 56 Z" fill="#e67700"/>
+    <ellipse cx="50" cy="44" rx="24" ry="8" fill="url(#nGold)"/>
+    <path d="M26 28 C26 21 74 21 74 28 L74 40 C74 47 26 47 26 40 Z" fill="#f08c00"/>
+    <ellipse cx="50" cy="28" rx="24" ry="8" fill="url(#nGold)"/>
+    <circle cx="50" cy="28" r="4" fill="#d9480f" opacity="0.6"/>
+  </g>
+</svg>

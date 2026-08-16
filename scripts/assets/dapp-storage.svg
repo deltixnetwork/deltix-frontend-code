@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="boxKraft" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffe066"/><stop offset="50%" stop-color="#f59f00"/><stop offset="100%" stop-color="#d9480f"/>
+    </linearGradient>
+  </defs>
+  <!-- 3D Cardboard Delivery Box -->
+  <polygon points="50,18 84,34 50,50 16,34" fill="#ffd43b"/>
+  <polygon points="16,34 50,50 50,82 16,66" fill="#f59f00"/>
+  <polygon points="84,34 50,50 50,82 84,66" fill="#d9480f"/>
+  <!-- Tape -->
+  <polygon points="46,20 54,24 54,48 46,44" fill="#e9ecef" opacity="0.8"/>
+  <polygon points="46,50 54,50 54,82 46,82" fill="#ced4da" opacity="0.8"/>
+  <rect x="60" y="50" width="14" height="10" rx="2" fill="#ffffff" opacity="0.9"/>
+  <line x1="63" y1="53" x2="71" y2="53" stroke="#495057" stroke-width="1.5"/>
+  <line x1="63" y1="57" x2="69" y2="57" stroke="#495057" stroke-width="1.5"/>
+</svg>

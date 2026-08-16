@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="trophyGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fff9db"/>
+      <stop offset="35%" stop-color="#ffd43b"/>
+      <stop offset="70%" stop-color="#f59f00"/>
+      <stop offset="100%" stop-color="#d9480f"/>
+    </linearGradient>
+    <linearGradient id="trophyBase" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#862e9c"/>
+      <stop offset="100%" stop-color="#4c1d95"/>
+    </linearGradient>
+    <filter id="trophyGlow">
+      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#f59f00" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <g filter="url(#trophyGlow)">
+    <!-- Handles -->
+    <path d="M20 28 C10 28 10 50 28 52 M80 28 C90 28 90 50 72 52" fill="none" stroke="url(#trophyGold)" stroke-width="6" stroke-linecap="round"/>
+    <!-- Cup -->
+    <path d="M26 18 L74 18 C74 48 60 62 50 62 C40 62 26 48 26 18 Z" fill="url(#trophyGold)"/>
+    <ellipse cx="50" cy="18" rx="24" ry="6" fill="#ffe066"/>
+    <!-- Stem & Base -->
+    <path d="M44 62 L56 62 L54 76 L46 76 Z" fill="url(#trophyGold)"/>
+    <rect x="32" y="76" width="36" height="12" rx="4" fill="url(#trophyBase)"/>
+    <rect x="30" y="86" width="40" height="5" rx="2.5" fill="#fcc419"/>
+    <!-- Highlight -->
+    <path d="M34 24 C34 40 42 50 48 54" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
+    <polygon points="50,28 53,37 62,37 55,42 57,51 50,46 43,51 45,42 38,37 47,37" fill="#ffffff" opacity="0.85"/>
+  </g>
+</svg>

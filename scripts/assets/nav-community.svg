@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="commPurple" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e599f7"/>
+      <stop offset="40%" stop-color="#ae3ec9"/>
+      <stop offset="100%" stop-color="#5c1482"/>
+    </linearGradient>
+    <filter id="commShadow"><feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#5c1482" flood-opacity="0.3"/></filter>
+  </defs>
+  <g filter="url(#commShadow)">
+    <!-- Left person -->
+    <circle cx="28" cy="42" r="11" fill="url(#commPurple)"/>
+    <path d="M14 74 C14 62 20 56 28 56 C36 56 42 62 42 74 Z" fill="url(#commPurple)"/>
+    <!-- Right person -->
+    <circle cx="72" cy="42" r="11" fill="url(#commPurple)"/>
+    <path d="M58 74 C58 62 64 56 72 56 C80 56 86 62 86 74 Z" fill="url(#commPurple)"/>
+    <!-- Center front person -->
+    <circle cx="50" cy="34" r="14" fill="#d0bfff"/>
+    <circle cx="50" cy="34" r="13" fill="url(#commPurple)"/>
+    <path d="M30 78 C30 63 38 54 50 54 C62 54 70 63 70 78 Z" fill="#f3d9fa"/>
+    <path d="M32 78 C32 65 40 56 50 56 C60 56 68 65 68 78 Z" fill="url(#commPurple)"/>
+  </g>
+</svg>

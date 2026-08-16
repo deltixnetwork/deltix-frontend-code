@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="g_shield-orange.svg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffd43b"/>
+      <stop offset="50%" stop-color="#f76707"/>
+      <stop offset="100%" stop-color="#9c3600"/>
+    </linearGradient>
+    <filter id="sh_shield-orange.svg"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#9c3600" flood-opacity="0.35"/></filter>
+  </defs>
+  <g filter="url(#sh_shield-orange.svg)">
+    <path d="M50 10 C74 10 86 16 86 42 C86 68 50 90 50 90 C50 90 14 68 14 42 C14 16 26 10 50 10 Z" fill="url(#g_shield-orange.svg)" stroke="#ffffff" stroke-width="4"/>
+    <path d="M50 18 C70 18 78 22 78 44 C78 64 50 82 50 82 C50 82 22 64 22 44 C22 22 30 18 50 18 Z" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.6"/>
+    <!-- Center Star -->
+    <polygon points="50,28 54,40 66,40 56,47 60,59 50,52 40,59 44,47 34,40 46,40" fill="#ffffff"/>
+  </g>
+</svg>

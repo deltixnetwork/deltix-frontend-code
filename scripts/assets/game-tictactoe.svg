@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <radialGradient id="botHead" cx="35%" cy="30%" r="65%">
+      <stop offset="0%" stop-color="#e9ecef"/><stop offset="70%" stop-color="#ced4da"/><stop offset="100%" stop-color="#495057"/>
+    </radialGradient>
+  </defs>
+  <!-- Cute 3D Robot Head & Neon Grid -->
+  <rect x="8" y="16" width="36" height="36" rx="4" fill="#3b156b" stroke="#da77f2" stroke-width="2"/>
+  <line x1="20" y1="16" x2="20" y2="52" stroke="#da77f2" stroke-width="1.5"/>
+  <line x1="32" y1="16" x2="32" y2="52" stroke="#da77f2" stroke-width="1.5"/>
+  <line x1="8" y1="28" x2="44" y2="28" stroke="#da77f2" stroke-width="1.5"/>
+  <line x1="8" y1="40" x2="44" y2="40" stroke="#da77f2" stroke-width="1.5"/>
+  <text x="14" y="26" font-family="'Segoe UI',sans-serif" font-weight="900" font-size="10" fill="#38d9a9">✕</text>
+  <circle cx="26" cy="34" r="3.5" fill="none" stroke="#ff6b6b" stroke-width="1.5"/>
+  <text x="38" y="50" font-family="'Segoe UI',sans-serif" font-weight="900" font-size="10" fill="#38d9a9">✕</text>
+
+  <!-- Robot on Right -->
+  <rect x="48" y="24" width="44" height="40" rx="14" fill="url(#botHead)"/>
+  <rect x="54" y="30" width="32" height="20" rx="8" fill="#181a20"/>
+  <ellipse cx="62" cy="40" rx="4" ry="5" fill="#38d9a9"/>
+  <ellipse cx="78" cy="40" rx="4" ry="5" fill="#38d9a9"/>
+  <!-- Ears -->
+  <rect x="44" y="36" width="4" height="12" rx="2" fill="#74c0fc"/>
+  <rect x="92" y="36" width="4" height="12" rx="2" fill="#74c0fc"/>
+  <!-- Antenna -->
+  <line x1="70" y1="24" x2="70" y2="14" stroke="#ced4da" stroke-width="3"/>
+  <circle cx="70" cy="12" r="4" fill="#38d9a9"/>
+</svg>
