@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const outDir = path.join(__dirname, 'assets');
+const outDir = path.join(__dirname, '..', 'assets');
 if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
 function write(filename, content) {

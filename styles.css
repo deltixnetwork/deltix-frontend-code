@@ -189,6 +189,16 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .addr-eye-icon {
   font-size: 14px;
   opacity: 0.95;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+.addr-eye-icon:active {
+  transform: scale(0.92);
+  background: rgba(255, 255, 255, 0.26);
 }
 .balance-row {
   display: grid;
@@ -474,6 +484,36 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   box-shadow: 0 20px 50px rgba(16, 24, 40, .2);
 }
 .modal-actions { display: flex; gap: 10px; }
+
+/* Faucet status popup */
+.faucet-modal { text-align: center; }
+.faucet-modal-icon {
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 6px;
+  display: block;
+  filter: drop-shadow(0 6px 12px rgba(2, 72, 203, 0.25));
+}
+.faucet-modal-msg {
+  color: var(--muted, #5b6b8c);
+  font-size: 13.5px;
+  line-height: 1.5;
+  margin: 6px 0 4px;
+}
+.faucet-modal-countdown {
+  font-family: monospace;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #0248cb;
+  background: rgba(2, 72, 203, 0.08);
+  border: 1px solid rgba(2, 72, 203, 0.18);
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin: 10px auto 12px;
+  width: fit-content;
+}
+.faucet-modal .modal-actions { justify-content: center; }
 .modal .url {
   font-family: monospace; font-size: 12px; background: var(--panel-2);
   border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; word-break: break-all;

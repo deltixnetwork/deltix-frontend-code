@@ -76,7 +76,7 @@
           <span class="muted balance-lbl">Total balance</span>
           <div class="balance" id="totalBalance">0.00 <small>$DLTX</small></div>
           <div class="address" id="walletAddress" title="Tap to copy">
-            <span class="addr-eye-icon">👁</span>
+            <span class="addr-eye-icon" id="privacyToggle" role="button" tabindex="0" title="Hide address and balances">👁</span>
             <span id="walletAddressTxt">0x…</span>
           </div>
           <div class="balance-row">
@@ -105,7 +105,7 @@
           <img src="assets/icon-faucet-tap.svg" class="faucet-3d-tap" alt="Faucet"/>
           <div class="faucet-content">
             <div class="faucet-title">Genesis faucet (+500 $DLTX)</div>
-            <div class="faucet-timer" id="faucetTimer">Next claim in <span class="faucet-clock">⏱</span> <span id="faucetCountdown">11:59:47</span></div>
+            <div class="faucet-timer" id="faucetTimer">Tap to claim</div>
           </div>
         </div>
 
@@ -398,6 +398,19 @@
       <div class="modal-actions">
         <button class="btn ghost" id="cancelStake">Cancel</button>
         <button class="btn primary" id="confirmStake">Confirm delegation</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Faucet status modal -->
+  <div class="modal-backdrop" id="faucetModal" hidden>
+    <div class="modal faucet-modal">
+      <img src="assets/icon-faucet-tap.svg" class="faucet-modal-icon" alt="Faucet"/>
+      <h3 id="faucetModalTitle">Already claimed</h3>
+      <p class="faucet-modal-msg" id="faucetModalMsg"></p>
+      <div class="faucet-modal-countdown" id="faucetModalCountdown" hidden>00:00:00</div>
+      <div class="modal-actions">
+        <button class="btn primary" id="faucetModalOk">Got it</button>
       </div>
     </div>
   </div>
