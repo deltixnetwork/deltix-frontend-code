@@ -342,15 +342,29 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .feature-card.clickable, .feature-card.collectible { display: flex; align-items: center; gap: 12px; }
 .feature-card.clickable .dapp-3d-icon,
 .feature-card.collectible .dapp-3d-icon { width: 44px; height: 44px; flex: 0 0 44px; }
+/* White dApp glyphs need their gradient tile when placed on white cards */
+.feature-card img[src$="dapp-swap.svg"] { background: linear-gradient(160deg, #38bdf8, #0369a1); border-radius: 12px; padding: 7px; }
+.feature-card img[src$="dapp-nfts.svg"] { background: linear-gradient(160deg, #4ade80, #15803d); border-radius: 12px; padding: 7px; }
+.feature-card img[src$="dapp-defi.svg"] { background: linear-gradient(160deg, #f472b6, #be185d); border-radius: 12px; padding: 7px; }
+.feature-card img[src$="dapp-dao.svg"] { background: linear-gradient(160deg, #fbbf24, #d97706); border-radius: 12px; padding: 7px; }
+.feature-card img[src$="dapp-explorer.svg"] { background: linear-gradient(160deg, #a78bfa, #6d28d9); border-radius: 12px; padding: 7px; }
+.feature-card img[src$="dapp-storage.svg"] { background: linear-gradient(160deg, #38bdf8, #0891b2); border-radius: 12px; padding: 7px; }
 .feature-card.collectible.locked .name { color: #64748b; }
 
 /* Swap venue chooser */
 .swap-venue {
+  display: flex; align-items: center; gap: 12px;
   padding: 12px 14px; margin: 8px 0; border-radius: 12px;
   border: 1px solid #dbe4f5; background: #fff; cursor: pointer;
 }
 .swap-venue:first-child { border-color: var(--accent, #2563eb); background: #eff6ff; }
 .swap-venue:active { background: #eef3ff; }
+.swap-venue-logo {
+  flex: 0 0 38px; width: 38px; height: 38px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 800; font-size: 16px;
+  box-shadow: inset 0 -2px 4px rgba(0,0,0,.18);
+}
 .swap-venue-name { font-weight: 700; font-size: 14px; color: #0f172a; }
 .swap-venue-tag { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
 

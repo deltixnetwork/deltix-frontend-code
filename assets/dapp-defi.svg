@@ -1,21 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <defs>
-    <radialGradient id="ghostGlow" cx="40%" cy="30%" r="65%">
-      <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="70%" stop-color="#f8f9fa"/>
-      <stop offset="100%" stop-color="#e9ecef"/>
-    </radialGradient>
-  </defs>
-  <!-- 3D Cute Ghost with Tongue out -->
-  <path d="M50 14 C30 14 20 32 20 54 C20 74 18 86 28 84 C34 82 38 88 44 84 C50 80 54 88 60 84 C66 80 70 86 76 82 C82 78 80 68 80 54 C80 32 70 14 50 14 Z" fill="url(#ghostGlow)"/>
-  <ellipse cx="38" cy="40" rx="4" ry="7" fill="#212529"/>
-  <ellipse cx="62" cy="40" rx="4" ry="7" fill="#212529"/>
-  <circle cx="39" cy="38" r="1.5" fill="#ffffff"/>
-  <circle cx="63" cy="38" r="1.5" fill="#ffffff"/>
-  <!-- Smile & tongue -->
-  <path d="M38 54 Q50 64 62 54 Z" fill="#212529"/>
-  <path d="M46 58 C46 68 54 68 54 58 Z" fill="#ff6b6b"/>
-  <!-- Cute ghost arms -->
-  <path d="M20 52 C10 50 12 60 22 58" fill="url(#ghostGlow)"/>
-  <path d="M80 52 C90 50 88 60 78 58" fill="url(#ghostGlow)"/>
+  <!-- Growth chart: rising bars + trend arrow -->
+  <rect x="22" y="58" width="12" height="20" rx="5" fill="#ffffff" fill-opacity=".55"/>
+  <rect x="44" y="50" width="12" height="28" rx="5" fill="#ffffff" fill-opacity=".75"/>
+  <rect x="66" y="40" width="12" height="38" rx="5" fill="#ffffff"/>
+  <polyline points="28,46 46,32 58,38 72,24" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <polygon points="82,14 66,18 78,30" fill="#ffffff"/>
 </svg>

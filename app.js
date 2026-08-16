@@ -938,17 +938,20 @@ $('confirmDapp').addEventListener('click', () => {
 
 // ---------- Swap venue chooser: A-Network DEX + external EVM DEXes ----------
 const SWAP_VENUES = [
-  { name: 'A-Network DEX', url: 'https://a-network.net/dex', tag: 'Recommended · Deltix partner' },
-  { name: 'Uniswap', url: 'https://app.uniswap.org', tag: 'Ethereum & EVM chains' },
-  { name: 'PancakeSwap', url: 'https://pancakeswap.finance', tag: 'BNB Chain & EVM' },
-  { name: 'SushiSwap', url: 'https://www.sushi.com/swap', tag: 'Multi-chain EVM' },
-  { name: '1inch', url: 'https://app.1inch.io', tag: 'EVM DEX aggregator' },
+  { name: 'A-Network DEX', url: 'https://a-network.net/dex', tag: 'Recommended · Deltix partner', mono: 'A', color: 'linear-gradient(150deg, #3b82f6, #1e40af)' },
+  { name: 'Uniswap', url: 'https://app.uniswap.org', tag: 'Ethereum & EVM chains', mono: 'U', color: 'linear-gradient(150deg, #ff5caa, #d6157e)' },
+  { name: 'PancakeSwap', url: 'https://pancakeswap.finance', tag: 'BNB Chain & EVM', mono: 'P', color: 'linear-gradient(150deg, #53dee9, #1fc7d4)' },
+  { name: 'SushiSwap', url: 'https://www.sushi.com/swap', tag: 'Multi-chain EVM', mono: 'S', color: 'linear-gradient(150deg, #a855f7, #6d28d9)' },
+  { name: '1inch', url: 'https://app.1inch.io', tag: 'EVM DEX aggregator', mono: '1', color: 'linear-gradient(150deg, #475569, #0f172a)' },
 ];
 function openSwapChooser() {
   $('swapOptions').innerHTML = SWAP_VENUES.map((v, i) => `
     <div class="swap-venue" data-vi="${i}">
-      <div class="swap-venue-name">${v.name}</div>
-      <div class="swap-venue-tag">${v.tag}</div>
+      <div class="swap-venue-logo" style="background:${v.color}">${v.mono}</div>
+      <div>
+        <div class="swap-venue-name">${v.name}</div>
+        <div class="swap-venue-tag">${v.tag}</div>
+      </div>
     </div>`).join('');
   $('swapOptions').querySelectorAll('.swap-venue').forEach((row) =>
     row.addEventListener('click', () => {

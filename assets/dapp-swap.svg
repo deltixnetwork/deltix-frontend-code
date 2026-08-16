@@ -1,17 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <defs>
-    <linearGradient id="uniHorn" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ffd43b"/><stop offset="100%" stop-color="#f59f00"/>
-    </linearGradient>
-    <linearGradient id="uniMane" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ff8787"/><stop offset="50%" stop-color="#cc5de8"/><stop offset="100%" stop-color="#74c0fc"/>
-    </linearGradient>
-  </defs>
-  <!-- 3D White Unicorn Head with Rainbow Mane & Golden Horn -->
-  <path d="M58 10 L68 28 L52 24 Z" fill="url(#uniHorn)"/>
-  <path d="M26 36 C22 48 30 76 56 78 C68 80 82 72 82 54 C82 38 68 34 54 34 Z" fill="#ffffff"/>
-  <path d="M38 32 C38 18 24 38 20 54 C16 68 26 84 40 88 C32 82 30 68 38 52 Z" fill="url(#uniMane)"/>
-  <circle cx="64" cy="46" r="4" fill="#1864ab"/>
-  <circle cx="65" cy="45" r="1.5" fill="#ffffff"/>
-  <ellipse cx="76" cy="62" rx="3" ry="2" fill="#ff8787"/>
+  <!-- Circular exchange arrows: clean fintech swap glyph -->
+  <path d="M28 42 A24 24 0 0 1 72 42" fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round"/>
+  <polygon points="63,41 82,37 74,57" fill="#ffffff"/>
+  <path d="M72 58 A24 24 0 0 1 28 58" fill="none" stroke="#ffffff" stroke-opacity=".72" stroke-width="9" stroke-linecap="round"/>
+  <polygon points="37,59 18,63 26,43" fill="#ffffff" fill-opacity=".72"/>
 </svg>
