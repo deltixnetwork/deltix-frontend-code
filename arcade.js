@@ -773,7 +773,7 @@ GAME_IMPL.merge = (mount, diff, finish, status) => {
   return () => cleanupInput();
 };
 
-// ---- 5. Sudoku ----
+// ---- 5. Sudoku (strikes — three mistakes and you're out) ----
 GAME_IMPL.sudoku = (mount, diff, finish, status) => {
   // Valid full grid from a shuffled base pattern.
   const digits = shuffleArr([1,2,3,4,5,6,7,8,9]);
@@ -783,66 +783,129 @@ GAME_IMPL.sudoku = (mount, diff, finish, status) => {
   const pattern = (r, c) => (3 * (r % 3) + Math.floor(r / 3) + c) % 9;
   const solved = rows.map((r) => cols.map((c) => digits[pattern(r, c)]));
   const blanks = diff === 'hard' ? 52 : 42;
+  const maxStrikes = diff === 'hard' ? 2 : 3;
   const puzzle = solved.map((row) => row.slice());
   shuffleArr(Array.from({ length: 81 }, (_, i) => i)).slice(0, blanks)
     .forEach((i) => (puzzle[Math.floor(i / 9)][i % 9] = 0));
 
   const board = makeGrid(mount, 9, 'sudoku');
-  let selected = null;
+  let selected = null, strikes = 0, over = false;
   const cellEls = [];
+  const strikeBar = () => '✖'.repeat(strikes) + '○'.repeat(maxStrikes - strikes);
+  const baseline = () => `${puzzle.flat().filter((v) => !v).length} left · mistakes ${strikeBar()}`;
+  function highlight() {
+    cellEls.forEach((el, i) => {
+      const r = Math.floor(i / 9), c = i % 9;
+      el.classList.remove('peer', 'same');
+      if (!selected) return;
+      const sameBox = Math.floor(r / 3) === Math.floor(selected.r / 3) && Math.floor(c / 3) === Math.floor(selected.c / 3);
+      if (r === selected.r || c === selected.c || sameBox) el.classList.add('peer');
+      const sv = puzzle[selected.r][selected.c];
+      if (sv && puzzle[r][c] === sv) el.classList.add('same');
+    });
+  }
   puzzle.forEach((row, r) => row.forEach((v, c) => {
     const el = document.createElement('button');
     el.className = 'cell s-cell' + (v ? ' given' : '');
     el.textContent = v || '';
     if ((c + 1) % 3 === 0 && c < 8) el.classList.add('bx');
     if ((r + 1) % 3 === 0 && r < 8) el.classList.add('by');
-    if (!v) el.addEventListener('click', () => {
+    el.addEventListener('click', () => {
+      if (over) return;
       cellEls.forEach((x) => x.classList.remove('sel'));
       el.classList.add('sel');
       selected = { r, c, el };
+      highlight();
     });
     board.appendChild(el);
     cellEls.push(el);
   }));
   const pad = document.createElement('div');
   pad.className = 'numpad';
+  const padBtns = {};
   for (let n = 1; n <= 9; n++) {
     const b = document.createElement('button');
     b.textContent = n;
     b.addEventListener('click', () => enter(n));
     pad.appendChild(b);
+    padBtns[n] = b;
   }
   const erase = document.createElement('button');
   erase.textContent = '⌫';
   erase.addEventListener('click', () => enter(0));
   pad.appendChild(erase);
   mount.appendChild(pad);
-  status('Tap a cell, then a number.');
-  function valid() {
-    const seen = (cells) => {
-      const s = new Set(cells);
-      return s.size === 9 && !s.has(0);
-    };
-    for (let i = 0; i < 9; i++) {
-      if (!seen(puzzle[i])) return false;
-      if (!seen(puzzle.map((row) => row[i]))) return false;
-      const br = Math.floor(i / 3) * 3, bc = (i % 3) * 3;
-      const box = [];
-      for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) box.push(puzzle[br + r][bc + c]);
-      if (!seen(box)) return false;
+  status(`Tap a cell, then a number · ${maxStrikes} mistakes allowed`);
+  function retireDigits() {
+    for (let n = 1; n <= 9; n++) {
+      const count = puzzle.flat().filter((v) => v === n).length;
+      padBtns[n].disabled = count >= 9;
+      padBtns[n].classList.toggle('used-up', count >= 9);
+    }
+  }
+  const okAt = (b, r, c, n) => {
+    for (let i = 0; i < 9; i++) if (b[r][i] === n || b[i][c] === n) return false;
+    const br = Math.floor(r / 3) * 3, bc = Math.floor(c / 3) * 3;
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) if (b[br + i][bc + j] === n) return false;
+    return true;
+  };
+  const solvable = (b) => {
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) if (!b[r][c]) {
+      for (let n = 1; n <= 9; n++) if (okAt(b, r, c, n)) {
+        b[r][c] = n;
+        if (solvable(b)) { b[r][c] = 0; return true; }
+        b[r][c] = 0;
+      }
+      return false;
     }
     return true;
-  }
+  };
+  // wrong = conflicts with the board, or leaves it unsolvable (valid alternate solutions are accepted)
+  const isWrong = (r, c, n) => {
+    if (!okAt(puzzle, r, c, n)) return true;
+    puzzle[r][c] = n;
+    const ok = solvable(puzzle);
+    puzzle[r][c] = 0;
+    return !ok;
+  };
   function enter(n) {
-    if (!selected) return;
-    puzzle[selected.r][selected.c] = n;
-    selected.el.textContent = n || '';
-    const remaining = puzzle.flat().filter((v) => !v).length;
-    status(remaining ? `${remaining} cells left` : 'Checking…');
-    if (!remaining) {
-      if (valid()) finish(true, blanks);
-      else status('Board full but not valid — check for duplicates.');
+    if (!selected || over || selected.el.classList.contains('given') || selected.el.classList.contains('ok')) return;
+    const { r, c, el } = selected;
+    if (n === 0) {
+      puzzle[r][c] = 0;
+      el.textContent = '';
+      el.classList.remove('bad');
+      status(baseline());
+      highlight();
+      return;
     }
+    if (isWrong(r, c, n)) {
+      strikes++;
+      el.textContent = n;
+      el.classList.add('bad');
+      el.classList.remove('pop');
+      void el.offsetWidth;
+      el.classList.add('pop');
+      setTimeout(() => { if (!over && puzzle[r][c] === 0) { el.textContent = ''; el.classList.remove('bad'); } }, 650);
+      if (strikes >= maxStrikes) {
+        over = true;
+        status(`${strikeBar()} — too many mistakes!`);
+        return finish(false, 81 - blanks - puzzle.flat().filter((v) => !v).length);
+      }
+      status(`Wrong — ${strikeBar()} · careful now`);
+      return;
+    }
+    puzzle[r][c] = n;
+    el.textContent = n;
+    el.classList.add('ok');
+    el.classList.remove('bad', 'pop');
+    void el.offsetWidth;
+    el.classList.add('pop');
+    retireDigits();
+    highlight();
+    const remaining = puzzle.flat().filter((v) => !v).length;
+    if (!remaining) { over = true; status('Solved — flawless logic! 🏆'); return finish(true, blanks); }
+    status(baseline());
   }
   return () => {};
 };

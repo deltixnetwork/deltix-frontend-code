@@ -613,6 +613,11 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .board.sudoku .cell { border-radius: 3px; font-size: 14px; }
 .board.sudoku .cell.given { background: #eef3ff; color: #334155; cursor: default; }
 .board.sudoku .cell.sel { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(47,107,255,.25); }
+.board.sudoku .cell.peer { background: #f0f5ff; }
+.board.sudoku .cell.same { background: #dbe7ff; }
+.board.sudoku .cell.ok { color: var(--accent); font-weight: 700; }
+.board.sudoku .cell.bad { background: #fee2e2; color: #dc2626; font-weight: 700; }
+.numpad button.used-up { opacity: .3; }
 .board.sudoku .cell.bx { margin-right: 3px; }
 .board.sudoku .cell.by { margin-bottom: 3px; }
 .numpad { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; max-width: 330px; margin: 0 auto 10px; }
