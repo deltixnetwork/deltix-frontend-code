@@ -415,50 +415,128 @@ GAME_IMPL.tictactoe = (mount, diff, finish, status) => {
   return () => {};
 };
 
-// ---- 2. Memory Match ----
+// ---- 2. Memory Match (duel vs Iris — near-photographic recall) ----
 GAME_IMPL.memory = (mount, diff, finish, status) => {
   const glyphs = ['◆','●','▲','■','★','✚','☾','⬟','✿','⬢'];
   const pairs = diff === 'hard' ? 10 : 8;
-  const moveLimit = diff === 'hard' ? 26 : 20;
+  const recall = diff === 'hard' ? 0.95 : 0.8; // chance Iris memorizes a revealed card
   const deck = shuffleArr(glyphs.slice(0, pairs).flatMap((g) => [g, g]));
   const grid = makeGrid(mount, 4, 'memory');
-  let open = [], matched = 0, moves = 0, lock = false;
-  status(`Find all ${pairs} pairs within ${moveLimit} moves.`);
+  const cells = [];
+  let open = [], pairsMe = 0, pairsIris = 0, lock = false, stopped = false;
+  const done = new Set();
+  const irisMem = new Map(); // index -> glyph
   deck.forEach((glyph, i) => {
     const c = document.createElement('button');
     c.className = 'cell face-down';
-    c.addEventListener('click', () => {
-      if (lock || open.includes(i) || c.classList.contains('done')) return;
-      c.textContent = glyph;
-      c.classList.remove('face-down');
-      open.push(i);
-      if (open.length === 2) {
-        moves++;
-        const [a, b] = open;
-        const els = grid.children;
-        if (deck[a] === deck[b]) {
-          els[a].classList.add('done');
-          els[b].classList.add('done');
-          matched++;
-          open = [];
-          status(`${matched}/${pairs} pairs · ${moveLimit - moves} moves left`);
-          if (matched === pairs) return finish(true, moves);
-          if (moves >= moveLimit) return finish(false, moves);
-        } else {
-          lock = true;
-          setTimeout(() => {
-            els[a].textContent = ''; els[b].textContent = '';
-            els[a].classList.add('face-down'); els[b].classList.add('face-down');
-            open = []; lock = false;
-            if (moves >= moveLimit) return finish(false, moves);
-            status(`${matched}/${pairs} pairs · ${moveLimit - moves} moves left`);
-          }, 700);
-        }
-      }
-    });
+    c.addEventListener('click', () => playerFlip(i));
     grid.appendChild(c);
+    cells.push(c);
   });
-  return () => {};
+  const score = () => `You ${pairsMe} · Iris ${pairsIris} — first to more pairs wins`;
+  function reveal(i) {
+    cells[i].textContent = deck[i];
+    cells[i].classList.remove('face-down');
+    if (Math.random() < recall) irisMem.set(i, deck[i]); // Iris watches every flip
+  }
+  function hide(i) {
+    cells[i].textContent = '';
+    cells[i].classList.add('face-down');
+  }
+  function settle(a, b, who) {
+    if (deck[a] !== deck[b]) return false;
+    cells[a].classList.add('done', who);
+    cells[b].classList.add('done', who);
+    done.add(a); done.add(b);
+    irisMem.delete(a); irisMem.delete(b);
+    if (who === 'iris') pairsIris++; else pairsMe++;
+    return true;
+  }
+  function maybeEnd() {
+    if (pairsMe + pairsIris < pairs) return false;
+    if (pairsMe > pairsIris) { status(`You out-remembered Iris ${pairsMe}–${pairsIris}! 🏆`); finish(true, pairsMe); }
+    else { status(pairsMe === pairsIris ? `Draw ${pairsMe}–${pairsIris} — no reward. Rematch?` : `Iris wins ${pairsIris}–${pairsMe}. She never forgets!`); finish(false, pairsMe); }
+    return true;
+  }
+  function playerFlip(i) {
+    if (lock || stopped || done.has(i) || open.includes(i)) return;
+    reveal(i);
+    open.push(i);
+    if (open.length < 2) return;
+    const [a, b] = open;
+    open = [];
+    if (settle(a, b, 'me')) {
+      if (maybeEnd()) return;
+      status(`Pair! Go again · ${score()}`);
+    } else {
+      lock = true;
+      setTimeout(() => {
+        if (stopped) return;
+        hide(a); hide(b);
+        irisTurn();
+      }, 750);
+    }
+  }
+  const alive = () => deck.map((_, i) => i).filter((i) => !done.has(i));
+  function knownPair() {
+    const byGlyph = {};
+    for (const [i, g] of irisMem) {
+      if (byGlyph[g] != null) return [byGlyph[g], i];
+      byGlyph[g] = i;
+    }
+    return null;
+  }
+  function irisPick() {
+    const pair = knownPair();
+    if (pair) return pair;
+    const unknown = alive().filter((i) => !irisMem.has(i));
+    const first = unknown.length ? unknown[Math.floor(Math.random() * unknown.length)] : alive()[0];
+    return [first, null];
+  }
+  function irisTurn() {
+    lock = true;
+    status(aiThinkLine('Iris'));
+    setTimeout(() => {
+      if (stopped) return;
+      let [a, b] = irisPick();
+      reveal(a);
+      irisMem.set(a, deck[a]); // she certainly remembers her own flip
+      setTimeout(() => {
+        if (stopped) return;
+        if (b == null) {
+          // partner of the card just revealed, if she remembers it
+          for (const [j, g] of irisMem) if (j !== a && g === deck[a] && !done.has(j)) { b = j; break; }
+          if (b == null) {
+            const rest = alive().filter((i) => i !== a);
+            const unknown = rest.filter((i) => !irisMem.has(i));
+            b = (unknown.length ? unknown : rest)[Math.floor(Math.random() * (unknown.length ? unknown.length : rest.length))];
+          }
+        }
+        reveal(b);
+        irisMem.set(b, deck[b]);
+        setTimeout(() => {
+          if (stopped) return;
+          if (settle(a, b, 'iris')) {
+            if (maybeEnd()) return;
+            status(`Iris pairs up and goes again · ${score()}`);
+            irisTurn();
+          } else {
+            hide(a); hide(b);
+            lock = false;
+            status(`Your turn · ${score()}`);
+          }
+        }, 800);
+      }, 550 + Math.random() * 450);
+    }, 600 + Math.random() * 700);
+  }
+  // Coin toss for the opening turn
+  if (Math.random() < 0.5) {
+    status('Iris won the toss — she flips first.');
+    irisTurn();
+  } else {
+    status(`You flip first · find pairs to keep your turn`);
+  }
+  return () => { stopped = true; };
 };
 
 // ---- 3. Delta Snake ----

@@ -599,6 +599,8 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .board.memory .cell { font-size: 22px; color: var(--accent); }
 .board.memory .cell.face-down { background: linear-gradient(135deg, #eef3ff, #e3ebff); }
 .board.memory .cell.done { background: var(--green-bg, #e8f8ef); color: var(--green, #16a34a); border-color: transparent; }
+.board.memory .cell.done.me { background: #e0edff; color: var(--accent); }
+.board.memory .cell.done.iris { background: #fef3c7; color: #b45309; }
 .board.merge .cell { font-size: 16px; background: #f1f5f9; }
 .board.merge .cell[data-v="0"], .board.merge .cell[data-v=""] { background: #f1f5f9; }
 .board.merge .cell[data-v="2"], .board.merge .cell[data-v="4"] { background: #eef3ff; color: #334155; }
