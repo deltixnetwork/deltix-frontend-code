@@ -1520,14 +1520,25 @@ GAME_IMPL.ludo = (mount, diff, finish, status) => {
   function render() {
     boardWrap.querySelectorAll('.ludo-token').forEach((t) => t.remove());
     tokens.forEach((toks, p) => {
-      toks.forEach((pos) => {
-        if (pos < 0 || pos > 61) return;
-        const [r, c] = cellOf(p, pos);
+      toks.forEach((pos, i) => {
+        if (pos > 61) return;
+        let r, c;
+        if (pos === -1) {
+          const [r0, c0] = YARD_QUAD[p];
+          r = r0 + 2 + Math.floor(i / 2);
+          c = c0 + 2 + (i % 2);
+        } else {
+          [r, c] = cellOf(p, pos);
+        }
         const t = document.createElement('div');
         t.className = 'ludo-token';
         t.style.setProperty('--c', colors[p]);
         t.style.gridRow = r + 1;
         t.style.gridColumn = c + 1;
+        if (p === 0 && awaiting && awaiting.opts.includes(i)) {
+          t.classList.add('pick');
+          t.addEventListener('click', () => tokenClicked(i));
+        }
         boardWrap.appendChild(t);
       });
     });
@@ -1555,6 +1566,22 @@ GAME_IMPL.ludo = (mount, diff, finish, status) => {
     const ringIdx = (START[p] + next - 1) % 56;
     if (SAFE.has(ringIdx)) return false;
     return tokens.some((toks, op) => op !== p && toks.some((opos) => opos >= 1 && opos <= 55 && (START[op] + opos - 1) % 56 === ringIdx));
+  }
+  const ringIdxOf = (p, pos) => (pos >= 1 && pos <= 55 ? (START[p] + pos - 1) % 56 : -1);
+  /** Is a token of player p at ring position pos capturable within one enemy roll? */
+  function threatened(p, pos) {
+    const ri = ringIdxOf(p, pos);
+    if (ri < 0 || SAFE.has(ri)) return false;
+    for (let op = 0; op < players; op++) {
+      if (op === p) continue;
+      for (const opos of tokens[op]) {
+        const ori = ringIdxOf(op, opos);
+        if (ori < 0) continue;
+        const dist = (ri - ori + 56) % 56;
+        if (dist >= 1 && dist <= 6) return true;
+      }
+    }
+    return false;
   }
   function moveToken(p, i, roll) {
     const pos = tokens[p][i];
@@ -1610,16 +1637,21 @@ GAME_IMPL.ludo = (mount, diff, finish, status) => {
     if (opts.length) {
       status(`${names[turn]} rolled ${roll} — thinking…`);
       await new Promise((r) => setTimeout(r, 450 + Math.random() * 750));
-      // The AI players know the rules: prefer a capture, then getting a token
-      // home, then a safe square, then the most advanced token. On easy they
-      // occasionally play a casual (suboptimal) move, like a relaxed human.
+      // The AI players know the rules: capture first, then finish a token,
+      // then rescue one that is about to be eaten, then a safe square, then
+      // (hard) an advance that does not walk into danger. Easy still plays a
+      // casual move 30% of the time, like a relaxed human.
+      const destOf = (i) => (tokens[turn][i] === -1 ? 1 : tokens[turn][i] + roll);
       const capture = opts.find((i) => wouldCapture(turn, i, roll));
-      const finisher = opts.find((i) => (tokens[turn][i] === -1 ? 1 : tokens[turn][i] + roll) === 62);
+      const finisher = opts.find((i) => destOf(i) === 62);
+      const escape = opts.find((i) => threatened(turn, tokens[turn][i]) && !threatened(turn, destOf(i)));
       const safeLanding = opts.find((i) => {
-        const next = tokens[turn][i] === -1 ? 1 : tokens[turn][i] + roll;
+        const next = destOf(i);
         return next >= 1 && next <= 55 && SAFE.has((START[turn] + next - 1) % 56);
       });
-      const smart = capture ?? finisher ?? safeLanding ?? opts.reduce((best, i) => (tokens[turn][i] > tokens[turn][best] ? i : best), opts[0]);
+      const noDanger = diff === 'hard' ? opts.filter((i) => !threatened(turn, destOf(i))) : [];
+      const advanceFrom = (list) => list.reduce((best, i) => (tokens[turn][i] > tokens[turn][best] ? i : best), list[0]);
+      const smart = capture ?? finisher ?? escape ?? safeLanding ?? (noDanger.length ? advanceFrom(noDanger) : advanceFrom(opts));
       const pick = diff === 'hard' || Math.random() < 0.7
         ? smart
         : opts[Math.floor(Math.random() * opts.length)];
@@ -1639,33 +1671,45 @@ GAME_IMPL.ludo = (mount, diff, finish, status) => {
     rollBtn.disabled = false;
     status('Your turn — roll the dice');
   }
+  let awaiting = null; // {roll, opts} while waiting for the player to tap a token
+  function tokenClicked(i) {
+    if (over || !awaiting || !awaiting.opts.includes(i)) return;
+    const { roll } = awaiting;
+    awaiting = null;
+    doHumanMove(i, roll);
+  }
+  async function doHumanMove(i, roll) {
+    const captured = moveToken(0, i, roll);
+    render();
+    status(captured ? `You captured ${captured}'s token! 🎯` : `You rolled ${roll} and moved.`);
+    if (endCheck(0)) return;
+    await new Promise((r) => setTimeout(r, 400));
+    if (over) return;
+    if (roll !== 6) turn = 1;
+    if (turn === 0) updateHuman(); else aiTurn();
+  }
   rollBtn.addEventListener('click', async () => {
-    if (over || turn !== 0 || rolling) return;
+    if (over || turn !== 0 || rolling || awaiting) return;
     rolling = true;
     rollBtn.disabled = true;
     const roll = await rollDice();
     const opts = movable(0, roll);
+    rolling = false;
     if (!opts.length) {
       status(`You rolled ${roll} — no valid move.`);
-      rolling = false;
       await new Promise((r) => setTimeout(r, 500));
       if (roll !== 6) turn = 1;
       aiTurn();
       return;
     }
-    const pick = opts.reduce((best, i) => (tokens[0][i] > tokens[0][best] ? i : best), opts[0]);
-    const captured = moveToken(0, pick, roll);
+    if (opts.length === 1) return doHumanMove(opts[0], roll);
+    awaiting = { roll, opts };
     render();
-    status(captured ? `You captured ${captured}'s token! 🎯` : `You rolled ${roll} and moved.`);
-    rolling = false;
-    if (endCheck(0)) return;
-    await new Promise((r) => setTimeout(r, 400));
-    if (roll !== 6) turn = 1;
-    if (turn === 0) updateHuman(); else aiTurn();
+    status(`You rolled ${roll} — tap a glowing token`);
   });
   render();
   updateHuman();
-  return () => {};
+  return () => { over = true; };
 };
 
 // ---- 12. Chess (simplified rules, vs AI) ----

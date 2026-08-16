@@ -784,6 +784,11 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   background: var(--c); border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.4); z-index: 2;
   transition: all .25s ease;
 }
+.ludo-token.pick { cursor: pointer; z-index: 3; animation: tokenPulse .85s ease-in-out infinite; }
+@keyframes tokenPulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+  50% { transform: scale(1.28); box-shadow: 0 0 12px var(--c); }
+}
 .ludo-bar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 .ludo-avatar {
   display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px;
