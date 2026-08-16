@@ -1726,7 +1726,7 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
     ['P','P','P','P','P','P','P','P'],
     ['R','N','B','Q','K','B','N','R'],
   ];
-  let sel = null, over = false, human = 'w'; // uppercase = white = human
+  let sel = null, over = false, human = 'w', myTurn = true, lastMove = null, aiTimer = null; // uppercase = white = human
   const grid = makeGrid(mount, 8, 'chess');
   const cells = [];
   for (let i = 0; i < 64; i++) {
@@ -1795,10 +1795,57 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
     return nb;
   }
   const VAL = { P: 1, N: 3, B: 3, R: 5, Q: 9, K: 100 };
+  // Piece-square tables (white's perspective; mirrored by row for black).
+  const PST = {
+    P: [[0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],[5,5,10,25,25,10,5,5],[0,0,0,20,20,0,0,0],[5,-5,-10,0,0,-10,-5,5],[5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]],
+    N: [[-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,0,0,0,-20,-40],[-30,0,10,15,15,10,0,-30],[-30,5,15,20,20,15,5,-30],[-30,0,15,20,20,15,0,-30],[-30,5,10,15,15,10,5,-30],[-40,-20,0,5,5,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]],
+    B: [[-20,-10,-10,-10,-10,-10,-10,-20],[-10,0,0,0,0,0,0,-10],[-10,0,5,10,10,5,0,-10],[-10,5,5,10,10,5,5,-10],[-10,0,10,10,10,10,0,-10],[-10,10,10,10,10,10,10,-10],[-10,5,0,0,0,0,5,-10],[-20,-10,-10,-10,-10,-10,-10,-20]],
+    R: [[0,0,0,0,0,0,0,0],[5,10,10,10,10,10,10,5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[0,0,0,5,5,0,0,0]],
+    Q: [[-20,-10,-10,-5,-5,-10,-10,-20],[-10,0,0,0,0,0,0,-10],[-10,0,5,5,5,5,0,-10],[-5,0,5,5,5,5,0,-5],[0,0,5,5,5,5,0,-5],[-10,5,5,5,5,5,0,-10],[-10,0,5,0,0,0,0,-10],[-20,-10,-10,-5,-5,-10,-10,-20]],
+    K: [[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-20,-30,-30,-40,-40,-30,-30,-20],[-10,-20,-20,-20,-20,-20,-20,-10],[20,20,0,0,0,0,20,20],[20,30,10,0,0,10,30,20]],
+  };
   function evalBoard(b) {
+    // > 0 favours white; material ×100 plus placement bonus.
     let s = 0;
-    for (const row of b) for (const c of row) if (c) s += VAL[c.toUpperCase()] * (isWhite(c) ? 1 : -1);
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+      const p = b[r][c];
+      if (!p) continue;
+      const t = p.toUpperCase();
+      const w = isWhite(p);
+      s += (VAL[t] * 100 + PST[t][w ? r : 7 - r][c]) * (w ? 1 : -1);
+    }
     return s;
+  }
+  const INF = 1e9;
+  function orderMoves(b, moves) {
+    // Captures first, most valuable victim / least valuable attacker.
+    return moves.map((m) => {
+      const t = b[m.to[0]][m.to[1]];
+      return { m, s: t ? VAL[t.toUpperCase()] * 10 - VAL[b[m.from[0]][m.from[1]].toUpperCase()] : 0 };
+    }).sort((a, z) => z.s - a.s).map((x) => x.m);
+  }
+  function search(b, depth, alpha, beta, whiteToMove) {
+    if (depth === 0) return evalBoard(b);
+    const moves = orderMoves(b, allMoves(whiteToMove, b));
+    if (!moves.length) return evalBoard(b);
+    if (whiteToMove) {
+      let best = -INF;
+      for (const m of moves) {
+        if (b[m.to[0]][m.to[1]] === 'k') return INF - depth;
+        best = Math.max(best, search(apply(b, m), depth - 1, alpha, beta, false));
+        alpha = Math.max(alpha, best);
+        if (beta <= alpha) break;
+      }
+      return best;
+    }
+    let best = INF;
+    for (const m of moves) {
+      if (b[m.to[0]][m.to[1]] === 'K') return -INF + depth;
+      best = Math.min(best, search(apply(b, m), depth - 1, alpha, beta, true));
+      beta = Math.min(beta, best);
+      if (beta <= alpha) break;
+    }
+    return best;
   }
   function kingPos(b, white) {
     for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
@@ -1819,12 +1866,28 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
     const white = isWhite(b[r][c]);
     return pseudoMoves(r, c, b).filter(([nr, nc]) => !inCheck(apply(b, { from: [r, c], to: [nr, nc] }), white));
   }
-  function render() {
+  function render(hints, changed) {
+    const hs = hints || [];
+    const checkW = inCheck(board, true);
+    const checkB = inCheck(board, false);
     board.forEach((row, r) => row.forEach((c, ci) => {
       const el = cells[r * 8 + ci];
       el.textContent = c ? (isWhite(c) ? P[c] : p2[c.toUpperCase()]) : '';
       el.classList.toggle('sel', !!sel && sel[0] === r && sel[1] === ci);
+      const isHint = hs.some(([hr, hc]) => hr === r && hc === ci);
+      el.classList.toggle('hint', isHint && !c);
+      el.classList.toggle('cap', isHint && !!c);
+      el.classList.toggle('last', !!lastMove && ((lastMove.from[0] === r && lastMove.from[1] === ci) || (lastMove.to[0] === r && lastMove.to[1] === ci)));
+      el.classList.toggle('check', (c === 'K' && checkW) || (c === 'k' && checkB));
+      if (changed && changed[0] === r && changed[1] === ci) {
+        el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+      }
     }));
+  }
+  function matText() {
+    let d = 0;
+    for (const row of board) for (const c of row) if (c && c.toUpperCase() !== 'K') d += VAL[c.toUpperCase()] * (isWhite(c) ? 1 : -1);
+    return d === 0 ? 'material even' : d > 0 ? `You +${d}` : `Elena +${-d}`;
   }
   function kingCaptured(b) {
     let wk = false, bk = false;
@@ -1837,6 +1900,7 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
     return inCheck(board, white) ? 'checkmate' : 'stalemate';
   }
   function aiMove() {
+    if (over) return;
     const moves = legalMoves(false);
     if (!moves.length) {
       over = true;
@@ -1844,49 +1908,34 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
       status(end === 'checkmate' ? 'Checkmate — you win! ♔' : 'Stalemate — a draw.');
       return finish(end === 'checkmate', 1);
     }
-    let pick;
-    if (diff === 'hard') {
-      // 2-ply search: prefer mate, otherwise minimise the player's best reply.
-      const mating = moves.find((m) => legalMoves(true, apply(board, m)).length === 0 && inCheck(apply(board, m), true));
-      if (mating) pick = mating;
-      else {
-        let bestScore = Infinity;
+    // Mate in 1 is always taken.
+    let pick = moves.find((m) => {
+      const b1 = apply(board, m);
+      return inCheck(b1, true) && !legalMoves(true, b1).length;
+    });
+    if (!pick) {
+      if (diff === 'hard') {
+        // Alpha-beta, 4 plies total — always sees the player's recapture.
+        let best = INF, beta = INF;
         pick = moves[0];
-        for (const m of moves) {
-          const b1 = apply(board, m);
-          const replies = legalMoves(true, b1);
-          let score;
-          if (!replies.length) {
-            score = inCheck(b1, true) ? -Infinity : 0; // mate or stalemate
-          } else {
-            score = -Infinity;
-            for (const r of replies) {
-              const s = evalBoard(apply(b1, r));
-              if (s > score) score = s;
-            }
-          }
-          if (score < bestScore) { bestScore = score; pick = m; }
+        for (const m of orderMoves(board, moves)) {
+          const s = search(apply(board, m), 3, -INF, beta, true);
+          if (s < best) { best = s; pick = m; }
+          beta = Math.min(beta, best);
         }
+      } else {
+        // Easy: 2-ply search like a solid club player, with occasional slips.
+        const scored = moves.map((m) => ({ m, s: search(apply(board, m), 1, -INF, INF, true) }))
+          .sort((a, z) => a.s - z.s);
+        const slip = Math.random() < 0.25 && scored.length > 1
+          ? 1 + Math.floor(Math.random() * Math.min(2, scored.length - 1))
+          : 0;
+        pick = scored[slip].m;
       }
-    } else {
-      // Easy: greedy 1-ply like a club player — grabs material, avoids hanging
-      // the moved piece, but slips into a second-choice move now and then.
-      const scored = moves.map((m) => {
-        const b1 = apply(board, m);
-        let s = -evalBoard(b1); // higher = better for black
-        const movedVal = VAL[(board[m.from[0]][m.from[1]] || 'p').toUpperCase()];
-        const recapture = allMoves(true, b1).some(({ to }) => to[0] === m.to[0] && to[1] === m.to[1]);
-        if (recapture) s -= movedVal * 0.8;
-        if (inCheck(b1, true)) s += 0.5; // likes giving check
-        return { m, s };
-      }).sort((a, z) => z.s - a.s);
-      const slip = Math.random() < 0.2 && scored.length > 1
-        ? 1 + Math.floor(Math.random() * Math.min(3, scored.length - 1))
-        : 0;
-      pick = scored[slip].m;
     }
+    lastMove = { from: pick.from.slice(), to: pick.to.slice() };
     board = apply(board, pick);
-    render();
+    render(null, pick.to);
     const winner = kingCaptured(board);
     if (winner) { over = true; return finish(winner === 'white', 1); }
     const end = gameEndFor(true);
@@ -1895,17 +1944,20 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
       status(end === 'checkmate' ? 'Checkmate — Elena wins.' : 'Stalemate — a draw.');
       return finish(false, 1);
     }
-    status(inCheck(board, true) ? 'Check! Your move (white)' : 'Your move (white)');
+    myTurn = true;
+    status(`${inCheck(board, true) ? 'Check! ' : ''}Your move · ${matText()}`);
   }
   function onCell(r, c) {
-    if (over) return;
+    if (over || !myTurn) return;
     const piece = board[r][c];
     if (sel) {
       const legal = legalMovesFrom(sel[0], sel[1]).some(([nr, nc]) => nr === r && nc === c);
       if (legal) {
-        board = apply(board, { from: sel, to: [r, c] });
+        lastMove = { from: sel.slice(), to: [r, c] };
+        board = apply(board, lastMove);
         sel = null;
-        render();
+        myTurn = false;
+        render(null, [r, c]);
         const winner = kingCaptured(board);
         if (winner) { over = true; return finish(winner === 'white', 1); }
         const end = gameEndFor(false);
@@ -1915,18 +1967,18 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
           return finish(end === 'checkmate', 1);
         }
         status(inCheck(board, false) ? `Check! ${aiThinkLine('Elena')}` : aiThinkLine('Elena'));
-        setTimeout(aiMove, 500 + Math.random() * 900);
+        aiTimer = setTimeout(aiMove, 450 + Math.random() * 700);
         return;
       }
       sel = isWhite(piece) ? [r, c] : null;
-      render();
+      render(sel ? legalMovesFrom(r, c) : null);
       return;
     }
-    if (isWhite(piece)) { sel = [r, c]; render(); }
+    if (isWhite(piece)) { sel = [r, c]; render(legalMovesFrom(r, c)); }
   }
-  status('You are White vs Elena — tap a piece, then a destination.');
+  status(`You are White vs Elena — tap a piece to see its moves. · ${matText()}`);
   render();
-  return () => {};
+  return () => { over = true; clearTimeout(aiTimer); };
 };
 
 // ---- 13. Delta Card Draw (Deltix original suits — best hand, no wagering) ----

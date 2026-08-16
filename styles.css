@@ -811,6 +811,11 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .board.chess .cell { font-size: 24px; background: #f8fafc; border-radius: 0; border: none; }
 .board.chess .cell.dark { background: #c9d5e6; }
 .board.chess .cell.sel { box-shadow: inset 0 0 0 3px var(--accent); }
+.board.chess .cell.hint::after { content: ''; width: 10px; height: 10px; border-radius: 50%; background: rgba(47, 107, 255, .45); }
+.board.chess .cell.cap { box-shadow: inset 0 0 0 3px rgba(47, 107, 255, .55); }
+.board.chess .cell.last { background: #ffe9b8; }
+.board.chess .cell.dark.last { background: #f0cf8f; }
+.board.chess .cell.check { background: #fecaca; box-shadow: inset 0 0 0 3px #dc2626; }
 
 .card-table { display: flex; flex-direction: column; gap: 14px; margin-bottom: 14px; }
 .hand-row { display: flex; align-items: center; gap: 10px; }
