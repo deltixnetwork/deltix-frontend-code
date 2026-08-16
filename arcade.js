@@ -2472,79 +2472,213 @@ GAME_IMPL.slicer = (mount, diff, finish, status) => {
   return () => { over = true; clearTimeout(spawnTimer); cancelAnimationFrame(raf); };
 };
 
-// ---- 16. Penalty Kicks (soccer shootout) ----
+// ---- 16. Penalty Kicks (two-way shootout vs Dario: aim your shots, then guard your net) ----
 GAME_IMPL.soccer = (mount, diff, finish, status) => {
-  const rounds = diff === 'hard' ? 6 : 5;
-  const need = Math.ceil(rounds / 2) + 1;
-  const W = 300, H = 220;
+  const rounds = 5;
+  const W = 300, H = 250;
   const cv = document.createElement('canvas');
   cv.width = W; cv.height = H;
   cv.className = 'game-canvas';
   mount.appendChild(cv);
   const ctx = cv.getContext('2d');
-  let round = 0, goals = 0, misses = 0, chosen = null, animating = false;
-  const zones = [W * 0.22, W * 0.5, W * 0.78];
-  const history = [0, 0, 0]; // shots per zone — hard keeper learns your habits
-  function draw(ballPos, keeperX, result) {
-    ctx.fillStyle = '#dff5e3'; ctx.fillRect(0, 0, W, H);
-    ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 4;
-    ctx.strokeRect(W * 0.15, 20, W * 0.7, 60);
-    ctx.fillStyle = '#1f66f2';
-    ctx.fillRect(keeperX - 18, 22, 36, 50);
-    ctx.beginPath(); ctx.arc(ballPos.x, ballPos.y, 9, 0, 7); ctx.fillStyle = '#fff'; ctx.strokeStyle = '#0f172a'; ctx.fill(); ctx.stroke();
-    if (result) {
-      ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = result === 'GOAL' ? '#16a34a' : '#dc2626';
-      ctx.fillText(result, W / 2, H - 20);
+  const GL = 45, GR = 255, GT = 26, GB = 86; // goal mouth
+  const zones = [GL + (GR - GL) / 6, (GL + GR) / 2, GR - (GR - GL) / 6];
+  const zoneOf = (x) => (x < GL + (GR - GL) / 3 ? 0 : x > GR - (GR - GL) / 3 ? 2 : 1);
+  // Dario the keeper studies your habits; as striker he disguises his run-up.
+  const guessP = diff === 'hard' ? 0.62 : 0.42;
+  const reach = diff === 'hard' ? 40 : 34;
+  const aimNoise = diff === 'hard' ? 13 : 8;
+  const cueHonest = diff === 'hard' ? 0.55 : 0.78;
+  const saveP = diff === 'hard' ? 0.68 : 0.82;
+  const darioWideP = diff === 'hard' ? 0.05 : 0.12;
+  let round = 1, myGoals = 0, dGoals = 0, over = false;
+  let phase = 'shoot'; // shoot | shootAnim | defend | defendAnim | between
+  const history = [0, 0, 0];
+  const results = []; // {me:'⚽|✕', dario:'⚽|✕'} per round
+  let scene = { ball: null, keeper: { x: W / 2, tilt: 0 }, dario: null, cue: null, text: null, textCol: '#16a34a' };
+  let raf, timers = [];
+  const later = (fn, ms) => timers.push(setTimeout(fn, ms));
+  const noise = () => (Math.random() + Math.random() - 1) * aimNoise * 1.6;
+
+  function drawKeeper(x, tilt, col) {
+    ctx.save();
+    ctx.translate(x, GB - 6);
+    ctx.rotate(tilt);
+    ctx.fillStyle = col;
+    ctx.fillRect(-8, -34, 16, 30); // torso
+    ctx.beginPath(); ctx.arc(0, -42, 7, 0, 7); ctx.fill(); // head
+    ctx.strokeStyle = col; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-8, -30); ctx.lineTo(-18 - Math.abs(tilt) * 26, -38 - Math.abs(tilt) * 20); // arms out when diving
+    ctx.moveTo(8, -30); ctx.lineTo(18 + Math.abs(tilt) * 26, -38 - Math.abs(tilt) * 20);
+    ctx.stroke();
+    ctx.restore();
+  }
+  function draw() {
+    ctx.fillStyle = '#166534'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#15803d';
+    for (let i = 0; i < 5; i++) ctx.fillRect(0, H - 30 - i * 44, W, 22); // mow stripes
+    ctx.strokeStyle = '#f8fafc'; ctx.lineWidth = 4;
+    ctx.strokeRect(GL, GT, GR - GL, GB - GT);
+    ctx.strokeStyle = 'rgba(248,250,252,.35)'; ctx.lineWidth = 1; // net
+    for (let x = GL + 14; x < GR; x += 14) { ctx.beginPath(); ctx.moveTo(x, GT); ctx.lineTo(x, GB); ctx.stroke(); }
+    for (let y = GT + 12; y < GB; y += 12) { ctx.beginPath(); ctx.moveTo(GL, y); ctx.lineTo(GR, y); ctx.stroke(); }
+    // round pips
+    for (let i = 0; i < Math.max(rounds, results.length + (round > results.length ? 1 : 0)); i++) {
+      const r = results[i];
+      ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillStyle = '#dbeafe'; ctx.fillText(r ? r.me : '·', 14 + i * 16, 14);
+      ctx.fillStyle = '#fecaca'; ctx.fillText(r ? r.dario : '·', 14 + i * 16, H - 5);
+    }
+    ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'right'; ctx.fillStyle = '#f8fafc';
+    ctx.fillText(`You ${myGoals} — ${dGoals} Dario`, W - 8, 14);
+    if (scene.keeper) drawKeeper(scene.keeper.x, scene.keeper.tilt, phase.startsWith('defend') ? '#1f66f2' : '#dc2626');
+    if (scene.dario) { // striker figure at run-up
+      ctx.fillStyle = '#dc2626';
+      ctx.fillRect(scene.dario.x - 7, scene.dario.y - 26, 14, 24);
+      ctx.beginPath(); ctx.arc(scene.dario.x, scene.dario.y - 33, 6, 0, 7); ctx.fill();
+    }
+    if (scene.cue) { // run-up lean arrow
+      ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fbbf24';
+      ctx.fillText(scene.cue === 0 ? '↖' : scene.cue === 2 ? '↗' : '↑', scene.dario ? scene.dario.x : W / 2, (scene.dario ? scene.dario.y : H - 40) - 46);
+    }
+    if (scene.ball) {
+      ctx.beginPath(); ctx.arc(scene.ball.x, scene.ball.y, 8, 0, 7);
+      ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(scene.ball.x - 8, scene.ball.y); ctx.quadraticCurveTo(scene.ball.x, scene.ball.y - 4, scene.ball.x + 8, scene.ball.y);
+      ctx.stroke();
+    }
+    if (scene.text) {
+      ctx.font = 'bold 26px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillStyle = scene.textCol; ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 4;
+      ctx.strokeText(scene.text, W / 2, H / 2 + 24); ctx.fillText(scene.text, W / 2, H / 2 + 24);
     }
   }
-  function reset() { chosen = null; draw({ x: W / 2, y: H - 30 }, W / 2, null); }
-  function kick(zoneIdx) {
-    if (animating || round >= rounds) return;
-    animating = true;
-    chosen = zoneIdx;
-    history[zoneIdx]++;
-    // The keeper studies your habits — dives to your favourite zone often.
-    const favourite = history.indexOf(Math.max(...history));
-    const keeperGuess = Math.random() < (diff === 'hard' ? 0.6 : 0.45)
-      ? favourite
-      : Math.floor(Math.random() * 3);
-    const targetX = zones[zoneIdx];
-    let t = 0;
-    const startY = H - 30;
-    const anim = setInterval(() => {
-      t += 0.08;
-      const y = startY - t * (startY - 40);
-      draw({ x: W / 2 + (targetX - W / 2) * t, y }, zones[keeperGuess], null);
-      if (t >= 1) {
-        clearInterval(anim);
-        const saved = keeperGuess === zoneIdx && Math.random() < (diff === 'hard' ? 0.6 : 0.5);
-        round++;
-        if (saved) misses++; else goals++;
-        draw({ x: targetX, y: 40 }, zones[keeperGuess], saved ? 'SAVED' : 'GOAL');
-        status(`You ${goals} \u2013 ${misses} missed \u00b7 round ${round}/${rounds}`);
-        setTimeout(() => {
-          if (goals >= need) return finish(true, goals);
-          if (misses >= need) return finish(false, goals);
-          if (round >= rounds) return finish(goals > misses, goals);
-          animating = false;
-          reset();
-        }, 700);
-      }
-    }, 16);
+  function loop() { if (over) return; draw(); raf = requestAnimationFrame(loop); }
+
+  function roundLabel() { return round <= rounds ? `round ${round}/${rounds}` : `sudden death ${round - rounds}`; }
+  function checkEnd() {
+    const played = results.length;
+    if (played >= rounds) {
+      if (myGoals !== dGoals) return finishUp(myGoals > dGoals);
+    } else { // decided early? (remaining rounds can't change it)
+      const left = rounds - played;
+      if (myGoals > dGoals + left) return finishUp(true);
+      if (dGoals > myGoals + left) return finishUp(false);
+    }
+    round++;
+    startShoot();
   }
-  const row = document.createElement('div');
-  row.className = 'kick-row';
-  ['Left', 'Center', 'Right'].forEach((label, i) => {
-    const b = document.createElement('button');
-    b.className = 'btn ghost';
-    b.textContent = label;
-    b.addEventListener('click', () => kick(i));
-    row.appendChild(b);
+  function finishUp(won) {
+    over = true;
+    cancelAnimationFrame(raf);
+    scene.text = won ? 'YOU WIN!' : 'DARIO WINS';
+    scene.textCol = won ? '#16a34a' : '#dc2626';
+    draw();
+    later(() => finish(won, myGoals), 900);
+  }
+
+  // --- your shot ---
+  function startShoot() {
+    phase = 'shoot';
+    scene = { ball: { x: W / 2, y: H - 32 }, keeper: { x: W / 2, tilt: 0 }, dario: null, cue: null, text: null };
+    status(`${roundLabel()} — tap inside the goal to place your shot`);
+  }
+  function takeShot(px, py) {
+    phase = 'shootAnim';
+    const aimX = Math.max(GL + 4, Math.min(GR - 4, px));
+    const aimY = Math.max(GT + 4, Math.min(GB - 6, py));
+    history[zoneOf(aimX)]++;
+    const landX = aimX + noise(), landY = aimY + noise() * 0.6;
+    const wide = landX < GL + 2 || landX > GR - 2 || landY < GT + 2;
+    const favourite = history.indexOf(Math.max(...history));
+    const guess = Math.random() < guessP ? favourite : Math.floor(Math.random() * 3);
+    const keeperX = zones[guess] + (Math.random() - 0.5) * 16;
+    const topStrip = landY < GT + 14; // top corners are near-unsavable
+    const saved = !wide && Math.abs(landX - keeperX) <= (topStrip ? reach * 0.45 : reach) && Math.random() < (diff === 'hard' ? 0.9 : 0.85);
+    const from = { x: W / 2, y: H - 32 };
+    const t0 = performance.now(), dur = 420;
+    (function fly() {
+      if (over) return;
+      const t = Math.min(1, (performance.now() - t0) / dur);
+      scene.ball = { x: from.x + (landX - from.x) * t, y: from.y + (landY - from.y) * t - Math.sin(t * Math.PI) * 26 };
+      scene.keeper = { x: W / 2 + (keeperX - W / 2) * Math.min(1, t * 1.3), tilt: (keeperX < W / 2 ? -1 : 1) * 0.9 * Math.min(1, t * 1.3) * (Math.abs(keeperX - W / 2) > 20 ? 1 : 0.1) };
+      if (t < 1) return requestAnimationFrame(fly);
+      const goal = !wide && !saved;
+      scene.text = wide ? 'WIDE!' : saved ? 'SAVED!' : 'GOAL!';
+      scene.textCol = goal ? '#16a34a' : '#f87171';
+      if (goal) myGoals++;
+      results[round - 1] = { me: goal ? '⚽' : '✕', dario: '·' };
+      status(`${scene.text} You ${myGoals} — ${dGoals} Dario`);
+      later(startDefend, 950);
+    })();
+  }
+
+  // --- Dario's shot: read his lean, tap a side to dive ---
+  let diveChoice = null, kicked = false;
+  function startDefend() {
+    phase = 'defend';
+    diveChoice = null; kicked = false;
+    const shotZone = Math.random() < 0.45 ? 0 : Math.random() < 0.82 ? 2 : 1; // corners favoured
+    const honest = Math.random() < cueHonest;
+    const cue = honest ? shotZone : [0, 1, 2].filter((z) => z !== shotZone)[Math.floor(Math.random() * 2)];
+    scene = { ball: { x: W / 2, y: H - 46 }, keeper: { x: W / 2, tilt: 0 }, dario: { x: W / 2 + 46, y: H - 24 }, cue: null, text: null };
+    status(`${roundLabel()} — Dario steps up… watch his lean, tap LEFT / MIDDLE / RIGHT to dive`);
+    const t0 = performance.now(), runup = 1250;
+    (function run() {
+      if (over) return;
+      const t = Math.min(1, (performance.now() - t0) / runup);
+      scene.dario = { x: W / 2 + 46 * (1 - t), y: H - 24 };
+      if (t > 0.25) scene.cue = cue;
+      if (t < 1) return requestAnimationFrame(run);
+      resolveDefend(shotZone);
+    })();
+  }
+  function resolveDefend(shotZone) {
+    phase = 'defendAnim';
+    kicked = true;
+    scene.cue = null;
+    const dive = diveChoice; // null = stayed home (counts as middle)
+    const diveZone = dive === null ? 1 : dive;
+    const keeperX = zones[diveZone] + (Math.random() - 0.5) * 10;
+    const wide = Math.random() < darioWideP;
+    const landX = wide ? (shotZone === 0 ? GL - 16 : shotZone === 2 ? GR + 16 : W / 2) : zones[shotZone] + (Math.random() - 0.5) * 24;
+    const landY = GT + 12 + Math.random() * (GB - GT - 22);
+    const saved = !wide && diveZone === shotZone && Math.random() < (dive === null && shotZone === 1 ? 0.9 : saveP);
+    const from = { x: W / 2, y: H - 46 };
+    const t0 = performance.now(), dur = 380;
+    (function fly() {
+      if (over) return;
+      const t = Math.min(1, (performance.now() - t0) / dur);
+      scene.ball = { x: from.x + (landX - from.x) * t, y: from.y + (landY - from.y) * t - Math.sin(t * Math.PI) * 20 };
+      scene.keeper = { x: W / 2 + (keeperX - W / 2) * Math.min(1, t * 1.4), tilt: (diveZone === 0 ? -1 : diveZone === 2 ? 1 : 0) * 0.9 * Math.min(1, t * 1.4) };
+      if (t < 1) return requestAnimationFrame(fly);
+      const goal = !wide && !saved;
+      scene.text = wide ? 'WIDE!' : saved ? 'SAVED!' : 'GOAL…';
+      scene.textCol = goal ? '#f87171' : '#4ade80';
+      if (goal) dGoals++;
+      if (results[round - 1]) results[round - 1].dario = goal ? '⚽' : '✕';
+      status(`${scene.text} You ${myGoals} — ${dGoals} Dario`);
+      later(checkEnd, 950);
+    })();
+  }
+
+  cv.addEventListener('pointerdown', (e) => {
+    if (over) return;
+    const rect = cv.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (W / rect.width);
+    const y = (e.clientY - rect.top) * (H / rect.height);
+    if (phase === 'shoot') {
+      if (x > GL - 14 && x < GR + 14 && y > GT - 14 && y < GB + 20) takeShot(x, y);
+      else status(`${roundLabel()} — tap inside the goal mouth to shoot`);
+    } else if (phase === 'defend' && !kicked) {
+      diveChoice = x < W / 3 ? 0 : x > (2 * W) / 3 ? 2 : 1;
+      status(`Diving ${['LEFT', 'MIDDLE', 'RIGHT'][diveChoice]}…`);
+    }
   });
-  mount.appendChild(row);
-  status(`Score ${need} to win the shootout \u00b7 tap a side to shoot`);
-  reset();
-  return () => {};
+  status(`First to lead after ${rounds} rounds wins — you shoot, then you defend`);
+  startShoot();
+  loop();
+  return () => { over = true; cancelAnimationFrame(raf); timers.forEach(clearTimeout); };
 };
 
 // ---- 17. Delta Racer (lane-dodge endless runner) ----
