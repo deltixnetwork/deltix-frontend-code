@@ -608,6 +608,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .board.merge .cell[data-v="32"], .board.merge .cell[data-v="64"] { background: #b9ccf5; color: #123c9e; }
 .board.merge .cell[data-v="128"], .board.merge .cell[data-v="256"] { background: var(--accent); color: #fff; }
 .board.merge .cell[data-v="512"], .board.merge .cell[data-v="1024"], .board.merge .cell[data-v="2048"], .board.merge .cell[data-v="max"] { background: var(--accent-2); color: #fff; }
+.board.merge .cell[data-v="blocker"] { background: #0f172a; color: #7dd3fc; text-shadow: 0 0 8px rgba(125, 211, 252, .8); }
 .board.sudoku { gap: 1px; max-width: 330px; }
 .board.sudoku .cell { border-radius: 3px; font-size: 14px; }
 .board.sudoku .cell.given { background: #eef3ff; color: #334155; cursor: default; }

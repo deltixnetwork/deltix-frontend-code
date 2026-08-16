@@ -665,11 +665,14 @@ GAME_IMPL.snake = (mount, diff, finish, status) => {
   return () => { stop(); cleanupInput(); };
 };
 
-// ---- 4. Merge 2048 (slide & merge) ----
+// ---- 4. Merge 2048 (slide & merge — with Δ blocker crystals) ----
 GAME_IMPL.merge = (mount, diff, finish, status) => {
   const target = diff === 'hard' ? 1024 : 512;
+  const blockerEvery = diff === 'hard' ? 9 : 13;  // moves between Δ crystal spawns
+  const blockerTtl = diff === 'hard' ? 18 : 14;   // moves before a crystal dissolves
   let grid = Array.from({ length: 4 }, () => Array(4).fill(0));
-  let score = 0, over = false;
+  let score = 0, over = false, moves = 0, blockerSeq = 0;
+  const blockers = new Map(); // negative id -> moves remaining
   const board = makeGrid(mount, 4, 'merge');
   const cells = [];
   for (let i = 0; i < 16; i++) {
@@ -678,27 +681,47 @@ GAME_IMPL.merge = (mount, diff, finish, status) => {
     board.appendChild(c);
     cells.push(c);
   }
-  function addTile() {
+  const emptySpots = () => {
     const empty = [];
     grid.forEach((row, r) => row.forEach((v, c) => { if (!v) empty.push([r, c]); }));
+    return empty;
+  };
+  function addTile() {
+    const empty = emptySpots();
     if (!empty.length) return;
     const [r, c] = empty[Math.floor(Math.random() * empty.length)];
     grid[r][c] = Math.random() < 0.9 ? 2 : 4;
   }
-  function render() {
+  function addBlocker() {
+    const empty = emptySpots();
+    if (!empty.length || blockers.size >= 3) return false;
+    const [r, c] = empty[Math.floor(Math.random() * empty.length)];
+    const id = -(++blockerSeq);
+    grid[r][c] = id;
+    blockers.set(id, blockerTtl);
+    return true;
+  }
+  const best = () => Math.max(0, ...grid.flat().filter((v) => v > 0));
+  function render(prev) {
     grid.forEach((row, r) => row.forEach((v, c) => {
       const el = cells[r * 4 + c];
-      el.textContent = v || '';
-      el.dataset.v = v > 2048 ? 'max' : v;
+      el.textContent = v < 0 ? 'Δ' : v || '';
+      el.dataset.v = v < 0 ? 'blocker' : v > 2048 ? 'max' : v;
+      if (prev && v && v !== prev[r][c]) {
+        el.classList.remove('pop');
+        void el.offsetWidth;
+        el.classList.add('pop');
+      }
     }));
-    status(`Reach ${target} to win · score ${score}`);
   }
+  const baseline = () => `Reach ${target} · score ${score} · best ${best()}`;
   function slideRow(row) {
     const vals = row.filter(Boolean);
     const out = [];
     let moved = false;
     for (let i = 0; i < vals.length; i++) {
-      if (vals[i] === vals[i + 1]) { out.push(vals[i] * 2); score += vals[i] * 2; i++; }
+      // Δ crystals have unique negative values, so they can never merge
+      if (vals[i] > 0 && vals[i] === vals[i + 1]) { out.push(vals[i] * 2); score += vals[i] * 2; i++; }
       else out.push(vals[i]);
     }
     while (out.length < 4) out.push(0);
@@ -719,17 +742,34 @@ GAME_IMPL.merge = (mount, diff, finish, status) => {
     });
     for (let i = 0; i < (4 - turns) % 4; i++) g = rotate(g);
     if (!moved) return;
+    const prev = grid.map((row) => row.slice());
     grid = g;
-    addTile();
-    render();
-    if (grid.flat().some((v) => v >= target)) { over = true; return finish(true, score); }
+    moves++;
+    let note = '';
+    // dissolve expired crystals
+    for (const [id, left] of [...blockers]) {
+      if (left - 1 <= 0) {
+        blockers.delete(id);
+        grid.forEach((row, r) => row.forEach((v, c) => { if (v === id) grid[r][c] = 0; }));
+        note = ' · a Δ crystal dissolved';
+      } else blockers.set(id, left - 1);
+    }
+    if (moves % blockerEvery === 0 && addBlocker()) {
+      note = ` · Δ crystal! Dissolves in ${blockerTtl} moves`;
+    } else {
+      addTile();
+    }
+    render(prev);
+    status(baseline() + note);
+    if (grid.flat().some((v) => v >= target)) { over = true; status(`${target} reached — you win! 🏆`); return finish(true, score); }
     const stuck = !grid.flat().includes(0) &&
       !grid.some((row, r) => row.some((v, c) =>
-        (c < 3 && v === grid[r][c + 1]) || (r < 3 && v === grid[r + 1][c])));
-    if (stuck) { over = true; finish(false, score); }
+        (v > 0 && c < 3 && v === grid[r][c + 1]) || (v > 0 && r < 3 && v === grid[r + 1][c])));
+    if (stuck) { over = true; status('No moves left — the crystals locked you in.'); finish(false, score); }
   }
   const cleanupInput = directionInput(mount, move);
   addTile(); addTile(); render();
+  status(baseline() + ` · beware the Δ crystals`);
   return () => cleanupInput();
 };
 
