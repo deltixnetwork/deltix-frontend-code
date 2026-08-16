@@ -1103,6 +1103,74 @@ GAME_IMPL.reversi = (mount, diff, finish, status) => {
   }
   const movesFor = (board, p) =>
     Array.from({ length: 64 }, (_, i) => i).filter((i) => flips(board, i, p).length);
+  const applyMove = (board, i, p) => {
+    const nb = board.slice();
+    flips(board, i, p).forEach((j) => (nb[j] = p));
+    nb[i] = p;
+    return nb;
+  };
+  const discDiff = (board) => board.filter((v) => v === 2).length - board.filter((v) => v === 1).length;
+  function evalBoard(board) {
+    let s = 0;
+    for (let i = 0; i < 64; i++) {
+      if (board[i] === 2) s += W[i];
+      else if (board[i] === 1) s -= W[i];
+    }
+    return s + 6 * (movesFor(board, 2).length - movesFor(board, 1).length);
+  }
+  const ordered = (board, p) =>
+    movesFor(board, p).sort((x, y) => W[y] - W[x]);
+  function search(board, depth, p, alpha, beta) {
+    const opts = movesFor(board, p);
+    if (!opts.length) {
+      if (!movesFor(board, p === 1 ? 2 : 1).length) {
+        const d = discDiff(board);
+        return d > 0 ? 10000 + d : d < 0 ? -10000 + d : 0;
+      }
+      return search(board, depth, p === 1 ? 2 : 1, alpha, beta);
+    }
+    if (depth === 0) return evalBoard(board);
+    if (p === 2) {
+      let best = -Infinity;
+      for (const m of ordered(board, 2)) {
+        best = Math.max(best, search(applyMove(board, m, 2), depth - 1, 1, alpha, beta));
+        alpha = Math.max(alpha, best);
+        if (beta <= alpha) break;
+      }
+      return best;
+    }
+    let best = Infinity;
+    for (const m of ordered(board, 1)) {
+      best = Math.min(best, search(applyMove(board, m, 1), depth - 1, 2, alpha, beta));
+      beta = Math.min(beta, best);
+      if (beta <= alpha) break;
+    }
+    return best;
+  }
+  // Exact solve of the final empties: maximizes Victor's true disc margin.
+  function solveExact(board, p, alpha, beta) {
+    const opts = movesFor(board, p);
+    if (!opts.length) {
+      if (!movesFor(board, p === 1 ? 2 : 1).length) return discDiff(board);
+      return solveExact(board, p === 1 ? 2 : 1, alpha, beta);
+    }
+    if (p === 2) {
+      let best = -Infinity;
+      for (const m of ordered(board, 2)) {
+        best = Math.max(best, solveExact(applyMove(board, m, 2), 1, alpha, beta));
+        alpha = Math.max(alpha, best);
+        if (beta <= alpha) break;
+      }
+      return best;
+    }
+    let best = Infinity;
+    for (const m of ordered(board, 1)) {
+      best = Math.min(best, solveExact(applyMove(board, m, 1), 2, alpha, beta));
+      beta = Math.min(beta, best);
+      if (beta <= alpha) break;
+    }
+    return best;
+  }
   const board = makeGrid(mount, 8, 'reversi');
   const cells = [];
   for (let i = 0; i < 64; i++) {
@@ -1112,58 +1180,72 @@ GAME_IMPL.reversi = (mount, diff, finish, status) => {
     board.appendChild(el);
     cells.push(el);
   }
-  function render(hints) {
+  let stopped = false, myTurn = true, over = false;
+  function render(hints, changed, lastMove) {
     b.forEach((v, i) => {
-      cells[i].innerHTML = v ? `<span class="disc ${v === 1 ? 'you' : 'ai'}"></span>` : '';
+      const flip = changed && changed.includes(i);
+      cells[i].innerHTML = v ? `<span class="disc ${v === 1 ? 'you' : 'ai'}${flip ? ' flip' : ''}"></span>` : '';
       cells[i].classList.toggle('hint', Boolean(hints && hints.includes(i)));
+      cells[i].classList.toggle('last', i === lastMove);
     });
     const you = b.filter((v) => v === 1).length, ai = b.filter((v) => v === 2).length;
-    status(`You ${you} · Victor ${ai}`);
+    const empty = 64 - you - ai;
+    status(`You ${you} · Victor ${ai} · ${empty} empty${myTurn && !over ? ' · your move' : ''}`);
   }
   function gameEnd() {
+    over = true;
     const you = b.filter((v) => v === 1).length, ai = b.filter((v) => v === 2).length;
     finish(you > ai, you);
   }
   function aiTurn() {
+    if (stopped || over) return;
     const opts = movesFor(b, 2);
     if (!opts.length) {
       if (!movesFor(b, 1).length) return gameEnd();
+      myTurn = true;
       render(movesFor(b, 1));
-      return; // AI passes
+      return; // Victor passes
     }
-    // Both modes play positionally like a person — easy occasionally settles
-    // for a second-best move (a very human slip), hard is ruthless.
-    const scoreMove = (i) => {
-      const f = flips(b, i, 2);
-      const sim = b.slice();
-      sim[i] = 2; f.forEach((j) => (sim[j] = 2));
-      return W[i] + 2 * f.length - 3 * movesFor(sim, 1).length;
+    const empties = b.filter((v) => !v).length;
+    const exactAt = diff === 'hard' ? 11 : 7;
+    const depth = diff === 'hard' ? 4 : 2;
+    const scoreMove = (m) => {
+      const nb = applyMove(b, m, 2);
+      return empties <= exactAt
+        ? solveExact(nb, 1, -Infinity, Infinity)
+        : search(nb, depth - 1, 1, -Infinity, Infinity);
     };
-    const ranked = opts.slice().sort((x, y) => scoreMove(y) - scoreMove(x));
-    let pick = ranked[0];
-    if (diff !== 'hard' && ranked.length > 1 && Math.random() < 0.3) {
-      pick = ranked[1 + Math.floor(Math.random() * Math.min(2, ranked.length - 1))];
+    const rankedMoves = ordered(b, 2).map((m) => [m, scoreMove(m)]).sort((x, y) => y[1] - x[1]);
+    let pick = rankedMoves[0][0];
+    if (diff !== 'hard' && rankedMoves.length > 1 && Math.random() < 0.3) {
+      pick = rankedMoves[1 + Math.floor(Math.random() * Math.min(2, rankedMoves.length - 1))][0];
     }
     const f = flips(b, pick, 2);
-    b[pick] = 2; f.forEach((j) => (b[j] = 2));
+    b = applyMove(b, pick, 2);
     const yours = movesFor(b, 1);
-    render(yours);
+    myTurn = true;
+    render(yours, f, pick);
     if (!yours.length) {
       if (!movesFor(b, 2).length) return gameEnd();
+      myTurn = false;
       status('No move for you — Victor plays again…');
       setTimeout(aiTurn, 700 + Math.random() * 600); // you pass
     }
   }
   function play(i) {
+    if (stopped || over || !myTurn) return;
     const f = flips(b, i, 1);
     if (!f.length) return;
-    b[i] = 1; f.forEach((j) => (b[j] = 1));
-    render();
-    status(aiThinkLine('Victor'));
+    b = applyMove(b, i, 1);
+    myTurn = false;
+    render(null, f, i);
+    if (!b.includes(0)) return gameEnd();
+    const empties = b.filter((v) => !v).length;
+    status(diff === 'hard' && empties <= 11 ? 'Victor reads the position to the very end…' : aiThinkLine('Victor'));
     setTimeout(aiTurn, 500 + Math.random() * 800);
   }
   render(movesFor(b, 1));
-  return () => {};
+  return () => { stopped = true; };
 };
 
 // ---- 9. Pattern Recall ----
