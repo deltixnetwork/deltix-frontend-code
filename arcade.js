@@ -539,58 +539,130 @@ GAME_IMPL.memory = (mount, diff, finish, status) => {
   return () => { stopped = true; };
 };
 
-// ---- 3. Delta Snake ----
+// ---- 3. Delta Snake (food race vs Rex — a rival snake with pathfinding) ----
 GAME_IMPL.snake = (mount, diff, finish, status) => {
-  const N = 15, target = diff === 'hard' ? 14 : 8, speed = diff === 'hard' ? 100 : 150;
+  const N = 15, C = 20;
+  const target = diff === 'hard' ? 10 : 8;
+  const wander = diff === 'hard' ? 0.18 : 0.32; // how often Rex drifts off the optimal path
+  let speed = diff === 'hard' ? 115 : 150;
+  const minSpeed = diff === 'hard' ? 80 : 105;
   const cv = document.createElement('canvas');
-  cv.width = cv.height = 300;
+  cv.width = cv.height = N * C;
   cv.className = 'game-canvas';
   mount.appendChild(cv);
   const ctx = cv.getContext('2d');
-  let snake = [{ x: 7, y: 7 }], dir = 'right', nextDir = 'right', eaten = 0, food = null, timer = null;
+  let snake = [{ x: 3, y: 7 }], dir = 'right', nextDir = 'right', eaten = 0;
+  let rex = [{ x: 11, y: 7 }], rexEaten = 0, food = null, timer = null, over = false, pulse = 0;
   const opposite = { up: 'down', down: 'up', left: 'right', right: 'left' };
   const cleanupInput = directionInput(mount, (d) => { if (d !== opposite[dir]) nextDir = d; });
+  const occupied = (x, y) => snake.some((s) => s.x === x && s.y === y) || rex.some((s) => s.x === x && s.y === y);
   function placeFood() {
     do { food = { x: Math.floor(Math.random() * N), y: Math.floor(Math.random() * N) }; }
-    while (snake.some((s) => s.x === food.x && s.y === food.y));
+    while (occupied(food.x, food.y));
   }
   placeFood();
-  status(`Eat ${target} to win · 0/${target}`);
+  const score = () => `You ${eaten} · Rex ${rexEaten} — first to ${target} wins`;
+  status(`Race Rex to the deltas! ${score()}`);
+  function drawSnake(body, headColor, bodyColor, d) {
+    body.forEach((s, i) => {
+      ctx.fillStyle = i === 0 ? headColor : bodyColor;
+      ctx.beginPath();
+      ctx.roundRect(s.x * C + 1.5, s.y * C + 1.5, C - 3, C - 3, i === 0 ? 7 : 5);
+      ctx.fill();
+    });
+    // eyes on the head, offset toward travel direction
+    const h = body[0];
+    const off = { up: [0, -3], down: [0, 3], left: [-3, 0], right: [3, 0] }[d] || [3, 0];
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(h.x * C + 7 + off[0], h.y * C + 8 + off[1], 2.6, 0, 7);
+    ctx.arc(h.x * C + 13 + off[0], h.y * C + 8 + off[1], 2.6, 0, 7);
+    ctx.fill();
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.arc(h.x * C + 7 + off[0], h.y * C + 8 + off[1], 1.2, 0, 7);
+    ctx.arc(h.x * C + 13 + off[0], h.y * C + 8 + off[1], 1.2, 0, 7);
+    ctx.fill();
+  }
+  function rexDir() {
+    const h = rex[0], prev = rex[1];
+    return prev ? (h.x > prev.x ? 'right' : h.x < prev.x ? 'left' : h.y > prev.y ? 'down' : 'up') : 'left';
+  }
   function draw() {
-    ctx.fillStyle = '#f4f7ff'; ctx.fillRect(0, 0, 300, 300);
+    ctx.fillStyle = '#f4f7ff'; ctx.fillRect(0, 0, N * C, N * C);
+    ctx.fillStyle = '#e9efff';
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if ((r + c) % 2) ctx.fillRect(c * C, r * C, C, C);
+    // pulsing delta food
+    const g = 2 + Math.sin(pulse * 0.35) * 1.5;
     ctx.fillStyle = '#dc2626';
     ctx.beginPath();
-    ctx.moveTo(food.x * 20 + 10, food.y * 20 + 3);
-    ctx.lineTo(food.x * 20 + 17, food.y * 20 + 10);
-    ctx.lineTo(food.x * 20 + 10, food.y * 20 + 17);
-    ctx.lineTo(food.x * 20 + 3, food.y * 20 + 10);
+    ctx.moveTo(food.x * C + 10, food.y * C + 3 - g * 0.4);
+    ctx.lineTo(food.x * C + 17 + g * 0.4, food.y * C + 10);
+    ctx.lineTo(food.x * C + 10, food.y * C + 17 + g * 0.4);
+    ctx.lineTo(food.x * C + 3 - g * 0.4, food.y * C + 10);
     ctx.fill();
-    snake.forEach((s, i) => {
-      ctx.fillStyle = i === 0 ? '#1f66f2' : '#7ba3f7';
-      ctx.fillRect(s.x * 20 + 1, s.y * 20 + 1, 18, 18);
-    });
+    drawSnake(rex, '#b45309', '#f59e0b', rexDir());
+    drawSnake(snake, '#1244b8', '#1f66f2', dir);
   }
+  function respawnRex() {
+    const corners = [{ x: 0, y: 0 }, { x: N - 1, y: 0 }, { x: 0, y: N - 1 }, { x: N - 1, y: N - 1 }];
+    const spot = corners.find((c) => !occupied(c.x, c.y)) || { x: N - 1, y: 0 };
+    rex = [spot];
+    status(`Rex crashed and respawns! ${score()}`);
+  }
+  function rexMove() {
+    const h = rex[0];
+    const dirs = [{ x: 0, y: -1 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 1, y: 0 }];
+    const options = dirs
+      .map((d) => ({ x: h.x + d.x, y: h.y + d.y }))
+      .filter((o) => o.x >= 0 && o.y >= 0 && o.x < N && o.y < N && !occupied(o.x, o.y));
+    if (!options.length) return respawnRex();
+    let pick;
+    if (Math.random() < wander) pick = options[Math.floor(Math.random() * options.length)];
+    else {
+      options.sort((a, b) => (Math.abs(a.x - food.x) + Math.abs(a.y - food.y)) - (Math.abs(b.x - food.x) + Math.abs(b.y - food.y)));
+      pick = options[0];
+    }
+    rex.unshift(pick);
+    if (pick.x === food.x && pick.y === food.y) {
+      rexEaten++;
+      if (rexEaten >= target) { stop(); draw(); status(`Rex hits ${target} first — he takes it! 🐍`); return finish(false, eaten); }
+      status(`Rex snatched that one! ${score()}`);
+      placeFood();
+    } else rex.pop();
+  }
+  function stop() { over = true; clearInterval(timer); }
   function tick() {
+    if (over) return;
+    pulse++;
     dir = nextDir;
     const h = { ...snake[0] };
     if (dir === 'up') h.y--; if (dir === 'down') h.y++;
     if (dir === 'left') h.x--; if (dir === 'right') h.x++;
-    if (h.x < 0 || h.y < 0 || h.x >= N || h.y >= N || snake.some((s) => s.x === h.x && s.y === h.y)) {
-      clearInterval(timer);
+    if (h.x < 0 || h.y < 0 || h.x >= N || h.y >= N || occupied(h.x, h.y)) {
+      stop();
+      status(rex.some((s) => s.x === h.x && s.y === h.y) ? 'You ran into Rex! Game over.' : 'Crashed! Game over.');
       return finish(false, eaten);
     }
     snake.unshift(h);
     if (h.x === food.x && h.y === food.y) {
       eaten++;
-      status(`Eat ${target} to win · ${eaten}/${target}`);
-      if (eaten >= target) { clearInterval(timer); draw(); return finish(true, eaten); }
+      if (eaten >= target) { stop(); draw(); status(`You beat Rex to ${target}! 🏆`); return finish(true, eaten); }
+      status(`Delta! ${score()}`);
       placeFood();
+      // speed ramps up with every delta you eat
+      if (speed > minSpeed) {
+        speed -= 5;
+        clearInterval(timer);
+        timer = setInterval(tick, speed);
+      }
     } else snake.pop();
-    draw();
+    if (!over) rexMove();
+    if (!over) draw();
   }
   draw();
   timer = setInterval(tick, speed);
-  return () => { clearInterval(timer); cleanupInput(); };
+  return () => { stop(); cleanupInput(); };
 };
 
 // ---- 4. Merge 2048 (slide & merge) ----
