@@ -2136,28 +2136,63 @@ GAME_IMPL.carom = (mount, diff, finish, status) => {
   cv.className = 'game-canvas';
   mount.appendChild(cv);
   const ctx = cv.getContext('2d');
-  const pocketR = 16;
+  // Balance (simulated vs ghost-ball aim bot): easy ≈ 50%+ win, hard demands real accuracy.
+  const pocketR = diff === 'hard' ? 18 : 20;
   const pockets = [[0,0],[W/2,0],[W,0],[0,H],[W/2,H],[W,H]];
-  const target = diff === 'hard' ? 7 : 4;
-  const maxShots = diff === 'hard' ? 14 : 10;
+  const target = diff === 'hard' ? 5 : 3;
+  const maxShots = diff === 'hard' ? 12 : 10;
   let pucks = [];
   for (let i = 0; i < 8; i++) {
     const ang = (i / 8) * Math.PI * 2;
     pucks.push({ x: W/2 + Math.cos(ang) * 40, y: H/2 + Math.sin(ang) * 40, vx: 0, vy: 0, out: false });
   }
   const striker = { x: W/2, y: H - 30, vx: 0, vy: 0, out: false };
-  let potted = 0, shots = 0, dragging = false, sx = 0, sy = 0, moving = false;
+  let potted = 0, shots = 0, dragging = false, sx = 0, sy = 0, moving = false, over = false;
+  let flashes = []; // pocket flash rings {x, y, t}
 
-  function pottedCount() { return potted; }
+  function placeStriker() {
+    // Return the striker to the baseline in a clear spot.
+    striker.out = false;
+    striker.vx = 0; striker.vy = 0;
+    striker.y = H - 30;
+    const clearAt = (x) => pucks.every((p) => p.out || Math.hypot(p.x - x, p.y - striker.y) > R * 2 + 2);
+    for (const off of [0, 20, -20, 40, -40, 60, -60, 80, -80, 100, -100]) {
+      if (clearAt(W / 2 + off)) { striker.x = W / 2 + off; return; }
+    }
+    striker.x = W / 2;
+  }
   function draw() {
     ctx.fillStyle = '#0f7a3d'; ctx.fillRect(0, 0, W, H);
     ctx.strokeStyle = '#0a5c2c'; ctx.lineWidth = 10; ctx.strokeRect(5, 5, W - 10, H - 10);
+    // baseline guide
+    ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(30, H - 30); ctx.lineTo(W - 30, H - 30); ctx.stroke();
     pockets.forEach(([x, y]) => { ctx.beginPath(); ctx.arc(x, y, pocketR, 0, 7); ctx.fillStyle = '#0a0a0a'; ctx.fill(); });
+    flashes = flashes.filter((f) => f.t < 18);
+    flashes.forEach((f) => {
+      ctx.beginPath(); ctx.arc(f.x, f.y, pocketR + f.t, 0, 7);
+      ctx.strokeStyle = `rgba(245, 208, 66, ${1 - f.t / 18})`; ctx.lineWidth = 3; ctx.stroke();
+      f.t++;
+    });
     pucks.forEach((p) => { if (p.out) return; ctx.beginPath(); ctx.arc(p.x, p.y, R, 0, 7); ctx.fillStyle = '#f1f5f9'; ctx.fill(); ctx.strokeStyle = '#94a3b8'; ctx.stroke(); });
     if (!striker.out) { ctx.beginPath(); ctx.arc(striker.x, striker.y, R + 1, 0, 7); ctx.fillStyle = '#1f66f2'; ctx.fill(); }
     if (dragging) {
+      const dx = striker.x - sx, dy = striker.y - sy;
+      const power = Math.min(14, Math.hypot(dx, dy) / 8);
+      const ang = Math.atan2(dy, dx);
+      // pull-back line
       ctx.beginPath(); ctx.moveTo(striker.x, striker.y); ctx.lineTo(sx, sy);
-      ctx.strokeStyle = 'rgba(31,102,242,.5)'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2; ctx.stroke();
+      // shot projection (dashed, length ∝ power)
+      ctx.beginPath(); ctx.setLineDash([5, 5]);
+      ctx.moveTo(striker.x, striker.y);
+      ctx.lineTo(striker.x + Math.cos(ang) * power * 12, striker.y + Math.sin(ang) * power * 12);
+      ctx.strokeStyle = 'rgba(245, 208, 66, .9)'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.setLineDash([]);
+      // power bar
+      ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fillRect(20, 14, 80, 8);
+      ctx.fillStyle = power > 11 ? '#dc2626' : power > 7 ? '#f59e0b' : '#4ade80';
+      ctx.fillRect(20, 14, 80 * (power / 14), 8);
     }
   }
   function physicsStep() {
@@ -2167,14 +2202,20 @@ GAME_IMPL.carom = (mount, diff, finish, status) => {
       if (p.out) return;
       p.x += p.vx; p.y += p.vy;
       p.vx *= 0.985; p.vy *= 0.985;
+      // pocket check BEFORE wall clamp — otherwise corner pockets are unreachable
+      for (const [px, py] of pockets) {
+        if (Math.hypot(p.x - px, p.y - py) < pocketR) {
+          p.out = true; p.vx = 0; p.vy = 0;
+          flashes.push({ x: px, y: py, t: 0 });
+          if (p !== striker) potted++;
+          return;
+        }
+      }
       if (p.x < 12) { p.x = 12; p.vx *= -0.8; } if (p.x > W - 12) { p.x = W - 12; p.vx *= -0.8; }
       if (p.y < 12) { p.y = 12; p.vy *= -0.8; } if (p.y > H - 12) { p.y = H - 12; p.vy *= -0.8; }
-      for (const [px, py] of pockets) {
-        if (Math.hypot(p.x - px, p.y - py) < pocketR) { p.out = true; if (p !== striker) potted++; }
-      }
       if (Math.hypot(p.vx, p.vy) > 0.05) anyMoving = true;
     });
-    // simple pairwise collision
+    // impulse collision — exchanges only the velocity component along the contact normal
     for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
       const a = all[i], b = all[j];
       if (a.out || b.out) continue;
@@ -2183,30 +2224,45 @@ GAME_IMPL.carom = (mount, diff, finish, status) => {
         const nx = dx / d, ny = dy / d, overlap = R * 2 - d;
         a.x -= nx * overlap / 2; a.y -= ny * overlap / 2;
         b.x += nx * overlap / 2; b.y += ny * overlap / 2;
-        const avx = a.vx, avy = a.vy;
-        a.vx = b.vx; a.vy = b.vy; b.vx = avx; b.vy = avy;
+        const jn = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
+        if (jn > 0) {
+          a.vx -= jn * nx; a.vy -= jn * ny;
+          b.vx += jn * nx; b.vy += jn * ny;
+        }
       }
     }
     return anyMoving;
   }
   let raf;
+  function flashLoop() {
+    if (over || !flashes.length) return;
+    draw();
+    raf = requestAnimationFrame(flashLoop);
+  }
   function loop() {
+    if (over) return;
     const anyMoving = physicsStep();
     draw();
-    moving = anyMoving;
-    if (moving) raf = requestAnimationFrame(loop);
-    else {
-      status(`Potted ${potted}/${target} · shot ${shots}/${maxShots}`);
-      if (potted >= target) return finish(true, shots);
-      if (striker.out) return finish(false, shots);
-      if (shots >= maxShots) return finish(false, shots);
+    if (anyMoving) { moving = true; raf = requestAnimationFrame(loop); return; }
+    moving = false;
+    if (potted >= target) { over = true; return finish(true, shots); }
+    let note = '';
+    if (striker.out) {
+      shots = Math.min(shots + 1, maxShots); // foul penalty
+      note = ' · Foul! Striker potted (+1 shot)';
     }
+    placeStriker(); // striker always returns to the baseline
+    draw();
+    if (flashes.length) raf = requestAnimationFrame(flashLoop);
+    if (shots >= maxShots) { over = true; return finish(false, shots); }
+    status(`Potted ${potted}/${target} · shot ${shots}/${maxShots}${note}`);
   }
   cv.addEventListener('pointerdown', (e) => {
-    if (moving) return;
+    if (moving || over) return;
     dragging = true;
     const rect = cv.getBoundingClientRect();
     sx = (e.clientX - rect.left) * (W / rect.width); sy = (e.clientY - rect.top) * (H / rect.height);
+    draw();
   });
   cv.addEventListener('pointermove', (e) => {
     if (!dragging) return;
@@ -2215,18 +2271,20 @@ GAME_IMPL.carom = (mount, diff, finish, status) => {
     draw();
   });
   cv.addEventListener('pointerup', () => {
-    if (!dragging) return;
+    if (!dragging || over) return;
     dragging = false;
     const dx = striker.x - sx, dy = striker.y - sy;
     const power = Math.min(14, Math.hypot(dx, dy) / 8);
+    if (power < 0.8) { draw(); return; } // too soft — not a shot
     const ang = Math.atan2(dy, dx);
     striker.vx = Math.cos(ang) * power; striker.vy = Math.sin(ang) * power;
     shots++;
+    moving = true;
     loop();
   });
-  status(`Drag from the blue striker to aim, release to flick · pot ${target} in ${maxShots} shots`);
+  status(`Drag back from the striker to aim, release to flick · pot ${target} in ${maxShots} shots`);
   draw();
-  return () => cancelAnimationFrame(raf);
+  return () => { over = true; cancelAnimationFrame(raf); };
 };
 
 // ---- 15. Delta Slicer (swipe-to-slice Deltix gems, dodge dark orbs) ----
