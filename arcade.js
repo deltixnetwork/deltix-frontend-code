@@ -913,11 +913,11 @@ GAME_IMPL.sudoku = (mount, diff, finish, status) => {
 // ---- 6. Mine Hunt ----
 GAME_IMPL.minehunt = (mount, diff, finish, status) => {
   const N = diff === 'hard' ? 10 : 8;
-  const mines = diff === 'hard' ? 22 : 12;
+  const mines = diff === 'hard' ? 22 : 13;
   const board = makeGrid(mount, N, 'mines');
-  const isMine = new Set(shuffleArr(Array.from({ length: N * N }, (_, i) => i)).slice(0, mines));
+  let isMine = new Set(shuffleArr(Array.from({ length: N * N }, (_, i) => i)).slice(0, mines));
   const revealed = new Set(), flagged = new Set();
-  let flagMode = false, over = false;
+  let flagMode = false, over = false, firstClick = true;
   const cells = [];
   const neighbors = (i) => {
     const r = Math.floor(i / N), c = i % N, out = [];
@@ -929,33 +929,64 @@ GAME_IMPL.minehunt = (mount, diff, finish, status) => {
     return out;
   };
   const count = (i) => neighbors(i).filter((n) => isMine.has(n)).length;
+  const baseline = () => `${N * N - mines - revealed.size} safe left · ⚑ ${flagged.size}/${mines}`;
+  function ensureSafeStart(i) {
+    // relocate mines out of the first click and its ring — no luck-based instant losses
+    const safeZone = new Set([i, ...neighbors(i)]);
+    const moved = [...isMine].filter((m) => safeZone.has(m));
+    if (!moved.length) return;
+    const free = shuffleArr(Array.from({ length: N * N }, (_, k) => k)
+      .filter((k) => !isMine.has(k) && !safeZone.has(k)));
+    moved.forEach((m, idx) => { isMine.delete(m); isMine.add(free[idx]); });
+  }
+  function boom(i) {
+    over = true;
+    cells[i].textContent = '◆'; cells[i].classList.add('open', 'boom');
+    isMine.forEach((m) => { cells[m].textContent = '◆'; cells[m].classList.add('open', 'boom'); });
+    flagged.forEach((f) => { if (!isMine.has(f)) { cells[f].textContent = '✖'; cells[f].classList.add('open'); } });
+    status('Boom! That was a mine.');
+    finish(false, revealed.size);
+  }
   function reveal(i) {
     if (revealed.has(i) || flagged.has(i) || over) return;
+    if (firstClick) { firstClick = false; ensureSafeStart(i); }
+    if (isMine.has(i)) return boom(i);
     revealed.add(i);
     const el = cells[i];
     el.classList.add('open');
-    if (isMine.has(i)) {
-      el.textContent = '◆'; el.classList.add('boom');
-      over = true;
-      isMine.forEach((m) => { cells[m].textContent = '◆'; cells[m].classList.add('open', 'boom'); });
-      return finish(false, revealed.size);
-    }
     const n = count(i);
     el.textContent = n || '';
     el.dataset.n = n;
     if (!n) neighbors(i).forEach(reveal);
-    if (revealed.size === N * N - mines) { over = true; finish(true, revealed.size); }
-    else status(`${N * N - mines - revealed.size} safe cells left`);
+    if (over) return;
+    if (revealed.size === N * N - mines) {
+      over = true;
+      isMine.forEach((m) => { if (!flagged.has(m)) { cells[m].textContent = '⚑'; } });
+      status('Field cleared — every mine dodged! 🏆');
+      finish(true, revealed.size);
+    } else status(baseline());
+  }
+  function chord(i) {
+    // tap an open number with all its flags placed to sweep the rest of its ring
+    const n = count(i);
+    if (!n) return;
+    const around = neighbors(i);
+    if (around.filter((k) => flagged.has(k)).length !== n) return;
+    around.forEach((k) => { if (!flagged.has(k) && !revealed.has(k) && !over) {
+      if (isMine.has(k)) return boom(k);
+      reveal(k);
+    } });
   }
   for (let i = 0; i < N * N; i++) {
     const el = document.createElement('button');
     el.className = 'cell m-cell';
     el.addEventListener('click', () => {
       if (over) return;
+      if (revealed.has(i)) return chord(i);
       if (flagMode) {
-        if (revealed.has(i)) return;
         if (flagged.has(i)) { flagged.delete(i); el.textContent = ''; }
         else { flagged.add(i); el.textContent = '⚑'; }
+        status(baseline());
       } else reveal(i);
     });
     board.appendChild(el);
@@ -969,7 +1000,7 @@ GAME_IMPL.minehunt = (mount, diff, finish, status) => {
     toggle.textContent = `⚑ Flag mode: ${flagMode ? 'on' : 'off'}`;
   });
   mount.appendChild(toggle);
-  status(`${N * N - mines} safe cells to clear · ${mines} mines`);
+  status(`${N * N - mines} safe cells · ${mines} mines · first tap is always safe`);
   return () => {};
 };
 
