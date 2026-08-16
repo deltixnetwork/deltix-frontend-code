@@ -651,6 +651,9 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .board.reaction .cell { background: #f1f5f9; }
 .board.reaction .cell.lit { background: var(--accent); box-shadow: 0 0 12px rgba(47,107,255,.5); }
 .board.reaction .cell.lit::after { content: "\25c6"; color: #fff; font-size: 20px; }
+.board.reaction .cell.decoy { background: #fee2e2; box-shadow: 0 0 12px rgba(220,38,38,.35); }
+.board.reaction .cell.decoy::after { content: "\2715"; color: #dc2626; font-size: 20px; font-weight: 700; }
+.board.reaction .cell.bad { background: #dc2626; }
 .game-canvas { display: block; margin: 0 auto 12px; border-radius: 12px; border: 1px solid var(--border, #e6eaf2); max-width: 100%; }
 .dpad { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 4px auto 8px; }
 .dpad button { width: 52px; height: 40px; border-radius: 10px; border: 1px solid var(--border, #e6eaf2); background: #fff; font-size: 15px; color: var(--accent); cursor: pointer; }

@@ -1337,38 +1337,80 @@ GAME_IMPL.recall = (mount, diff, finish, status) => {
 GAME_IMPL.reaction = (mount, diff, finish, status) => {
   const N = diff === 'hard' ? 4 : 3;
   const goal = diff === 'hard' ? 28 : 20;
+  const baseWindow = diff === 'hard' ? 950 : 1250;
+  const minWindow = diff === 'hard' ? 550 : 750;
+  const decoyP = diff === 'hard' ? 0.55 : 0.35;
   const grid = makeGrid(mount, N, 'reaction');
   const cells = [];
   for (let i = 0; i < N * N; i++) {
     const el = document.createElement('button');
     el.className = 'cell rx-cell';
-    el.addEventListener('click', () => {
-      if (i === lit) { hits++; light(); update(); }
-    });
+    el.addEventListener('click', () => tap(i));
     grid.appendChild(el);
     cells.push(el);
   }
-  let lit = -1, hits = 0, left = 30;
-  function light() {
+  let lit = -1, decoy = -1, hits = 0, streak = 0, left = 30, over = false, moveTimer = null;
+  const windowNow = () => Math.max(minWindow, baseWindow - hits * 25);
+  function clearMarks() {
     if (lit >= 0) cells[lit].classList.remove('lit');
-    let next;
-    do { next = Math.floor(Math.random() * N * N); } while (next === lit);
-    lit = next;
+    if (decoy >= 0) cells[decoy].classList.remove('decoy');
+    decoy = -1;
+  }
+  function light() {
+    clearTimeout(moveTimer);
+    const prev = lit;
+    clearMarks();
+    do { lit = Math.floor(Math.random() * N * N); } while (lit === prev);
     cells[lit].classList.add('lit');
+    if (Math.random() < decoyP) {
+      do { decoy = Math.floor(Math.random() * N * N); } while (decoy === lit);
+      cells[decoy].classList.add('decoy');
+    }
+    // Unclaimed diamonds relocate — the window shrinks as you score.
+    moveTimer = setTimeout(() => {
+      if (over) return;
+      streak = 0;
+      light();
+      update('it moved!');
+    }, windowNow());
   }
-  function update() {
-    status(`Hit ${goal} diamonds · ${hits}/${goal} · ${left}s left`);
+  function update(note) {
+    status(`◆ ${hits}/${goal} · ${left}s${streak >= 5 ? ` · 🔥 x${streak}` : ''}${note ? ' · ' + note : ''}`);
   }
-  light(); update();
+  function end(won) {
+    if (over) return;
+    over = true;
+    clearInterval(clock);
+    clearTimeout(moveTimer);
+    clearMarks();
+    if (lit >= 0) cells[lit].classList.remove('lit');
+    finish(won, hits);
+  }
+  function tap(i) {
+    if (over) return;
+    if (i === lit) {
+      hits++;
+      streak++;
+      update();
+      if (hits >= goal) return end(true);
+      light();
+    } else {
+      const wasDecoy = i === decoy;
+      hits = Math.max(0, hits - 1);
+      streak = 0;
+      cells[i].classList.add('bad');
+      setTimeout(() => cells[i].classList.remove('bad'), 300);
+      update(wasDecoy ? '✕ decoy −1' : 'miss −1');
+    }
+  }
+  light();
+  update();
   const clock = setInterval(() => {
     left--;
     update();
-    if (left <= 0) {
-      clearInterval(clock);
-      finish(hits >= goal, hits);
-    }
+    if (left <= 0) end(hits >= goal);
   }, 1000);
-  return () => clearInterval(clock);
+  return () => { over = true; clearInterval(clock); clearTimeout(moveTimer); };
 };
 
 // ---- 11. Delta Ludo (vs 3 AI, simplified classic race-to-home) ----
