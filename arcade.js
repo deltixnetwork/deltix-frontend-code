@@ -1981,14 +1981,16 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
   return () => { over = true; clearTimeout(aiTimer); };
 };
 
-// ---- 13. Delta Card Draw (Deltix original suits — best hand, no wagering) ----
+// ---- 13. Delta Card Draw (Deltix original suits — hold, draw, best hand, no wagering) ----
 GAME_IMPL.threecard = (mount, diff, finish, status) => {
   const rounds = diff === 'hard' ? 7 : 5;
   const RANKS = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
   // Deltix original suits: Delta Δ, Gem ◆, Node ●, Peak ▲ — no third-party card faces.
   const SUITS = ['Δ','◆','●','▲'];
   const RED = new Set(['◆','▲']);
-  let wins = 0, losses = 0, round = 0;
+  const TIER_NAME = { 6: 'Trail', 5: 'Straight flush', 4: 'Straight', 3: 'Flush', 2: 'Pair', 1: 'High card' };
+  let wins = 0, losses = 0, round = 0, over = false;
+  let deck = [], deckPos = 0, you = [], rio = [], swap = [false, false, false], phase = 'idle';
   const table = document.createElement('div');
   table.className = 'card-table';
   mount.appendChild(table);
@@ -1997,12 +1999,13 @@ GAME_IMPL.threecard = (mount, diff, finish, status) => {
   dealBtn.textContent = 'Deal';
   mount.appendChild(dealBtn);
 
-  function draw3() {
-    const deck = [];
+  function newDeck() {
+    deck = [];
     for (const r of RANKS) for (const s of SUITS) deck.push({ r, s });
     shuffleArr(deck);
-    return [deck.slice(0, 3), deck.slice(3, 6)];
+    deckPos = 0;
   }
+  const next = () => deck[deckPos++];
   function handScore(hand) {
     const vals = hand.map((c) => RANKS.indexOf(c.r) + 2).sort((a, b) => b - a);
     const counts = {};
@@ -2025,38 +2028,104 @@ GAME_IMPL.threecard = (mount, diff, finish, status) => {
     for (let i = 0; i < 3; i++) if (a.high[i] !== b.high[i]) return a.high[i] - b.high[i];
     return 0;
   }
-  function renderHands(you, ai, reveal) {
-    const fmtHand = (hand, hide) =>
-      hand.map((c) => hide
+  function nameOf(hand) {
+    const s = handScore(hand);
+    if (s.tier === 2 || s.tier === 6) {
+      const counts = {};
+      hand.forEach((c) => (counts[c.r] = (counts[c.r] || 0) + 1));
+      const r = Object.entries(counts).find(([, n]) => n >= 2)[0];
+      return `${TIER_NAME[s.tier]} of ${r}s`;
+    }
+    if (s.tier === 1) return `${RANKS[s.high[0] - 2]}-high`;
+    return TIER_NAME[s.tier];
+  }
+  /** Rio's draw strategy — keeps made hands, chases pairs/flush/straight draws correctly. */
+  function rioSwaps(hand) {
+    const s = handScore(hand);
+    if (s.tier >= 3) return []; // flush or better: stand pat
+    const vals = hand.map((c) => RANKS.indexOf(c.r) + 2);
+    if (diff !== 'hard' && Math.random() < 0.35) {
+      // Easy Rio sometimes plays casually: keeps only his highest card.
+      const hi = vals.indexOf(Math.max(...vals));
+      return [0, 1, 2].filter((i) => i !== hi);
+    }
+    if (s.tier === 2) {
+      const pairVal = vals.find((v) => vals.filter((x) => x === v).length >= 2);
+      return [0, 1, 2].filter((i) => vals[i] !== pairVal); // swap the kicker
+    }
+    // two suited → chase the flush
+    for (let i = 0; i < 3; i++) for (let j = i + 1; j < 3; j++) {
+      if (hand[i].s === hand[j].s) return [0, 1, 2].filter((k) => k !== i && k !== j);
+    }
+    // two connected → chase the straight
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+      if (i !== j && vals[i] - vals[j] === 1) return [0, 1, 2].filter((k) => k !== i && k !== j);
+    }
+    // keep Q or better, redraw the rest
+    const keep = [0, 1, 2].filter((i) => vals[i] >= 12);
+    return [0, 1, 2].filter((i) => !keep.includes(i));
+  }
+  function renderHands(reveal, verdict) {
+    const fmt = (hand, hide, swappable) =>
+      hand.map((c, i) => hide
         ? '<span class="pcard back">Δ</span>'
-        : `<span class="pcard ${RED.has(c.s) ? 'red' : ''}">${c.r}<i class="suit">${c.s}</i></span>`).join('');
+        : `<button class="pcard ${RED.has(c.s) ? 'red' : ''}${swappable && swap[i] ? ' swap' : ''}" data-i="${i}" ${swappable ? '' : 'disabled'}>${c.r}<i class="suit">${c.s}</i></button>`).join('');
+    const holdPhase = phase === 'hold';
     table.innerHTML = `
-      <div class="hand-row"><div class="hand-label">Dealer Rio</div><div class="hand">${fmtHand(ai, !reveal)}</div></div>
-      <div class="hand-row"><div class="hand-label">You</div><div class="hand">${fmtHand(you, false)}</div></div>`;
+      <div class="hand-row${reveal && verdict < 0 ? ' won-row' : ''}"><div class="hand-label">Dealer Rio</div><div class="hand">${fmt(rio, !reveal, false)}</div>${reveal ? `<div class="hand-name">${nameOf(rio)}</div>` : ''}</div>
+      <div class="hand-row${reveal && verdict > 0 ? ' won-row' : ''}"><div class="hand-label">You</div><div class="hand">${fmt(you, false, holdPhase)}</div>${reveal ? `<div class="hand-name">${nameOf(you)}</div>` : ''}</div>`;
+    if (holdPhase) {
+      table.querySelectorAll('.pcard[data-i]').forEach((el) => {
+        el.addEventListener('click', () => {
+          const i = Number(el.dataset.i);
+          swap[i] = !swap[i];
+          renderHands(false);
+          const n = swap.filter(Boolean).length;
+          dealBtn.textContent = n ? `Draw ${n} card${n > 1 ? 's' : ''} ▸` : 'Stand pat ▸';
+        });
+      });
+    }
+  }
+  function settle() {
+    const cmp = compare(handScore(you), handScore(rio));
+    if (cmp > 0) wins++;
+    else if (cmp < 0) losses++;
+    renderHands(true, cmp);
+    status(`${cmp > 0 ? 'You win the round! 🎉' : cmp < 0 ? 'Rio takes it.' : 'Push — no one scores.'} · You ${wins} – Rio ${losses}`);
+    phase = 'done';
+    if (round >= rounds) {
+      setTimeout(() => { if (!over) { over = true; finish(wins > losses, wins); } }, 1100);
+    } else {
+      dealBtn.disabled = false;
+      dealBtn.textContent = 'Deal next round';
+    }
   }
   dealBtn.addEventListener('click', () => {
+    if (over) return;
+    if (phase === 'hold') {
+      // player draws, then Rio
+      you = you.map((c, i) => (swap[i] ? next() : c));
+      const rs = rioSwaps(rio);
+      rio = rio.map((c, i) => (rs.includes(i) ? next() : c));
+      phase = 'reveal';
+      renderHands(false);
+      dealBtn.disabled = true;
+      status(rs.length ? `Rio swaps ${rs.length} card${rs.length > 1 ? 's' : ''}…` : 'Rio stands pat…');
+      setTimeout(settle, 950);
+      return;
+    }
     round++;
-    const [you, ai] = draw3();
-    renderHands(you, ai, false);
-    dealBtn.disabled = true;
-    status(`Round ${round}/${rounds} — revealing…`);
-    setTimeout(() => {
-      renderHands(you, ai, true);
-      const you_s = handScore(you), ai_s = handScore(ai);
-      const cmp = compare(you_s, ai_s);
-      if (cmp > 0) wins++;
-      else if (cmp < 0) losses++;
-      status(`${cmp > 0 ? 'You win the round!' : cmp < 0 ? 'Rio wins the round.' : 'Push.'} · You ${wins} – Rio ${losses}`);
-      if (round >= rounds) {
-        setTimeout(() => finish(wins > losses, wins), 900);
-      } else {
-        dealBtn.disabled = false;
-        dealBtn.textContent = 'Deal next round';
-      }
-    }, 900);
+    newDeck();
+    you = [next(), next(), next()];
+    rio = [next(), next(), next()];
+    swap = [false, false, false];
+    phase = 'hold';
+    renderHands(false);
+    dealBtn.textContent = 'Stand pat ▸';
+    status(`Round ${round}/${rounds} — you hold ${nameOf(you)}. Tap cards to swap them.`);
   });
-  status(`Best of ${rounds} hands vs Dealer Rio — Deltix suits Δ ◆ ● ▲, no wagering.`);
-  return () => {};
+  status(`Best of ${rounds} vs Dealer Rio — tap cards to swap once per round. Suits Δ ◆ ● ▲, no wagering.`);
+  return () => { over = true; };
 };
 
 // ---- 14. Carom Strike (2D physics flick-to-pot) ----

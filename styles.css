@@ -828,6 +828,15 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 }
 .pcard .suit { font-style: normal; font-size: 12px; line-height: 1; }
 .pcard.red { color: #dc2626; }
+button.pcard { cursor: pointer; font-family: inherit; }
+button.pcard:disabled { cursor: default; opacity: 1; color: inherit; }
+button.pcard.red:disabled { color: #dc2626; }
+.pcard.swap { transform: translateY(-8px); border-color: var(--accent); box-shadow: 0 6px 12px rgba(31, 102, 242, .25); }
+.pcard.swap::after { content: '↻'; position: absolute; top: -7px; right: -6px; font-size: 11px; background: var(--accent); color: #fff; border-radius: 50%; width: 15px; height: 15px; display: grid; place-items: center; }
+button.pcard { position: relative; transition: transform .15s ease, box-shadow .15s ease; }
+.hand-name { font-size: 11px; font-weight: 700; color: var(--muted, #64748b); margin-left: auto; white-space: nowrap; }
+.hand-row.won-row .hand-name { color: #16a34a; }
+.hand-row.won-row .hand .pcard { box-shadow: 0 0 0 2.5px #16a34a; }
 .pcard.back {
   background: linear-gradient(150deg, #1f66f2 0%, #123c94 100%);
   color: #fff; border-color: #1d4ed8; font-size: 20px;
