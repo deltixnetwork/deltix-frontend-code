@@ -562,6 +562,78 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   border: 1px solid #d8e3fb;
   box-shadow: 0 8px 20px rgba(30, 64, 175, .08);
 }
+.showcase-art {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: end;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.art-kid {
+  height: 66px;
+  border-radius: 14px;
+  position: relative;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.35);
+}
+.art-kid::before {
+  content: "";
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #ffd6b3;
+}
+.art-kid::after {
+  content: "";
+  position: absolute;
+  width: 42px;
+  height: 26px;
+  border-radius: 14px 14px 8px 8px;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.art-kid-left {
+  background: linear-gradient(155deg, #7cc6ff, #2e79e8);
+}
+.art-kid-left::after { background: linear-gradient(140deg, #2b6fe5, #2149b8); }
+.art-kid-right {
+  background: linear-gradient(155deg, #ffb2cf, #eb6298);
+}
+.art-kid-right::after { background: linear-gradient(140deg, #ea6d98, #b83d66); }
+.art-chest {
+  width: 86px;
+  height: 62px;
+  border-radius: 12px;
+  background: linear-gradient(170deg, #ffe08a, #f59e0b 58%, #b45309);
+  border: 2px solid rgba(132, 53, 0, .35);
+  box-shadow: 0 8px 14px rgba(162, 95, 9, .25);
+  position: relative;
+}
+.art-chest::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 8px;
+  height: 18px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffefb0, #f9ba29);
+}
+.art-chest::after {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 14px;
+  border-radius: 4px;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  background: #8b4b00;
+}
 .showcase-title {
   font-size: 17px;
   font-weight: 800;
@@ -583,6 +655,10 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .arcade-showcase {
   background: linear-gradient(135deg, #eef8ff 0%, #dee9ff 100%);
   border-color: #c8dafc;
+}
+.wallet-showcase {
+  background: linear-gradient(135deg, #eef7ff 0%, #dbe8ff 100%);
+  border-color: #bfd2fb;
 }
 .browser-showcase {
   background: linear-gradient(135deg, #f5edff 0%, #e5d8ff 100%);
@@ -678,6 +754,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   font-size: 15px;
   padding: 16px;
   line-height: 1.35;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.55), 0 8px 18px rgba(188, 128, 14, .18);
 }
 
 .games-grid {
