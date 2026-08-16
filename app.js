@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.1.3';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -26,12 +26,20 @@ async function api(method, path, body) {
     headers: {
       'Content-Type': 'application/json',
       'X-Deltix-Client': 'deltix-app',
+      'X-App-Version': APP_VERSION,
       ...(state.token ? { Authorization: 'Bearer ' + state.token } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
+    // Server-side forced update — lock the UI until the app is updated.
+    if (res.status === 426) {
+      $('updateGate').hidden = false;
+      const err426 = new Error(json.error || 'Update required');
+      err426.status = 426;
+      throw err426;
+    }
     const staleSession = res.status === 401 || (res.status === 404 && /wallet not found/i.test(json.error || ''));
     if (staleSession && state.token) {
       state.token = null;
@@ -1436,17 +1444,12 @@ $('expSearch').addEventListener('keydown', (e) => {
 });
 
 // ---------- AdMob (native app only — Sustainability Fund banner) ----------
-// Google's official TEST ids. Swap for real unit ids once the AdMob account
-// and Play listing are approved (see mobile-app/README.md).
-// Real Deltix Network production ids (ready, currently unused while testing):
-//   App:          ca-app-pub-6703659529197503~2016406742
-//   Banner:       ca-app-pub-6703659529197503/5133524678
-//   Interstitial: ca-app-pub-6703659529197503/1357931192
-//   Rewarded:     ca-app-pub-6703659529197503/5850926156
-const ADMOB_BANNER_ID = 'ca-app-pub-3940256099942544/6300978111';
-const ADMOB_INTERSTITIAL_ID = 'ca-app-pub-3940256099942544/1033173712';
-const ADMOB_REWARDED_ID = 'ca-app-pub-3940256099942544/5224354917';
-const ADMOB_TESTING = true;
+// Production ad units from the Deltix Network AdMob account.
+//   App id (AndroidManifest): ca-app-pub-6703659529197503~2016406742
+const ADMOB_BANNER_ID = 'ca-app-pub-6703659529197503/5133524678';
+const ADMOB_INTERSTITIAL_ID = 'ca-app-pub-6703659529197503/1357931192';
+const ADMOB_REWARDED_ID = 'ca-app-pub-6703659529197503/5850926156';
+const ADMOB_TESTING = false;
 let adsReady = false;
 let gamesSinceInterstitial = 0;
 let lastInterstitialAt = 0;
