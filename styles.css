@@ -505,6 +505,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   width: 100%; max-width: 380px; background: var(--panel); border: 1px solid var(--border);
   border-radius: 18px; padding: 22px; display: flex; flex-direction: column; gap: 12px;
   box-shadow: 0 20px 50px rgba(16, 24, 40, .2);
+  max-height: 94vh; max-height: 94dvh; overflow-y: auto;
 }
 .modal-actions { display: flex; gap: 10px; }
 
@@ -654,7 +655,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .board.reaction .cell.decoy { background: #fee2e2; box-shadow: 0 0 12px rgba(220,38,38,.35); }
 .board.reaction .cell.decoy::after { content: "\2715"; color: #dc2626; font-size: 20px; font-weight: 700; }
 .board.reaction .cell.bad { background: #dc2626; }
-.game-canvas { display: block; margin: 0 auto 12px; border-radius: 12px; border: 1px solid var(--border, #e6eaf2); max-width: 100%; }
+.game-canvas { display: block; margin: 0 auto 12px; border-radius: 12px; border: 1px solid var(--border, #e6eaf2); max-width: 100%; height: auto; }
 .dpad { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 4px auto 8px; }
 .dpad button { width: 52px; height: 40px; border-radius: 10px; border: 1px solid var(--border, #e6eaf2); background: #fff; font-size: 15px; color: var(--accent); cursor: pointer; }
 .dpad button:active { background: #eef3ff; }
@@ -760,7 +761,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .ludo-wrap2 { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .ludo-board {
   position: relative; display: grid; grid-template-columns: repeat(15, 1fr); grid-template-rows: repeat(15, 1fr);
-  width: 300px; height: 300px; background: #fff; border: 2px solid #0f172a; border-radius: 6px;
+  width: min(300px, 100%); aspect-ratio: 1; height: auto; background: #fff; border: 2px solid #0f172a; border-radius: 6px;
 }
 .lb-cell { background: #fff; }
 .lb-cell.yard-g { background: #d9f4e1; } .lb-cell.yard-y { background: #fef3d6; }
@@ -1254,6 +1255,11 @@ body.has-ad-banner #screen-main.active {
 
 /* Compact layout for narrow devices (≤ 374px, e.g. iPhone SE, small Androids) */
 @media (max-width: 374px) {
+  .modal-backdrop { padding: 8px; }
+  .modal { padding: 14px; border-radius: 14px; }
+  .board.ttt .cell { font-size: 24px; }
+  .board.chess .cell { font-size: 24px; }
+  .ludo-dice2 { width: 46px; height: 46px; font-size: 28px; }
   .stake-val-name, .val-name { font-size: 14px; }
   .stake-3d-shield, .val-3d-shield { width: 38px; height: 38px; }
   .stake-3d-chips { width: 34px; height: 34px; }
