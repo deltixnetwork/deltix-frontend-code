@@ -80,6 +80,13 @@ function showScreen(id) {
   const authed = id === 'screen-main';
   $('topbar').hidden = !authed;
   $('tabbar').hidden = !authed;
+  if (!authed) {
+    document.body.classList.remove('has-ad-banner');
+    const cap = window.Capacitor;
+    if (cap?.Plugins?.AdMob) cap.Plugins.AdMob.hideBanner().catch(() => {});
+  } else {
+    updateTabAd();
+  }
 }
 function showTab(id) {
   document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
@@ -839,6 +846,7 @@ function openDBrowser(url, name) {
   $('dbInput').value = '';
   $('dbrowser').hidden = false;
   document.body.style.overflow = 'hidden';
+  updateTabAd();
   navigateDb(url, { push: true, title: name || 'D-Browser' });
 }
 
@@ -876,6 +884,7 @@ function closeDBrowser() {
   dbState.currentUrl = '';
   $('dbInput').value = '';
   updateDbUi();
+  updateTabAd();
 }
 
 $('dbClose').addEventListener('click', closeDBrowser);
@@ -909,12 +918,14 @@ function openExplorer(view) {
   exp.stack = [];
   $('explorer').hidden = false;
   document.body.style.overflow = 'hidden';
+  updateTabAd();
   expGo(view || { v: 'home' });
 }
 function closeExplorer() {
   $('explorer').hidden = true;
   document.body.style.overflow = '';
   exp.stack = [];
+  updateTabAd();
 }
 function expGo(view) {
   exp.stack.push(view);
@@ -1123,26 +1134,43 @@ async function initAds() {
   }
 }
 
-/** Banner shows only on the D-Browser tab (the Sustainability Fund slot). */
+/** Banner is placed cleanly across all tabs, fitting neatly between the header and the raised footer tab bar. */
+let currentTabId = 'tab-wallet';
+
 async function updateTabAd(tabId) {
+  if (tabId) currentTabId = tabId;
   const cap = window.Capacitor;
   if (!adsReady || !cap || !cap.Plugins || !cap.Plugins.AdMob) return;
-  try {
-    if (tabId === 'tab-browser') {
-      await cap.Plugins.AdMob.showBanner({
-        adId: ADMOB_BANNER_ID,
-        adSize: 'ADAPTIVE_BANNER',
-        position: 'BOTTOM_CENTER',
-        margin: 64, // sit above the tab bar
-        isTesting: ADMOB_TESTING,
-      });
-    } else {
+
+  const isMainScreen = document.getElementById('screen-main')?.classList.contains('active');
+  const isOverlayOpen = (!document.getElementById('dbrowser')?.hidden) ||
+                        (!document.getElementById('explorer')?.hidden) ||
+                        (!document.getElementById('gameModal')?.hidden);
+
+  // Policy guardrail: Hide banner during full-screen interactive overlays or authentication
+  if (!isMainScreen || isOverlayOpen) {
+    try {
       await cap.Plugins.AdMob.hideBanner();
-    }
+      document.body.classList.remove('has-ad-banner');
+    } catch {}
+    return;
+  }
+
+  try {
+    // Show banner at bottom: margin 0 positions it at the base; body.has-ad-banner elevates footer tabbar above it
+    await cap.Plugins.AdMob.showBanner({
+      adId: ADMOB_BANNER_ID,
+      adSize: 'ADAPTIVE_BANNER',
+      position: 'BOTTOM_CENTER',
+      margin: 0,
+      isTesting: ADMOB_TESTING,
+    });
+    document.body.classList.add('has-ad-banner');
   } catch {
     /* ignore ad errors */
   }
 }
+window.updateTabAd = updateTabAd;
 
 // ---------- Boot ----------
 (async function boot() {

@@ -60,6 +60,7 @@ function openGame(id) {
   gel('gameSetup').hidden = false;
   gel('gameArea').hidden = true;
   gel('gameModal').hidden = false;
+  if (window.updateTabAd) window.updateTabAd();
 }
 function updateRewardHint() {
   const g = arcadeState.currentGame;
@@ -80,6 +81,7 @@ function closeGame() {
   arcadeState.sessionId = null;
   gel('gameMount').innerHTML = '';
   gel('gameModal').hidden = true;
+  if (window.updateTabAd) window.updateTabAd();
 }
 
 gel('startGameBtn').addEventListener('click', async () => {
