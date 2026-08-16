@@ -734,6 +734,7 @@ async function unstake(id) {
 // ---------- D-Browser security interstitial + in-app browser ----------
 let pendingDappUrl = null;
 let pendingDappName = '';
+const dbState = { history: [], index: -1, currentUrl: '' };
 const ALLOWED_DAPP_HOSTS = new Set([
   'app.uniswap.org', 'opensea.io', 'aave.com', 'snapshot.org', 'etherscan.io', 'web3.storage',
 ]);
@@ -759,60 +760,136 @@ $('confirmDapp').addEventListener('click', () => {
   if (!pendingDappUrl) return;
   openDBrowser(pendingDappUrl, pendingDappName);
   pendingDappUrl = null;
+  pendingDappName = '';
 });
 
-/** Open a dApp inside the app: native in-app browser sheet on device, overlay browser on web. */
-function openDBrowser(url, name) {
-  const cap = window.Capacitor;
-  if (cap && cap.isNativePlatform && cap.isNativePlatform()) {
-    const B = cap.Plugins && cap.Plugins.Browser;
-    if (B && B.open) {
-      B.open({ url, toolbarColor: '#ffffff' });
-      return;
+function normalizeBrowseInput(raw) {
+  const q = String(raw || '').trim();
+  if (!q) return null;
+  if (/^https?:\/\//i.test(q)) return q;
+  if (/^[a-z0-9.-]+\.[a-z]{2,}(\/.*)?$/i.test(q)) return `https://${q}`;
+  return `https://duckduckgo.com/?q=${encodeURIComponent(q)}`;
+}
+
+function updateDbUi() {
+  const canBack = dbState.index > 0;
+  const canForward = dbState.index >= 0 && dbState.index < dbState.history.length - 1;
+  $('dbBack').disabled = !canBack;
+  $('dbForward').disabled = !canForward;
+  $('dbReload').disabled = !dbState.currentUrl;
+  $('dbExternal').disabled = !dbState.currentUrl;
+  $('dbGo').disabled = !$('dbInput').value.trim();
+  if (dbState.currentUrl) {
+    $('dbInput').value = dbState.currentUrl;
+    try {
+      $('dbHost').textContent = '🔒 ' + new URL(dbState.currentUrl).hostname;
+    } catch {
+      $('dbHost').textContent = '🔒 dapp';
     }
-    window.open(url, '_blank', 'noopener');
-    return;
   }
-  $('dbName').textContent = name || 'dApp';
-  $('dbHost').textContent = '🔒 ' + new URL(url).hostname;
+}
+
+function navigateDb(raw, { push = true, title } = {}) {
+  const target = normalizeBrowseInput(raw);
+  if (!target) return;
+
+  const frame = $('dbFrame');
   const loading = $('dbLoading');
   loading.hidden = false;
   loading.innerHTML = '◆ Connecting securely…';
-  const frame = $('dbFrame');
-  frame.dataset.url = url;
-  frame.src = url;
+
+  if (push) {
+    dbState.history = dbState.history.slice(0, dbState.index + 1);
+    dbState.history.push(target);
+    dbState.index = dbState.history.length - 1;
+  }
+  dbState.currentUrl = target;
+  if (title) $('dbName').textContent = title;
+
+  frame.dataset.url = target;
+  frame.src = target;
+  updateDbUi();
+
   let loaded = false;
   frame.onload = () => {
     loaded = true;
     loading.hidden = true;
+    updateDbUi();
   };
-  // Many dApps refuse to be embedded (X-Frame-Options) — offer the system browser.
+
   setTimeout(() => {
-    if (loaded) return;
+    if (loaded || dbState.currentUrl !== target) return;
     loading.innerHTML = `<div class="db-blocked">
       <div class="db-blocked-icon">🛡</div>
-      <b>${name || 'This dApp'} blocks embedded browsing</b>
-      <p>For your security it only runs in a full browser tab.</p>
-      <button class="btn primary" id="dbBlockedOpen">Open ${new URL(url).hostname} ↗</button>
+      <b>This dApp blocks embedded browsing</b>
+      <p>Use external mode for this site while keeping D-Browser as your default gateway.</p>
+      <button class="btn primary" id="dbBlockedOpen">Open in browser ↗</button>
     </div>`;
-    document.getElementById('dbBlockedOpen').onclick = () => window.open(url, '_blank', 'noopener');
+    const openBtn = document.getElementById('dbBlockedOpen');
+    if (openBtn) openBtn.onclick = () => window.open(target, '_blank', 'noopener');
   }, 5000);
+}
+
+/** Open dApps inside the in-app D-Browser overlay (native + web). */
+function openDBrowser(url, name) {
+  $('dbName').textContent = name || 'D-Browser';
+  dbState.history = [];
+  dbState.index = -1;
+  dbState.currentUrl = '';
+  $('dbInput').value = '';
   $('dbrowser').hidden = false;
   document.body.style.overflow = 'hidden';
+  navigateDb(url, { push: true, title: name || 'D-Browser' });
+}
+
+function openCurrentExternally() {
+  if (dbState.currentUrl) window.open(dbState.currentUrl, '_blank', 'noopener');
+}
+function goFromAddressBar() {
+  const q = $('dbInput').value;
+  if (!q.trim()) return;
+  navigateDb(q, { push: true, title: 'D-Browser' });
+}
+function goDbBack() {
+  if (dbState.index <= 0) return;
+  dbState.index -= 1;
+  navigateDb(dbState.history[dbState.index], { push: false });
+}
+function goDbForward() {
+  if (dbState.index >= dbState.history.length - 1) return;
+  dbState.index += 1;
+  navigateDb(dbState.history[dbState.index], { push: false });
+}
+function reloadDb() {
+  if (!dbState.currentUrl) return;
+  navigateDb(dbState.currentUrl, { push: false });
+}
+function goDbHome() {
+  navigateDb('https://deltixllc.com', { push: true, title: 'D-Browser' });
 }
 function closeDBrowser() {
   $('dbFrame').src = 'about:blank';
   $('dbrowser').hidden = true;
   document.body.style.overflow = '';
+  dbState.history = [];
+  dbState.index = -1;
+  dbState.currentUrl = '';
+  $('dbInput').value = '';
+  updateDbUi();
 }
+
 $('dbClose').addEventListener('click', closeDBrowser);
-$('dbExternal').addEventListener('click', () => {
-  const url = $('dbFrame').dataset.url;
-  if (url) window.open(url, '_blank', 'noopener');
-});
-$('dbOpenExt').addEventListener('click', () => {
-  const url = $('dbFrame').dataset.url;
-  if (url) window.open(url, '_blank', 'noopener');
+$('dbExternal').addEventListener('click', openCurrentExternally);
+$('dbOpenExt').addEventListener('click', openCurrentExternally);
+$('dbBack').addEventListener('click', goDbBack);
+$('dbForward').addEventListener('click', goDbForward);
+$('dbReload').addEventListener('click', reloadDb);
+$('dbHome').addEventListener('click', goDbHome);
+$('dbGo').addEventListener('click', goFromAddressBar);
+$('dbInput').addEventListener('input', updateDbUi);
+$('dbNavForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  goFromAddressBar();
 });
 
 // Auto-advance OTP focus
