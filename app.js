@@ -669,7 +669,11 @@ setInterval(() => {
 function showFaucetPopup({ title, message, showCountdown }) {
   $('faucetModalTitle').textContent = title;
   $('faucetModalMsg').textContent = message;
-  $('faucetModalCountdown').hidden = !showCountdown;
+  const clock = $('faucetModalCountdown');
+  clock.hidden = !showCountdown;
+  if (showCountdown && state.faucet?.nextClaimAt) {
+    clock.textContent = msToClock(Math.max(0, state.faucet.nextClaimAt - Date.now()));
+  }
   $('faucetModal').hidden = false;
 }
 $('faucetModalOk').addEventListener('click', () => ($('faucetModal').hidden = true));
