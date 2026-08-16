@@ -630,6 +630,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .board.mines .cell[data-n="2"] { color: var(--green, #16a34a); }
 .board.mines .cell[data-n="3"] { color: #dc2626; }
 .board.slide .cell { font-size: 20px; background: #eef3ff; color: var(--accent); }
+.board.slide .cell.placed { background: #dcfce7; color: #15803d; border-color: #86efac; }
 .board.slide .cell.blank { background: transparent; border-color: transparent; cursor: default; }
 .board.reversi { gap: 2px; max-width: 330px; }
 .board.reversi .cell { background: #e8f8ef; border-color: #cde9d8; border-radius: 4px; }

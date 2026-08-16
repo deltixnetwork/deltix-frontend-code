@@ -1021,28 +1021,55 @@ GAME_IMPL.slide = (mount, diff, finish, status) => {
     [tiles[blank], tiles[pick]] = [tiles[pick], tiles[blank]];
     blank = pick;
   }
+  const budget = diff === 'hard' ? 460 : 180;
   const board = makeGrid(mount, N, 'slide');
-  let moves = 0;
-  function render() {
-    board.innerHTML = '';
-    tiles.forEach((v, i) => {
-      const el = document.createElement('button');
-      el.className = 'cell' + (v ? '' : ' blank');
-      el.textContent = v || '';
-      el.addEventListener('click', () => {
-        const bi = tiles.indexOf(0);
-        const r = Math.floor(i / N), c = i % N, br = Math.floor(bi / N), bc = bi % N;
-        if (Math.abs(r - br) + Math.abs(c - bc) !== 1) return;
-        [tiles[i], tiles[bi]] = [tiles[bi], tiles[i]];
-        moves++;
-        render();
-        if (tiles.every((v2, i2) => v2 === (i2 + 1) % (N * N))) finish(true, moves);
-        else status(`${moves} moves`);
-      });
-      board.appendChild(el);
-    });
+  const cells = [];
+  for (let i = 0; i < N * N; i++) {
+    const el = document.createElement('button');
+    el.className = 'cell';
+    el.addEventListener('click', () => clickTile(i));
+    board.appendChild(el);
+    cells.push(el);
   }
-  status('Order the tiles 1 → ' + (N * N - 1));
+  let moves = 0, over = false;
+  const solved = () => tiles.every((v, i) => v === (i + 1) % (N * N));
+  const placedCount = () => tiles.reduce((n, v, i) => n + (v && v === i + 1 ? 1 : 0), 0);
+  function render(changed) {
+    tiles.forEach((v, i) => {
+      const el = cells[i];
+      el.textContent = v || '';
+      el.classList.toggle('blank', !v);
+      el.classList.toggle('placed', Boolean(v) && v === i + 1);
+      el.classList.remove('pop');
+      if (changed && changed.includes(i) && v) {
+        void el.offsetWidth;
+        el.classList.add('pop');
+      }
+    });
+    status(`Moves ${moves}/${budget} · placed ${placedCount()}/${N * N - 1}`);
+  }
+  function clickTile(i) {
+    if (over) return;
+    const bi = tiles.indexOf(0);
+    const r = Math.floor(i / N), c = i % N, br = Math.floor(bi / N), bc = bi % N;
+    if (i === bi || (r !== br && c !== bc)) return;
+    // Shift every tile between the clicked one and the blank toward the blank.
+    const step = r === br ? (c < bc ? 1 : -1) : (r < br ? N : -N);
+    const changed = [];
+    let cur = bi;
+    while (cur !== i) {
+      const next = cur - step;
+      tiles[cur] = tiles[next];
+      changed.push(cur);
+      moves++;
+      cur = next;
+    }
+    tiles[i] = 0;
+    render(changed);
+    if (solved()) { over = true; finish(true, budget - moves); return; }
+    if (moves >= budget) { over = true; finish(false, moves); }
+  }
+  status(`Order 1 → ${N * N - 1} within ${budget} moves`);
   render();
   return () => {};
 };
