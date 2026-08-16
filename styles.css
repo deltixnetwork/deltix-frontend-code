@@ -344,6 +344,19 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .feature-card.collectible .dapp-3d-icon { width: 44px; height: 44px; flex: 0 0 44px; }
 .feature-card.collectible.locked .name { color: #64748b; }
 
+/* Swap venue chooser */
+.swap-venue {
+  padding: 12px 14px; margin: 8px 0; border-radius: 12px;
+  border: 1px solid #dbe4f5; background: #fff; cursor: pointer;
+}
+.swap-venue:first-child { border-color: var(--accent, #2563eb); background: #eff6ff; }
+.swap-venue:active { background: #eef3ff; }
+.swap-venue-name { font-weight: 700; font-size: 14px; color: #0f172a; }
+.swap-venue-tag { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+
+/* Public chain explorer entry on the sign-in screen */
+#publicExplorerBtn { margin-top: 12px; }
+
 /* Deltix DAO */
 .proposal {
   background: var(--panel); border: 1px solid var(--border); border-radius: 14px;

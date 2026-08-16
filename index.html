@@ -46,6 +46,7 @@
         <button class="btn primary" id="sendCodeBtn" disabled>Send verification code</button>
         <p class="hint" id="emailHint"></p>
       </div>
+      <button class="btn ghost" id="publicExplorerBtn">🔍 Explore the live Deltix chain — no account needed</button>
       <p class="footnote">A standalone, Ethereum-inspired DPoS network.<br/>OTP verification is identity-only — it never controls your wallet keys.</p>
     </section>
 
@@ -145,10 +146,10 @@
           </div>
         </div>
         <div class="dapp-grid" id="dappGrid">
-          <div class="dapp dapp-swap" data-url="https://a-network.net/dex" data-name="A-Network DEX" data-direct="1">
+          <div class="dapp dapp-swap" data-page="swap" data-name="Swap">
             <img src="assets/dapp-swap.svg" class="dapp-3d-icon" alt="Swap" />
             <div class="dapp-title">Swap</div>
-            <div class="dapp-desc">Trade on the A-Network DEX</div>
+            <div class="dapp-desc">A-Network DEX &amp; EVM swaps</div>
           </div>
           <div class="dapp dapp-nfts" data-page="nfts" data-name="Deltix Collectibles">
             <img src="assets/dapp-nfts.svg" class="dapp-3d-icon" alt="NFTs" />
@@ -457,6 +458,17 @@
   </div>
 
   <!-- D-Browser security interstitial -->
+  <div class="modal-backdrop" id="swapModal" hidden>
+    <div class="modal">
+      <h3>Choose a swap venue</h3>
+      <p class="muted small-note">All venues open inside D-Browser. External EVM DEXes are independent third-party services.</p>
+      <div id="swapOptions"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="cancelSwap">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="dappModal" hidden>
     <div class="modal">
       <h3 id="dappModalTitle">Open external dApp?</h3>

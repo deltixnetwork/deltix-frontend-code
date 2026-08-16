@@ -892,11 +892,13 @@ let pendingDappName = '';
 const dbState = { history: [], index: -1, currentUrl: '' };
 const ALLOWED_DAPP_HOSTS = new Set([
   'a-network.net', 'www.a-network.net', 'deltixllc.com', 'www.deltixllc.com',
+  'app.uniswap.org', 'pancakeswap.finance', 'www.sushi.com', 'app.1inch.io',
 ]);
 document.querySelectorAll('#dappGrid .dapp').forEach((d) =>
   d.addEventListener('click', () => {
     // Native in-app dApp pages (no external navigation)
     if (d.dataset.page) {
+      if (d.dataset.page === 'swap') return openSwapChooser();
       if (d.dataset.page === 'dao') return showTab('tab-community');
       if (d.dataset.page === 'explorer') return openExplorer({ v: 'home' });
       return openDappPage(d.dataset.page, d.dataset.name);
@@ -925,6 +927,31 @@ $('confirmDapp').addEventListener('click', () => {
   pendingDappUrl = null;
   pendingDappName = '';
 });
+
+// ---------- Swap venue chooser: A-Network DEX + external EVM DEXes ----------
+const SWAP_VENUES = [
+  { name: 'A-Network DEX', url: 'https://a-network.net/dex', tag: 'Recommended · Deltix partner' },
+  { name: 'Uniswap', url: 'https://app.uniswap.org', tag: 'Ethereum & EVM chains' },
+  { name: 'PancakeSwap', url: 'https://pancakeswap.finance', tag: 'BNB Chain & EVM' },
+  { name: 'SushiSwap', url: 'https://www.sushi.com/swap', tag: 'Multi-chain EVM' },
+  { name: '1inch', url: 'https://app.1inch.io', tag: 'EVM DEX aggregator' },
+];
+function openSwapChooser() {
+  $('swapOptions').innerHTML = SWAP_VENUES.map((v, i) => `
+    <div class="swap-venue" data-vi="${i}">
+      <div class="swap-venue-name">${v.name}</div>
+      <div class="swap-venue-tag">${v.tag}</div>
+    </div>`).join('');
+  $('swapOptions').querySelectorAll('.swap-venue').forEach((row) =>
+    row.addEventListener('click', () => {
+      const v = SWAP_VENUES[Number(row.dataset.vi)];
+      $('swapModal').hidden = true;
+      openDBrowser(v.url, v.name);
+    })
+  );
+  $('swapModal').hidden = false;
+}
+$('cancelSwap').addEventListener('click', () => ($('swapModal').hidden = true));
 
 function normalizeBrowseInput(raw) {
   const q = String(raw || '').trim();
@@ -970,7 +997,13 @@ function navigateDb(raw, { push = true, title } = {}) {
   if (title) $('dbName').textContent = title;
 
   frame.dataset.url = target;
-  frame.src = target;
+  // location.replace keeps the iframe out of the session history,
+  // so the hardware back button always controls the app — not the frame.
+  try {
+    frame.contentWindow.location.replace(target);
+  } catch {
+    frame.src = target;
+  }
   updateDbUi();
 
   let loaded = false;
@@ -1032,7 +1065,12 @@ function goDbHome() {
   navigateDb('https://deltixllc.com', { push: true, title: 'D-Browser' });
 }
 function closeDBrowser() {
-  $('dbFrame').src = 'about:blank';
+  const frame = $('dbFrame');
+  try {
+    frame.contentWindow.location.replace('about:blank');
+  } catch {
+    frame.src = 'about:blank';
+  }
   $('dbrowser').hidden = true;
   document.body.style.overflow = '';
   dbState.history = [];
@@ -1096,6 +1134,8 @@ $('expBack').addEventListener('click', () => {
 });
 $('openExplorer').addEventListener('click', () => openExplorer({ v: 'home' }));
 $('seeAllTx').addEventListener('click', () => openExplorer({ v: 'activity' }));
+// Public transparency: the chain API is open — anyone can inspect blocks without an account.
+$('publicExplorerBtn')?.addEventListener('click', () => openExplorer({ v: 'home' }));
 
 // ---------- Native in-app dApp pages (Collectibles · DeFi Hub · D-Vault) ----------
 function openDappPage(page, title) {
@@ -1253,7 +1293,12 @@ async function expHome(body) {
     kvRow('Pending', info.pendingTxs) +
     kvRow('Validators', info.validators.length) +
     kvRow('Genesis hash', `<span class="hash">${short(info.genesisHash)}</span>`) +
-    `</div><h3 class="section-title">Latest blocks</h3><div id="expBlocks"></div>`;
+    `</div>` +
+    `<div class="feature-card"><div class="name">Open & transparent by design</div>
+     <div class="meta">Every block, transaction and hash link on the Deltix chain is public — anyone can
+     verify the full history without an account. The network is live, but $DLTX has no monetary value,
+     is not redeemable for real currency, and is not an investment.</div></div>` +
+    `<h3 class="section-title">Latest blocks</h3><div id="expBlocks"></div>`;
   $('expBlocks').innerHTML = blocks.blocks
     .map(
       (b) => `
@@ -1503,6 +1548,50 @@ function startFaucetTimer() {
   tick();
   setInterval(tick, 1000);
 }
+
+// ---------- Hardware / browser back button ----------
+// A sentinel history entry absorbs the back press so we can close the topmost
+// overlay (or return to the Wallet tab) instead of exiting the app.
+const BACK_SENTINEL = { deltix: true };
+let exitArmed = false;
+function closeTopOverlay() {
+  for (const id of ['swapModal', 'dappModal', 'stakeModal', 'sendModal', 'faucetModal', 'deleteModal']) {
+    const el = document.getElementById(id);
+    if (el && !el.hidden) { el.hidden = true; return true; }
+  }
+  const game = document.getElementById('gameModal');
+  if (game && !game.hidden) { window.closeGame?.(); return true; }
+  if (!$('dappPage').hidden) { closeDappPage(); return true; }
+  if (!$('explorer').hidden) {
+    if (exp.stack.length > 1) { exp.stack.pop(); expRender(); } else closeExplorer();
+    return true;
+  }
+  if (!$('dbrowser').hidden) {
+    if (dbState.index > 0) goDbBack(); else closeDBrowser();
+    return true;
+  }
+  return false;
+}
+history.replaceState(BACK_SENTINEL, '');
+history.pushState(BACK_SENTINEL, '');
+window.addEventListener('popstate', () => {
+  if (closeTopOverlay()) { history.pushState(BACK_SENTINEL, ''); return; }
+  const onMain = $('screen-main').classList.contains('active');
+  const tab = document.querySelector('.tab.active')?.id;
+  if (onMain && tab && tab !== 'tab-wallet') {
+    showTab('tab-wallet');
+    history.pushState(BACK_SENTINEL, '');
+    return;
+  }
+  if (!exitArmed) {
+    exitArmed = true;
+    toast('Press back again to exit');
+    setTimeout(() => {
+      exitArmed = false;
+      history.pushState(BACK_SENTINEL, ''); // re-arm the sentinel if the user stayed
+    }, 2000);
+  }
+});
 
 // ---------- Boot ----------
 (async function boot() {
