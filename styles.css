@@ -499,7 +499,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 /* Modal */
 .modal-backdrop {
   position: fixed; inset: 0; background: rgba(16, 24, 40, .45); display: grid; place-items: center;
-  z-index: 20; padding: 20px;
+  z-index: 200; padding: 20px;
 }
 .modal {
   width: 100%; max-width: 380px; background: var(--panel); border: 1px solid var(--border);
@@ -547,7 +547,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .toast {
   position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
   background: #101828; color: #fff; padding: 12px 18px; border-radius: 12px;
-  font-size: 14px; z-index: 40; box-shadow: 0 8px 24px rgba(16, 24, 40, .3); max-width: 90%;
+  font-size: 14px; z-index: 300; box-shadow: 0 8px 24px rgba(16, 24, 40, .3); max-width: 90%;
 }
 
 /* -- Deltix Arcade ----------------------------------------- */
@@ -597,6 +597,8 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   to { filter: brightness(1.15); }
 }
 .ad-claim-btn { display: block; width: 100%; margin-top: 12px; }
+.game-end-actions { display: flex; gap: 10px; margin-top: 12px; }
+.game-end-actions .btn { flex: 1; min-height: 44px; padding: 10px 8px; font-size: 14px; }
 .board.memory .cell { font-size: 22px; color: var(--accent); }
 .board.memory .cell.face-down { background: linear-gradient(135deg, #eef3ff, #e3ebff); }
 .board.memory .cell.done { background: var(--green-bg, #e8f8ef); color: var(--green, #16a34a); border-color: transparent; }

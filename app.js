@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.2.1';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -1452,7 +1452,7 @@ $('expSearch').addEventListener('keydown', (e) => {
 const ADMOB_BANNER_ID = 'ca-app-pub-6703659529197503/5133524678';
 const ADMOB_INTERSTITIAL_ID = 'ca-app-pub-6703659529197503/1357931192';
 const ADMOB_REWARDED_ID = 'ca-app-pub-6703659529197503/5850926156';
-const ADMOB_TESTING = false;
+const ADMOB_TESTING = true; // TEST-ADS BUILD: Google test creatives everywhere — flip to false for the release build
 let adsReady = false;
 let gamesSinceInterstitial = 0;
 let lastInterstitialAt = 0;

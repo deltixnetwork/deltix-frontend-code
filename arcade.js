@@ -109,22 +109,55 @@ function closeGame() {
 }
 
 gel('startGameBtn').addEventListener('click', async () => {
-  const g = arcadeState.currentGame;
   gel('startGameBtn').disabled = true;
   try {
-    const r = await api('POST', '/arcade/session/start', { game: g.id, difficulty: arcadeState.difficulty });
-    arcadeState.sessionId = r.sessionId;
-    gel('gameSetup').hidden = true;
-    gel('gameArea').hidden = false;
-    const mount = gel('gameMount');
-    mount.innerHTML = '';
-    arcadeState.cleanup = GAME_IMPL[g.id](mount, arcadeState.difficulty, finishGame, setGameStatus);
+    await startSession();
   } catch (e) {
     toast(e.message);
   } finally {
     gel('startGameBtn').disabled = false;
   }
 });
+
+async function startSession() {
+  const g = arcadeState.currentGame;
+  const r = await api('POST', '/arcade/session/start', { game: g.id, difficulty: arcadeState.difficulty });
+  arcadeState.sessionId = r.sessionId;
+  gel('gameSetup').hidden = true;
+  gel('gameArea').hidden = false;
+  const mount = gel('gameMount');
+  mount.innerHTML = '';
+  arcadeState.cleanup = GAME_IMPL[g.id](mount, arcadeState.difficulty, finishGame, setGameStatus);
+}
+
+/** End-of-game actions — always give a way to replay or leave without scrolling hunts. */
+function showEndActions() {
+  const mount = gel('gameMount');
+  mount.querySelector('.game-end-actions')?.remove();
+  const row = document.createElement('div');
+  row.className = 'game-end-actions';
+  const again = document.createElement('button');
+  again.className = 'btn primary';
+  again.textContent = '↻ Play again';
+  again.addEventListener('click', async () => {
+    again.disabled = true;
+    try {
+      if (arcadeState.cleanup) arcadeState.cleanup();
+      arcadeState.cleanup = null;
+      await startSession();
+    } catch (e) {
+      toast(e.message);
+      again.disabled = false;
+    }
+  });
+  const quit = document.createElement('button');
+  quit.className = 'btn ghost';
+  quit.textContent = '✕ Quit game';
+  quit.addEventListener('click', closeGame);
+  row.append(again, quit);
+  mount.appendChild(row);
+  row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
 
 function setGameStatus(text) {
   gel('gameStatus').textContent = text;
@@ -154,6 +187,7 @@ async function finishGame(won, score) {
   } catch (e) {
     setGameStatus(e.message);
   }
+  showEndActions();
   maybeShowInterstitial();
 }
 
@@ -172,6 +206,7 @@ function offerAdClaim(sessionId, won, score) {
         toast('Ad not completed — reward unclaimed.');
         btn.disabled = false;
         btn.textContent = '▶ Watch ad · claim reward';
+        showEndActions();
         return;
       }
       const r = await api('POST', `/arcade/session/${sessionId}/complete`, { won, score, adPlayed: true });
@@ -183,9 +218,11 @@ function offerAdClaim(sessionId, won, score) {
       } else if (r.won && r.capped) {
         setGameStatus('You won — but today\u2019s reward cap is reached. Come back tomorrow!');
       }
+      showEndActions();
     } catch (e) {
       setGameStatus(e.message);
       btn.remove();
+      showEndActions();
     }
   });
 }
