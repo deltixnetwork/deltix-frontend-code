@@ -2690,50 +2690,114 @@ GAME_IMPL.racing = (mount, diff, finish, status) => {
   cv.className = 'game-canvas';
   mount.appendChild(cv);
   const ctx = cv.getContext('2d');
-  const target = diff === 'hard' ? 50 : 35; // seconds to survive
-  let lane = 1, obstacles = [], speed = diff === 'hard' ? 5.5 : 4.2, t = 0, over = false, dashOffset = 0;
+  const target = diff === 'hard' ? 45 : 35; // seconds to survive
+  const baseSpeed = diff === 'hard' ? 5.5 : 4.2;
+  const maxSpeed = diff === 'hard' ? 8.5 : 6.5;
+  let lane = 1, carX = 1 * laneW + laneW / 2, obstacles = [], t = 0, over = false, crashed = 0, dashOffset = 0;
+  let safeLane = 1; // hidden always-clear corridor — guarantees a passable path
+  const shiftP = diff === 'hard' ? 0.4 : 0.28;
   const cleanupInput = directionInput(mount, (d) => {
+    if (over) return;
     if (d === 'left') lane = Math.max(0, lane - 1);
     if (d === 'right') lane = Math.min(LANES - 1, lane + 1);
   });
+  const speed = () => Math.min(maxSpeed, baseSpeed + t * 0.055);
+  const TRAFFIC = [
+    { len: 30, col: '#dc2626' }, { len: 30, col: '#f59e0b' },
+    { len: 30, col: '#8b5cf6' }, { len: 44, col: '#64748b' }, // grey = truck
+  ];
   function spawnObstacle() {
-    obstacles.push({ lane: Math.floor(Math.random() * LANES), y: -40 });
+    if (t > 4 && Math.random() < shiftP) {
+      const ns = Math.max(0, Math.min(LANES - 1, safeLane + (Math.random() < 0.5 ? -1 : 1)));
+      // corridor may only move into a lane that is genuinely open, else the path can pinch shut
+      if (!obstacles.some((o) => o.lane === ns && o.y < 210)) safeLane = ns;
+    }
+    const options = [0, 1, 2].filter((l) => l !== safeLane && !obstacles.some((o) => o.lane === l && o.y < 110));
+    if (!options.length) return;
+    const l = options[Math.floor(Math.random() * options.length)];
+    const kind = TRAFFIC[Math.floor(Math.random() * TRAFFIC.length)];
+    obstacles.push({ lane: l, y: -50, len: kind.len, col: kind.col, dv: 0.72 + Math.random() * 0.28 });
+  }
+  function drawCar(x, y, len, col, tilt, mine) {
+    ctx.save();
+    ctx.translate(x, y + len / 2);
+    ctx.rotate(tilt);
+    ctx.fillStyle = '#0f172a'; // wheels
+    ctx.fillRect(-15, -len / 2 + 3, 5, 9); ctx.fillRect(10, -len / 2 + 3, 5, 9);
+    ctx.fillRect(-15, len / 2 - 12, 5, 9); ctx.fillRect(10, len / 2 - 12, 5, 9);
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(-12, -len / 2, 24, len, 7); else ctx.rect(-12, -len / 2, 24, len);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(15,23,42,.55)'; // windows
+    ctx.fillRect(-8, -len / 2 + (mine ? 7 : len - 17), 16, 8);
+    ctx.fillStyle = mine ? '#93c5fd' : 'rgba(255,255,255,.35)';
+    ctx.fillRect(-8, mine ? len / 2 - 10 : -len / 2 + 3, 16, 4); // lights
+    ctx.restore();
   }
   let raf, spawnTimer;
   function draw() {
     ctx.fillStyle = '#1e293b'; ctx.fillRect(0, 0, W, H);
-    ctx.strokeStyle = '#475569'; ctx.setLineDash([16, 14]); ctx.lineDashOffset = -dashOffset;
+    ctx.fillStyle = '#334155'; ctx.fillRect(0, 0, 7, H); ctx.fillRect(W - 7, 0, 7, H); // shoulders
+    ctx.strokeStyle = '#475569'; ctx.setLineDash([16, 14]); ctx.lineDashOffset = -dashOffset; ctx.lineWidth = 2;
     for (let i = 1; i < LANES; i++) { ctx.beginPath(); ctx.moveTo(i * laneW, 0); ctx.lineTo(i * laneW, H); ctx.stroke(); }
     ctx.setLineDash([]);
-    obstacles.forEach((o) => {
-      ctx.fillStyle = '#dc2626';
-      ctx.fillRect(o.lane * laneW + laneW * 0.2, o.y, laneW * 0.6, 26);
-    });
-    ctx.fillStyle = '#1f66f2';
-    ctx.fillRect(lane * laneW + laneW * 0.25, H - 60, laneW * 0.5, 34);
+    obstacles.forEach((o) => drawCar(o.lane * laneW + laneW / 2, o.y, o.len, o.col, 0, false));
+    const targetX = lane * laneW + laneW / 2;
+    const tilt = crashed ? (performance.now() % 600) / 600 * 6.28 : (targetX - carX) * 0.012;
+    drawCar(carX, H - 62, 34, crashed ? '#f87171' : '#1f66f2', tilt, true);
+    if (crashed) {
+      ctx.fillStyle = 'rgba(220,38,38,.25)'; ctx.fillRect(0, 0, W, H);
+      ctx.font = 'bold 26px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillStyle = '#fecaca'; ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 4;
+      ctx.strokeText('CRASH!', W / 2, H / 2); ctx.fillText('CRASH!', W / 2, H / 2);
+    }
+    // progress bar
+    ctx.fillStyle = 'rgba(15,23,42,.6)'; ctx.fillRect(10, 8, W - 20, 7);
+    ctx.fillStyle = '#4ade80'; ctx.fillRect(10, 8, (W - 20) * Math.min(1, t / target), 7);
   }
-  function loop() {
+  let lastTs = 0;
+  function loop(ts) {
     if (over) return;
-    t += 1 / 60;
-    dashOffset += speed;
-    obstacles.forEach((o) => (o.y += speed));
-    obstacles = obstacles.filter((o) => o.y < H + 40);
-    const collided = obstacles.some((o) => o.lane === lane && o.y > H - 90 && o.y < H - 40);
-    if (collided) { over = true; clearTimeout(spawnTimer); cancelAnimationFrame(raf); return finish(false, Math.floor(t)); }
+    if (crashed) {
+      draw();
+      if (performance.now() > crashed) { over = true; clearTimeout(spawnTimer); return finish(false, Math.floor(t)); }
+      raf = requestAnimationFrame(loop);
+      return;
+    }
+    const dt = lastTs ? Math.min(3, (ts - lastTs) / (1000 / 60)) : 1; // frame-rate independent (in 60fps units)
+    lastTs = ts;
+    t += dt / 60;
+    const v = speed();
+    dashOffset += v * dt;
+    carX += (lane * laneW + laneW / 2 - carX) * Math.min(1, 0.22 * dt);
+    obstacles.forEach((o) => (o.y += v * o.dv * dt)); // slower traffic = you overtake it
+    obstacles = obstacles.filter((o) => o.y < H + 60);
+    const hit = obstacles.some((o) => {
+      const ox = o.lane * laneW + laneW / 2;
+      return Math.abs(ox - carX) < 25 && o.y + o.len > H - 62 && o.y < H - 62 + 34;
+    });
+    if (hit) {
+      crashed = performance.now() + 900;
+      status(`💥 Crashed at ${Math.floor(t)}s — needed ${target}s`);
+      draw();
+      raf = requestAnimationFrame(loop);
+      return;
+    }
     draw();
-    status(`Survive ${target}s \u00b7 ${Math.floor(t)}s elapsed`);
-    if (t >= target) { over = true; clearTimeout(spawnTimer); cancelAnimationFrame(raf); return finish(true, Math.floor(t)); }
+    status(`Survive ${target}s · ${Math.floor(t)}s · speed ×${(v / baseSpeed).toFixed(1)}`);
+    if (t >= target) { over = true; clearTimeout(spawnTimer); return finish(true, Math.floor(t)); }
     raf = requestAnimationFrame(loop);
   }
   function tickSpawn() {
-    if (over) return;
+    if (over || crashed) return;
     spawnObstacle();
-    spawnTimer = setTimeout(tickSpawn, Math.max(450, 900 - t * 15));
+    spawnTimer = setTimeout(tickSpawn, Math.max(diff === 'hard' ? 380 : 430, 850 - t * 14));
   }
-  status(`Swipe or use the arrows to change lanes \u00b7 survive ${target}s`);
+  status(`Swipe or use the arrows to change lanes · survive ${target}s`);
   draw();
   tickSpawn();
-  loop();
+  raf = requestAnimationFrame(loop);
   return () => {
     over = true;
     cancelAnimationFrame(raf);
