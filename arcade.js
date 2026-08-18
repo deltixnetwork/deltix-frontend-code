@@ -424,7 +424,7 @@ GAME_IMPL.tictactoe = (mount, diff, finish, status) => {
       const empty = board.map((v, j) => (v ? null : j)).filter((v) => v !== null);
       if (!empty.length) return;
       // Maya is strong but human — she slips sometimes, more often on easy.
-      const slip = Math.random() < (diff === 'hard' ? 0.08 : 0.28);
+      const slip = Math.random() < (diff === 'hard' ? 0.12 : 0.42);
       const move = slip ? empty[Math.floor(Math.random() * empty.length)] : minimax(board.slice(), 'O').move;
       board[move] = 'O';
       render(move);
@@ -455,8 +455,8 @@ GAME_IMPL.tictactoe = (mount, diff, finish, status) => {
 // ---- 2. Memory Match (duel vs Iris — near-photographic recall) ----
 GAME_IMPL.memory = (mount, diff, finish, status) => {
   const glyphs = ['◆','●','▲','■','★','✚','☾','⬟','✿','⬢'];
-  const pairs = diff === 'hard' ? 10 : 8;
-  const recall = diff === 'hard' ? 0.9 : 0.65; // chance Iris memorizes a revealed card
+  const pairs = diff === 'hard' ? 10 : 6;
+  const recall = diff === 'hard' ? 0.9 : 0.5; // chance Iris memorizes a revealed card
   const deck = shuffleArr(glyphs.slice(0, pairs).flatMap((g) => [g, g]));
   const grid = makeGrid(mount, 4, 'memory');
   const cells = [];
@@ -579,10 +579,10 @@ GAME_IMPL.memory = (mount, diff, finish, status) => {
 // ---- 3. Delta Snake (food race vs Rex — a rival snake with pathfinding) ----
 GAME_IMPL.snake = (mount, diff, finish, status) => {
   const N = 15, C = 20;
-  const target = diff === 'hard' ? 8 : 6;
-  const wander = diff === 'hard' ? 0.24 : 0.42; // how often Rex drifts off the optimal path
-  let speed = diff === 'hard' ? 125 : 160;
-  const minSpeed = diff === 'hard' ? 90 : 115;
+  const target = diff === 'hard' ? 8 : 5;
+  const wander = diff === 'hard' ? 0.24 : 0.55; // how often Rex drifts off the optimal path
+  let speed = diff === 'hard' ? 125 : 175;
+  const minSpeed = diff === 'hard' ? 90 : 135;
   const cv = document.createElement('canvas');
   cv.width = cv.height = N * C;
   cv.className = 'game-canvas';
@@ -704,9 +704,9 @@ GAME_IMPL.snake = (mount, diff, finish, status) => {
 
 // ---- 4. Merge 2048 (slide & merge — with Δ blocker crystals) ----
 GAME_IMPL.merge = (mount, diff, finish, status) => {
-  const target = diff === 'hard' ? 512 : 256;
-  const blockerEvery = diff === 'hard' ? 12 : 16;  // moves between Δ crystal spawns
-  const blockerTtl = diff === 'hard' ? 16 : 12;   // moves before a crystal dissolves
+  const target = diff === 'hard' ? 512 : 128;
+  const blockerEvery = diff === 'hard' ? 12 : 20;  // moves between Δ crystal spawns
+  const blockerTtl = diff === 'hard' ? 16 : 10;   // moves before a crystal dissolves
   let grid = Array.from({ length: 4 }, () => Array(4).fill(0));
   let score = 0, over = false, moves = 0, blockerSeq = 0;
   const blockers = new Map(); // negative id -> moves remaining
@@ -819,8 +819,8 @@ GAME_IMPL.sudoku = (mount, diff, finish, status) => {
   const cols = seq().flatMap((b) => seq().map((c) => b * 3 + c));
   const pattern = (r, c) => (3 * (r % 3) + Math.floor(r / 3) + c) % 9;
   const solved = rows.map((r) => cols.map((c) => digits[pattern(r, c)]));
-  const blanks = diff === 'hard' ? 46 : 36;
-  const maxStrikes = diff === 'hard' ? 3 : 4;
+  const blanks = diff === 'hard' ? 46 : 30;
+  const maxStrikes = diff === 'hard' ? 3 : 5;
   const puzzle = solved.map((row) => row.slice());
   shuffleArr(Array.from({ length: 81 }, (_, i) => i)).slice(0, blanks)
     .forEach((i) => (puzzle[Math.floor(i / 9)][i % 9] = 0));
@@ -950,7 +950,7 @@ GAME_IMPL.sudoku = (mount, diff, finish, status) => {
 // ---- 6. Mine Hunt ----
 GAME_IMPL.minehunt = (mount, diff, finish, status) => {
   const N = diff === 'hard' ? 10 : 8;
-  const mines = diff === 'hard' ? 18 : 11;
+  const mines = diff === 'hard' ? 18 : 9;
   const board = makeGrid(mount, N, 'mines');
   let isMine = new Set(shuffleArr(Array.from({ length: N * N }, (_, i) => i)).slice(0, mines));
   const revealed = new Set(), flagged = new Set();
@@ -1058,7 +1058,7 @@ GAME_IMPL.slide = (mount, diff, finish, status) => {
     [tiles[blank], tiles[pick]] = [tiles[pick], tiles[blank]];
     blank = pick;
   }
-  const budget = diff === 'hard' ? 520 : 230;
+  const budget = diff === 'hard' ? 520 : 320;
   const board = makeGrid(mount, N, 'slide');
   const cells = [];
   for (let i = 0; i < N * N; i++) {
@@ -1244,7 +1244,7 @@ GAME_IMPL.reversi = (mount, diff, finish, status) => {
       return; // Victor passes
     }
     const empties = b.filter((v) => !v).length;
-    const exactAt = diff === 'hard' ? 9 : 5;
+    const exactAt = diff === 'hard' ? 9 : 4;
     const depth = diff === 'hard' ? 3 : 1;
     const scoreMove = (m) => {
       const nb = applyMove(b, m, 2);
@@ -1254,7 +1254,7 @@ GAME_IMPL.reversi = (mount, diff, finish, status) => {
     };
     const rankedMoves = ordered(b, 2).map((m) => [m, scoreMove(m)]).sort((x, y) => y[1] - x[1]);
     let pick = rankedMoves[0][0];
-    if (diff !== 'hard' && rankedMoves.length > 1 && Math.random() < 0.3) {
+    if (diff !== 'hard' && rankedMoves.length > 1 && Math.random() < 0.5) {
       pick = rankedMoves[1 + Math.floor(Math.random() * Math.min(2, rankedMoves.length - 1))][0];
     }
     const f = flips(b, pick, 2);
@@ -1287,10 +1287,10 @@ GAME_IMPL.reversi = (mount, diff, finish, status) => {
 
 // ---- 9. Pattern Recall ----
 GAME_IMPL.recall = (mount, diff, finish, status) => {
-  const target = diff === 'hard' ? 10 : 7;
-  const startSpeed = diff === 'hard' ? 480 : 620;
-  const minSpeed = diff === 'hard' ? 300 : 380;
-  const stepTime = diff === 'hard' ? 2500 : 3400;
+  const target = diff === 'hard' ? 10 : 6;
+  const startSpeed = diff === 'hard' ? 480 : 700;
+  const minSpeed = diff === 'hard' ? 300 : 430;
+  const stepTime = diff === 'hard' ? 2500 : 3800;
   // Hard reverses every 4th round; easy saves one reverse for the finale.
   const reverseRound = (n) => (diff === 'hard' ? n % 5 === 0 : n === target);
   const pads = ['#1f66f2', '#16a34a', '#f59e0b', '#dc2626'];
@@ -1373,10 +1373,10 @@ GAME_IMPL.recall = (mount, diff, finish, status) => {
 // ---- 10. Reaction Rush ----
 GAME_IMPL.reaction = (mount, diff, finish, status) => {
   const N = diff === 'hard' ? 4 : 3;
-  const goal = diff === 'hard' ? 22 : 16;
-  const baseWindow = diff === 'hard' ? 1050 : 1400;
-  const minWindow = diff === 'hard' ? 650 : 850;
-  const decoyP = diff === 'hard' ? 0.45 : 0.28;
+  const goal = diff === 'hard' ? 22 : 12;
+  const baseWindow = diff === 'hard' ? 1050 : 1600;
+  const minWindow = diff === 'hard' ? 650 : 1000;
+  const decoyP = diff === 'hard' ? 0.45 : 0.2;
   const grid = makeGrid(mount, N, 'reaction');
   const cells = [];
   for (let i = 0; i < N * N; i++) {
@@ -1689,7 +1689,7 @@ GAME_IMPL.ludo = (mount, diff, finish, status) => {
       const noDanger = diff === 'hard' ? opts.filter((i) => !threatened(turn, destOf(i))) : [];
       const advanceFrom = (list) => list.reduce((best, i) => (tokens[turn][i] > tokens[turn][best] ? i : best), list[0]);
       const smart = capture ?? finisher ?? escape ?? safeLanding ?? (noDanger.length ? advanceFrom(noDanger) : advanceFrom(opts));
-      const pick = diff === 'hard' || Math.random() < 0.55
+      const pick = diff === 'hard' || Math.random() < 0.4
         ? smart
         : opts[Math.floor(Math.random() * opts.length)];
       const captured = moveToken(turn, pick, roll);
@@ -2081,7 +2081,7 @@ GAME_IMPL.threecard = (mount, diff, finish, status) => {
     const s = handScore(hand);
     if (s.tier >= 3) return []; // flush or better: stand pat
     const vals = hand.map((c) => RANKS.indexOf(c.r) + 2);
-    if (Math.random() < (diff === 'hard' ? 0.15 : 0.5)) {
+    if (Math.random() < (diff === 'hard' ? 0.15 : 0.62)) {
       // Easy Rio sometimes plays casually: keeps only his highest card.
       const hi = vals.indexOf(Math.max(...vals));
       return [0, 1, 2].filter((i) => i !== hi);
@@ -2174,10 +2174,10 @@ GAME_IMPL.carom = (mount, diff, finish, status) => {
   mount.appendChild(cv);
   const ctx = cv.getContext('2d');
   // Balance (simulated vs ghost-ball aim bot): easy ≈ 50%+ win, hard demands real accuracy.
-  const pocketR = diff === 'hard' ? 19 : 21;
+  const pocketR = diff === 'hard' ? 19 : 24;
   const pockets = [[0,0],[W/2,0],[W,0],[0,H],[W/2,H],[W,H]];
-  const target = diff === 'hard' ? 4 : 3;
-  const maxShots = diff === 'hard' ? 13 : 11;
+  const target = diff === 'hard' ? 4 : 2;
+  const maxShots = diff === 'hard' ? 13 : 14;
   let pucks = [];
   for (let i = 0; i < 8; i++) {
     const ang = (i / 8) * Math.PI * 2;
@@ -2332,11 +2332,11 @@ GAME_IMPL.slicer = (mount, diff, finish, status) => {
   cv.className = 'game-canvas';
   mount.appendChild(cv);
   const ctx = cv.getContext('2d');
-  const target = diff === 'hard' ? 22 : 15;
-  const baseSpawn = diff === 'hard' ? 520 : 700;
-  const minSpawn = diff === 'hard' ? 380 : 470;
-  const missLimit = diff === 'hard' ? 6 : 8;
-  const bombP = diff === 'hard' ? 0.16 : 0.1;
+  const target = diff === 'hard' ? 22 : 12;
+  const baseSpawn = diff === 'hard' ? 520 : 800;
+  const minSpawn = diff === 'hard' ? 380 : 540;
+  const missLimit = diff === 'hard' ? 6 : 10;
+  const bombP = diff === 'hard' ? 0.16 : 0.06;
   // Deltix original gems — drawn in brand colours, no third-party art.
   const GEMS = ['#1f66f2', '#16a34a', '#f59e0b', '#dc2626', '#8b5cf6'];
   let items = [], parts = [], score = 0, misses = 0, over = false, trail = [];
@@ -2522,12 +2522,12 @@ GAME_IMPL.soccer = (mount, diff, finish, status) => {
   const zones = [GL + (GR - GL) / 6, (GL + GR) / 2, GR - (GR - GL) / 6];
   const zoneOf = (x) => (x < GL + (GR - GL) / 3 ? 0 : x > GR - (GR - GL) / 3 ? 2 : 1);
   // Dario the keeper studies your habits; as striker he disguises his run-up.
-  const guessP = diff === 'hard' ? 0.5 : 0.32;
-  const reach = diff === 'hard' ? 36 : 30;
-  const aimNoise = diff === 'hard' ? 10 : 6;
-  const cueHonest = diff === 'hard' ? 0.65 : 0.85;
-  const saveP = diff === 'hard' ? 0.75 : 0.85;
-  const darioWideP = diff === 'hard' ? 0.08 : 0.15;
+  const guessP = diff === 'hard' ? 0.5 : 0.25;
+  const reach = diff === 'hard' ? 36 : 26;
+  const aimNoise = diff === 'hard' ? 10 : 4;
+  const cueHonest = diff === 'hard' ? 0.65 : 0.92;
+  const saveP = diff === 'hard' ? 0.75 : 0.9;
+  const darioWideP = diff === 'hard' ? 0.08 : 0.22;
   let round = 1, myGoals = 0, dGoals = 0, over = false;
   let phase = 'shoot'; // shoot | shootAnim | defend | defendAnim | between
   const history = [0, 0, 0];
@@ -2631,7 +2631,7 @@ GAME_IMPL.soccer = (mount, diff, finish, status) => {
     const guess = Math.random() < guessP ? favourite : Math.floor(Math.random() * 3);
     const keeperX = zones[guess] + (Math.random() - 0.5) * 16;
     const topStrip = landY < GT + 14; // top corners are near-unsavable
-    const saved = !wide && Math.abs(landX - keeperX) <= (topStrip ? reach * 0.45 : reach) && Math.random() < (diff === 'hard' ? 0.85 : 0.75);
+    const saved = !wide && Math.abs(landX - keeperX) <= (topStrip ? reach * 0.45 : reach) && Math.random() < (diff === 'hard' ? 0.85 : 0.9);
     const from = { x: W / 2, y: H - 32 };
     const t0 = performance.now(), dur = 420;
     (function fly() {
@@ -2727,12 +2727,12 @@ GAME_IMPL.racing = (mount, diff, finish, status) => {
   cv.className = 'game-canvas';
   mount.appendChild(cv);
   const ctx = cv.getContext('2d');
-  const target = diff === 'hard' ? 40 : 30; // seconds to survive
-  const baseSpeed = diff === 'hard' ? 5.2 : 4.0;
-  const maxSpeed = diff === 'hard' ? 7.8 : 6.0;
+  const target = diff === 'hard' ? 40 : 25; // seconds to survive
+  const baseSpeed = diff === 'hard' ? 5.2 : 3.5;
+  const maxSpeed = diff === 'hard' ? 7.8 : 5.2;
   let lane = 1, carX = 1 * laneW + laneW / 2, obstacles = [], t = 0, over = false, crashed = 0, dashOffset = 0;
   let safeLane = 1; // hidden always-clear corridor — guarantees a passable path
-  const shiftP = diff === 'hard' ? 0.4 : 0.28;
+  const shiftP = diff === 'hard' ? 0.4 : 0.22;
   const cleanupInput = directionInput(mount, (d) => {
     if (over) return;
     if (d === 'left') lane = Math.max(0, lane - 1);
@@ -2829,7 +2829,7 @@ GAME_IMPL.racing = (mount, diff, finish, status) => {
   function tickSpawn() {
     if (over || crashed) return;
     spawnObstacle();
-    spawnTimer = setTimeout(tickSpawn, Math.max(diff === 'hard' ? 420 : 470, 850 - t * 14));
+    spawnTimer = setTimeout(tickSpawn, Math.max(diff === 'hard' ? 420 : 540, 850 - t * 14));
   }
   status(`Swipe or use the arrows to change lanes · survive ${target}s`);
   draw();
