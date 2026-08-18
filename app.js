@@ -12,7 +12,6 @@ const state = {
   address: null,
   balances: null,
   hideBalances: localStorage.getItem('dltx_hide_balances') === '1',
-  faucet: null,
 };
 
 // ---------- API helper ----------
@@ -242,7 +241,7 @@ document.querySelectorAll('.tabbtn').forEach((b) =>
 async function enterApp() {
   showScreen('screen-main');
   showTab('tab-wallet');
-  await Promise.all([loadWallet(), loadStats(), loadValidators(), loadStakes(), loadTx(), loadReferrals(), loadGovernance(), loadChain(), loadArcade(), refreshFaucetStatus()]);
+  await Promise.all([loadWallet(), loadStats(), loadValidators(), loadStakes(), loadTx(), loadReferrals(), loadGovernance(), loadChain(), loadArcade()]);
 }
 
 function getValidatorShield(name, index = 0) {
@@ -691,77 +690,6 @@ setInterval(() => {
   if (state.token && document.getElementById('tab-network').classList.contains('active')) loadChain();
 }, 15000);
 
-// ---------- Faucet ----------
-function showFaucetPopup({ title, message, showCountdown }) {
-  $('faucetModalTitle').textContent = title;
-  $('faucetModalMsg').textContent = message;
-  const clock = $('faucetModalCountdown');
-  clock.hidden = !showCountdown;
-  if (showCountdown && state.faucet?.nextClaimAt) {
-    clock.textContent = msToClock(Math.max(0, state.faucet.nextClaimAt - Date.now()));
-  }
-  $('faucetModal').hidden = false;
-}
-$('faucetModalOk').addEventListener('click', () => ($('faucetModal').hidden = true));
-
-$('faucetBtn').addEventListener('click', async () => {
-  const f = state.faucet;
-  // Known-unavailable states — explain via popup without a round-trip.
-  if (f?.limitReached) {
-    showFaucetPopup({
-      title: 'Faucet limit reached',
-      message: `You have used all ${f.claimsMax} genesis faucet claims. Earn more $DLTX by staking, playing the Arcade, or inviting friends.`,
-    });
-    return;
-  }
-  if (f?.nextClaimAt && f.nextClaimAt > Date.now()) {
-    showFaucetPopup({
-      title: 'Already claimed',
-      message: `You already claimed the faucet. Your next claim unlocks in:`,
-      showCountdown: true,
-    });
-    return;
-  }
-  $('faucetBtn').style.pointerEvents = 'none';
-  try {
-    const r = await api('POST', '/wallet/faucet');
-    if (r.nextClaimAt) state.faucet = { ...(state.faucet || {}), claimsUsed: r.claimsUsed, claimsMax: r.claimsMax, limitReached: r.claimsUsed >= r.claimsMax, nextClaimAt: r.nextClaimAt };
-    toast(`+${fmt(r.amount)} $DLTX · faucet claim ${r.claimsUsed}/${r.claimsMax}`);
-    renderFaucetCard();
-    await Promise.all([loadWallet(), loadTx()]);
-  } catch (e) {
-    if (e.data?.code === 'FAUCET_COOLDOWN') {
-      state.faucet = { ...(state.faucet || {}), nextClaimAt: e.data.nextClaimAt, claimsUsed: e.data.claimsUsed, claimsMax: e.data.claimsMax, limitReached: false };
-      renderFaucetCard();
-      showFaucetPopup({
-        title: 'Already claimed',
-        message: 'You already claimed the faucet. Your next claim unlocks in:',
-        showCountdown: true,
-      });
-    } else if (e.data?.code === 'FAUCET_LIMIT') {
-      state.faucet = { ...(state.faucet || {}), limitReached: true, claimsUsed: e.data.claimsUsed, claimsMax: e.data.claimsMax };
-      renderFaucetCard();
-      showFaucetPopup({
-        title: 'Faucet limit reached',
-        message: `You have used all ${e.data.claimsMax} genesis faucet claims. Earn more $DLTX by staking, playing the Arcade, or inviting friends.`,
-      });
-    } else {
-      toast(e.message);
-    }
-  } finally {
-    $('faucetBtn').style.pointerEvents = '';
-  }
-});
-
-async function refreshFaucetStatus() {
-  try {
-    state.faucet = await api('GET', '/wallet/faucet/status');
-    renderFaucetCard();
-  } catch {
-    /* non-critical */
-  }
-}
-
 // ---------- P2P send ----------
 const BASE_FEE_RATE = 0.001;
 const MIN_BASE_FEE = 0.01;
@@ -1183,7 +1111,6 @@ async function renderDappPage(page) {
       const bal = state.balances || {};
       const staked = Number(bal.stakedBalance || 0);
       const total = Number(bal.totalValue || 0);
-      const claims = Number(state.faucet?.claimsUsed || 0);
       const txCount = (state.txs || []).length;
       body.innerHTML = `
         <div class="feature-card">
@@ -1192,7 +1119,6 @@ async function renderDappPage(page) {
           utility rewards — they carry no monetary value and cannot be bought, sold, or transferred.</div>
         </div>
         ${collectibleCard({ icon: 'shield-blue.svg', name: 'Genesis Wallet', desc: 'Created a Deltix wallet on-chain.', earned: !!state.address })}
-        ${collectibleCard({ icon: 'icon-faucet-tap.svg', name: 'First Claim', desc: 'Claimed $DLTX from the genesis faucet.', earned: claims > 0 })}
         ${collectibleCard({ icon: 'icon-staked-coins.svg', name: 'Active Validator', desc: 'Delegated a stake to a Deltix validator.', earned: staked > 0 })}
         ${collectibleCard({ icon: 'icon-rewards-trophy.svg', name: 'Whale Watch', desc: 'Hold 100+ $DLTX combined balance.', earned: total >= 100 })}
         ${collectibleCard({ icon: 'dapp-explorer.svg', name: 'Chain Native', desc: 'Recorded 5+ transactions on the Deltix chain.', earned: txCount >= 5 })}
@@ -1509,59 +1435,13 @@ async function updateTabAd(tabId) {
 }
 window.updateTabAd = updateTabAd;
 
-// Faucet card — driven by real claim state from GET /wallet/faucet/status.
-const padClock = (n) => String(n).padStart(2, '0');
-function msToClock(ms) {
-  const hrs = Math.floor(ms / 3600000);
-  const mins = Math.floor((ms % 3600000) / 60000);
-  const secs = Math.floor((ms % 60000) / 1000);
-  return `${padClock(hrs)}:${padClock(mins)}:${padClock(secs)}`;
-}
-function renderFaucetCard() {
-  const timerEl = $('faucetTimer');
-  if (!timerEl) return;
-  const f = state.faucet;
-  if (!f) {
-    timerEl.innerHTML = 'Tap to claim';
-    return;
-  }
-  if (!f.enabled) {
-    timerEl.textContent = 'Faucet retired by the DAO';
-    return;
-  }
-  if (f.limitReached) {
-    timerEl.textContent = `All ${f.claimsMax} claims used · earn via staking & Arcade`;
-    return;
-  }
-  const msLeft = f.nextClaimAt ? f.nextClaimAt - Date.now() : 0;
-  if (msLeft > 0) {
-    timerEl.innerHTML = `Next claim in <span class="faucet-clock">⏱</span> <span id="faucetCountdown">${msToClock(msLeft)}</span> · ${f.claimsUsed}/${f.claimsMax} used`;
-  } else {
-    timerEl.innerHTML = `Ready to claim · ${f.claimsUsed || 0}/${f.claimsMax || 3} used`;
-  }
-}
-function startFaucetTimer() {
-  const tick = () => {
-    if (state.token) renderFaucetCard();
-    // Live countdown inside the "already claimed" popup, if open.
-    const popupClock = $('faucetModalCountdown');
-    if (popupClock && !$('faucetModal').hidden && state.faucet?.nextClaimAt) {
-      const ms = Math.max(0, state.faucet.nextClaimAt - Date.now());
-      popupClock.textContent = msToClock(ms);
-      if (ms === 0) $('faucetModal').hidden = true;
-    }
-  };
-  tick();
-  setInterval(tick, 1000);
-}
-
 // ---------- Hardware / browser back button ----------
 // A sentinel history entry absorbs the back press so we can close the topmost
 // overlay (or return to the Wallet tab) instead of exiting the app.
 const BACK_SENTINEL = { deltix: true };
 let exitArmed = false;
 function closeTopOverlay() {
-  for (const id of ['swapModal', 'dappModal', 'stakeModal', 'sendModal', 'faucetModal', 'deleteModal']) {
+  for (const id of ['swapModal', 'dappModal', 'stakeModal', 'sendModal', 'deleteModal']) {
     const el = document.getElementById(id);
     if (el && !el.hidden) { el.hidden = true; return true; }
   }
@@ -1603,7 +1483,6 @@ window.addEventListener('popstate', () => {
 (async function boot() {
   if (!(await checkAppVersion())) return; // outdated client — blocked until update
   initAds();
-  startFaucetTimer();
   if (state.token) {
     try {
       await enterApp();

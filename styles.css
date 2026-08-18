@@ -107,7 +107,6 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .btn:active { transform: scale(.98); }
 .btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; box-shadow: 0 4px 14px rgba(47, 107, 255, .25); }
 .btn.ghost { background: transparent; color: var(--muted); border: 1px solid #d7dde9; }
-.btn.faucet { background: #eef3ff; color: var(--accent); border: 1px dashed #b9ccf5; margin: 14px 0; }
 .btn.danger { background: #fef2f2; color: var(--danger); border: 1px solid #fecaca; }
 .btn[disabled] { opacity: .5; pointer-events: none; }
 
@@ -253,46 +252,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   box-shadow: 0 4px 12px rgba(0,0,0,.04);
 }
 
-/* Faucet Card */
-.faucet-card {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  background: linear-gradient(135deg, #ffffff 0%, #f7faff 100%);
-  border: 1.5px solid #bfdbfe;
-  border-radius: 18px;
-  padding: 12px 16px;
-  margin-bottom: 16px;
-  box-shadow: 0 4px 14px rgba(37, 99, 235, .08);
-  cursor: pointer;
-  transition: transform .12s ease;
-}
-.faucet-card:active { transform: scale(.98); }
-.faucet-3d-tap {
-  width: 48px;
-  height: 48px;
-  object-fit: contain;
-  flex-shrink: 0;
-}
-.faucet-content {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.faucet-title {
-  font-weight: 800;
-  font-size: 15px;
-  color: #1d4ed8;
-}
-.faucet-timer {
-  font-size: 13px;
-  font-weight: 700;
-  color: #0f172a;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.faucet-clock { font-size: 14px; }
+/* Faucet Card (retired) */
 
 .section-title { font-size: 16px; font-weight: 800; color: #0f1f48; margin: 20px 0 12px; }
 
@@ -509,35 +469,6 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 }
 .modal-actions { display: flex; gap: 10px; }
 
-/* Faucet status popup */
-.faucet-modal { text-align: center; }
-.faucet-modal-icon {
-  width: 72px;
-  height: 72px;
-  margin: 0 auto 6px;
-  display: block;
-  filter: drop-shadow(0 6px 12px rgba(2, 72, 203, 0.25));
-}
-.faucet-modal-msg {
-  color: var(--muted, #5b6b8c);
-  font-size: 13.5px;
-  line-height: 1.5;
-  margin: 6px 0 4px;
-}
-.faucet-modal-countdown {
-  font-family: monospace;
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: 2px;
-  color: #0248cb;
-  background: rgba(2, 72, 203, 0.08);
-  border: 1px solid rgba(2, 72, 203, 0.18);
-  border-radius: 12px;
-  padding: 10px 14px;
-  margin: 10px auto 12px;
-  width: fit-content;
-}
-.faucet-modal .modal-actions { justify-content: center; }
 .modal .url {
   font-family: monospace; font-size: 12px; background: var(--panel-2);
   border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; word-break: break-all;

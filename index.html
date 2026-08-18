@@ -100,13 +100,6 @@
           <button class="btn primary pill-btn" id="sendBtn">↑ Send</button>
           <button class="btn ghost pill-btn" id="receiveBtn">↓ Receive</button>
         </div>
-        <div class="faucet-card" id="faucetBtn" title="Claim Genesis Faucet">
-          <img src="assets/icon-faucet-tap.svg" class="faucet-3d-tap" alt="Faucet"/>
-          <div class="faucet-content">
-            <div class="faucet-title">Genesis faucet (+500 $DLTX)</div>
-            <div class="faucet-timer" id="faucetTimer">Tap to claim</div>
-          </div>
-        </div>
 
         <h3 class="section-title">Network snapshot</h3>
         <div class="stats-grid" id="statsGrid"></div>
@@ -399,19 +392,6 @@
       <div class="modal-actions">
         <button class="btn ghost" id="cancelStake">Cancel</button>
         <button class="btn primary" id="confirmStake">Confirm delegation</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Faucet status modal -->
-  <div class="modal-backdrop" id="faucetModal" hidden>
-    <div class="modal faucet-modal">
-      <img src="assets/icon-faucet-tap.svg" class="faucet-modal-icon" alt="Faucet"/>
-      <h3 id="faucetModalTitle">Already claimed</h3>
-      <p class="faucet-modal-msg" id="faucetModalMsg"></p>
-      <div class="faucet-modal-countdown" id="faucetModalCountdown" hidden>00:00:00</div>
-      <div class="modal-actions">
-        <button class="btn primary" id="faucetModalOk">Got it</button>
       </div>
     </div>
   </div>

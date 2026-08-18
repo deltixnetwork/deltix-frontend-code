@@ -228,7 +228,7 @@ function offerAdClaim(sessionId, won, score) {
 }
 
 // ---------- Rewarded ad (Sustainability Fund bonus) ----------
-// Never gates faucet, staking, or DAO actions — purely an optional bonus tap
+// Never gates staking, DAO actions, or rewards — purely an optional bonus tap
 // on the Arcade tab. Native: real AdMob rewarded ad, reward paid only on the
 // SDK's own "user earned reward" callback. Web/dev: disclosed simulated ad.
 function updateAdBonusCard() {
