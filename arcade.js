@@ -262,20 +262,20 @@ function playRewardedAd() {
     const cap = window.Capacitor;
     const AdMob = cap && cap.Plugins && cap.Plugins.AdMob;
     if (cap && cap.isNativePlatform && cap.isNativePlatform() && AdMob) {
-      let earned = false;
-      const onReward = AdMob.addListener?.('onRewardedVideoReward', () => (earned = true));
-      const onDismiss = AdMob.addListener?.('onRewardedVideoAdDismissed', async () => {
-        onReward?.remove?.();
-        onDismiss?.remove?.();
-        resolve(earned);
-      });
+      let earned = false, settled = false;
+      let rewardH, dismissH, failH;
+      const cleanup = () => { rewardH?.remove?.(); dismissH?.remove?.(); failH?.remove?.(); };
+      const finish = (val) => { if (settled) return; settled = true; cleanup(); resolve(val); };
+      // Capacitor addListener returns a Promise<handle>; capture handles to remove later.
+      Promise.all([
+        AdMob.addListener('onRewardedVideoAdReward', () => { earned = true; }),
+        AdMob.addListener('onRewardedVideoAdDismissed', () => finish(earned)),
+        AdMob.addListener('onRewardedVideoAdFailedToShow', () => finish(false)),
+      ]).then(([r, d, f]) => { rewardH = r; dismissH = d; failH = f; });
       AdMob.prepareRewardVideoAd({ adId: ADMOB_REWARDED_ID, isTesting: ADMOB_TESTING })
         .then(() => AdMob.showRewardVideoAd())
-        .catch(() => {
-          onReward?.remove?.();
-          onDismiss?.remove?.();
-          resolve(false);
-        });
+        .then((item) => { if (item) earned = true; }) // showRewardVideoAd resolves with the reward item
+        .catch(() => finish(false));
       return;
     }
     // Web / dev fallback — disclosed simulated ad so the flow is testable.
