@@ -209,7 +209,7 @@ function offerAdClaim(sessionId, won, score) {
         showEndActions();
         return;
       }
-      const r = await api('POST', `/arcade/session/${sessionId}/complete`, { won, score, adPlayed: true });
+      const r = await api('POST', `/arcade/session/${sessionId}/complete`, { won, score, adPlayed: true, ...(await getIntegrityPayload()) });
       btn.remove();
       if (r.won && r.reward > 0) {
         setGameStatus(`Reward claimed! +${fmt(r.reward)} $DLTX 🏆`);

@@ -54,6 +54,29 @@ async function api(method, path, body) {
   return json;
 }
 
+// ---------- Play Integrity (native anti-clone attestation) ----------
+// Requests a one-time nonce from the backend, asks the Play Integrity API for a
+// signed token on-device, and returns it to attach to a gated action. Always a
+// safe no-op on the web / when integrity is disabled — the backend decides.
+async function getIntegrityPayload() {
+  try {
+    const cap = window.Capacitor;
+    if (!cap || !cap.isNativePlatform || !cap.isNativePlatform()) return {};
+    const PlayIntegrity = cap.Plugins && cap.Plugins.PlayIntegrity;
+    if (!PlayIntegrity) return {};
+    const { enabled, nonce, cloudProjectNumber } = await api('POST', '/integrity/nonce');
+    if (!enabled || !nonce) return {};
+    const { token } = await PlayIntegrity.requestIntegrityToken({
+      nonce,
+      googleCloudProjectNumber: Number(cloudProjectNumber) || 0,
+    });
+    return token ? { integrityToken: token, integrityNonce: nonce } : {};
+  } catch {
+    // Never let attestation problems block the UI — backend enforces policy.
+    return {};
+  }
+}
+
 // ---------- Forced update gate ----------
 function versionLt(a, b) {
   const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
@@ -145,9 +168,11 @@ $('sendCodeBtn').addEventListener('click', async () => {
   $('sendCodeBtn').disabled = true;
   try {
     const referralCode = $('refCodeInput').value.trim().toUpperCase();
+    const integrityPayload = await getIntegrityPayload();
     const r = await api('POST', '/auth/register', {
       email,
       ...(referralCode ? { referralCode } : {}),
+      ...integrityPayload,
     });
     state.email = email;
     $('otpSubtitle').textContent = `We sent a code to ${email}`;
