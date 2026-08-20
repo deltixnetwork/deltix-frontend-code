@@ -1414,6 +1414,16 @@ async function initAds() {
     if (!cap || !cap.isNativePlatform || !cap.isNativePlatform()) return;
     const AdMob = cap.Plugins && cap.Plugins.AdMob;
     if (!AdMob) return;
+    // GDPR/UMP consent (EEA, UK, Switzerland): gather consent before ads load.
+    // Never allowed to block the app — failures fall through to ad init.
+    try {
+      const info = await AdMob.requestConsentInfo();
+      if (info && info.isConsentFormAvailable && info.status === 'REQUIRED') {
+        await AdMob.showConsentForm();
+      }
+    } catch {
+      /* consent flow unavailable — continue; SDK serves non-personalized ads */
+    }
     await AdMob.initialize({ initializeForTesting: ADMOB_TESTING });
     adsReady = true;
   } catch {
