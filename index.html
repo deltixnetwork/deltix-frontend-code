@@ -72,6 +72,13 @@
       <!-- Dashboard -->
       <div class="tab active" id="tab-wallet">
         <div class="balance-card">
+          <div class="profile-row">
+            <button class="avatar-btn" id="avatarBtn" title="Choose your avatar">🦊</button>
+            <div class="profile-meta">
+              <span class="profile-email" id="profileEmail" title="Your sign-in email">—</span>
+              <button class="profile-ref" id="profileRef" title="Tap to copy your referral code">Ref —</button>
+            </div>
+          </div>
           <span class="muted balance-lbl">Total balance</span>
           <div class="balance" id="totalBalance">0.00 <small>$DLTX</small></div>
           <div class="address" id="walletAddress" title="Tap to copy">
@@ -411,6 +418,18 @@
       <div class="modal-actions">
         <button class="btn ghost" id="cancelDelete">Cancel</button>
         <button class="btn danger" id="confirmDelete">Delete forever</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Avatar picker modal -->
+  <div class="modal-backdrop" id="avatarModal" hidden>
+    <div class="modal">
+      <h3>Choose your avatar</h3>
+      <p class="muted small-note">Pick an emoji to represent you.</p>
+      <div class="avatar-grid" id="avatarGrid"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="avatarClose">Done</button>
       </div>
     </div>
   </div>

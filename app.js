@@ -7,7 +7,9 @@ const APP_VERSION = '1.2.2';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
-  email: null,
+  email: localStorage.getItem('dltx_email') || null,
+  refCode: null,
+  avatar: localStorage.getItem('dltx_avatar') || '🦊',
   validators: [],
   address: null,
   balances: null,
@@ -209,6 +211,8 @@ $('verifyBtn').addEventListener('click', async () => {
     const r = await api('POST', '/auth/verify', { email: state.email, code });
     state.token = r.token;
     localStorage.setItem('dltx_token', r.token);
+    if (r.user && r.user.email) state.email = r.user.email;
+    if (state.email) localStorage.setItem('dltx_email', state.email);
     toast(r.message || 'Welcome!');
     await enterApp();
   } catch (e) {
@@ -222,6 +226,7 @@ $('verifyBtn').addEventListener('click', async () => {
 $('logoutBtn').addEventListener('click', () => {
   state.token = null;
   localStorage.removeItem('dltx_token');
+  localStorage.removeItem('dltx_email');
   showScreen('screen-email');
 });
 
@@ -247,6 +252,7 @@ $('confirmDelete').addEventListener('click', async () => {
     $('deleteModal').hidden = true;
     state.token = null;
     localStorage.removeItem('dltx_token');
+    localStorage.removeItem('dltx_email');
     showScreen('screen-email');
     toast('Account permanently deleted');
   } catch (e) {
@@ -266,8 +272,52 @@ document.querySelectorAll('.tabbtn').forEach((b) =>
 async function enterApp() {
   showScreen('screen-main');
   showTab('tab-wallet');
+  renderProfile();
   await Promise.all([loadWallet(), loadStats(), loadValidators(), loadStakes(), loadTx(), loadReferrals(), loadGovernance(), loadChain(), loadArcade()]);
 }
+
+// ---------- Profile (avatar + masked email + referral) ----------
+const AVATAR_CHOICES = ['🦊','🐼','🐯','🦁','🐸','🐵','🐨','🐧','🦉','🐙','🐝','🦄','🐳','🦖','👾','🤖','👽','🎮','⚡','🔥','🌟','💎'];
+
+/** Masks an email to its first 2 letters + domain, e.g. de****@gmail.com */
+function maskEmail(email) {
+  if (!email || !email.includes('@')) return '—';
+  const [name, domain] = email.split('@');
+  const head = name.slice(0, 2);
+  return `${head}****@${domain}`;
+}
+
+function renderProfile() {
+  const av = $('avatarBtn');
+  if (av) av.textContent = state.avatar;
+  const em = $('profileEmail');
+  if (em) em.textContent = maskEmail(state.email);
+  const ref = $('profileRef');
+  if (ref) ref.textContent = state.refCode ? `Ref ${state.refCode}` : 'Ref —';
+}
+
+function openAvatarPicker() {
+  const grid = $('avatarGrid');
+  grid.innerHTML = AVATAR_CHOICES
+    .map((e) => `<button class="avatar-opt ${e === state.avatar ? 'active' : ''}" data-emoji="${e}">${e}</button>`)
+    .join('');
+  grid.querySelectorAll('.avatar-opt').forEach((b) =>
+    b.addEventListener('click', () => {
+      state.avatar = b.dataset.emoji;
+      localStorage.setItem('dltx_avatar', state.avatar);
+      renderProfile();
+      grid.querySelectorAll('.avatar-opt').forEach((x) => x.classList.toggle('active', x === b));
+    })
+  );
+  $('avatarModal').hidden = false;
+}
+$('avatarBtn').addEventListener('click', openAvatarPicker);
+$('avatarClose').addEventListener('click', () => ($('avatarModal').hidden = true));
+$('profileRef').addEventListener('click', () => {
+  if (!state.refCode) return;
+  navigator.clipboard?.writeText(state.refCode);
+  toast('Referral code copied');
+});
 
 function getValidatorShield(name, index = 0) {
   const n = String(name || '').toLowerCase();
@@ -475,6 +525,8 @@ async function loadReferrals() {
       navigator.clipboard?.writeText(r.code);
       toast('Referral code copied');
     };
+    state.refCode = r.code;
+    renderProfile();
 
     // 3-slot visual
     $('refSlots').innerHTML = Array.from({ length: r.maxDirect }, (_, i) =>
