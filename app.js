@@ -272,8 +272,25 @@ document.querySelectorAll('.tabbtn').forEach((b) =>
 async function enterApp() {
   showScreen('screen-main');
   showTab('tab-wallet');
+  // Recover the email from the JWT for sessions that signed in before we
+  // started persisting it (so the profile never shows a blank email).
+  if (!state.email && state.token) {
+    state.email = emailFromToken(state.token);
+    if (state.email) localStorage.setItem('dltx_email', state.email);
+  }
   renderProfile();
   await Promise.all([loadWallet(), loadStats(), loadValidators(), loadStakes(), loadTx(), loadReferrals(), loadGovernance(), loadChain(), loadArcade()]);
+}
+
+/** Extracts the email claim from the JWT payload (no verification needed). */
+function emailFromToken(token) {
+  try {
+    const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(part));
+    return payload.email || null;
+  } catch {
+    return null;
+  }
 }
 
 // ---------- Profile (avatar + masked email + referral) ----------
