@@ -295,6 +295,12 @@ function emailFromToken(token) {
 
 // ---------- Profile (avatar + masked email + referral) ----------
 const AVATAR_CHOICES = ['🦊','🐼','🐯','🦁','🐸','🐵','🐨','🐧','🦉','🐙','🐝','🦄','🐳','🦖','👾','🤖','👽','🎮','⚡','🔥','🌟','💎'];
+// Premium avatars: unlocked via an opt-in rewarded ad. The unlock is a
+// non-transferable cosmetic on this account — the AdMob-compliant reward.
+const PREMIUM_AVATARS = ['🐉','🦅','🧙','🥷','👑','🛸'];
+function unlockedAvatars() {
+  try { return JSON.parse(localStorage.getItem('dltx_avatar_unlocked') || '[]'); } catch { return []; }
+}
 
 /** Masks an email to its first 2 letters + domain, e.g. de****@gmail.com */
 function maskEmail(email) {
@@ -315,15 +321,36 @@ function renderProfile() {
 
 function openAvatarPicker() {
   const grid = $('avatarGrid');
-  grid.innerHTML = AVATAR_CHOICES
-    .map((e) => `<button class="avatar-opt ${e === state.avatar ? 'active' : ''}" data-emoji="${e}">${e}</button>`)
+  const unlocked = unlockedAvatars();
+  const all = [
+    ...AVATAR_CHOICES.map((e) => ({ e, locked: false })),
+    ...PREMIUM_AVATARS.map((e) => ({ e, locked: !unlocked.includes(e) })),
+  ];
+  grid.innerHTML = all
+    .map(({ e, locked }) => `<button class="avatar-opt ${e === state.avatar ? 'active' : ''} ${locked ? 'locked' : ''}" data-emoji="${e}">${e}</button>`)
     .join('');
   grid.querySelectorAll('.avatar-opt').forEach((b) =>
-    b.addEventListener('click', () => {
-      state.avatar = b.dataset.emoji;
+    b.addEventListener('click', async () => {
+      const emoji = b.dataset.emoji;
+      if (b.classList.contains('locked')) {
+        // Clear opt-in disclosure before the rewarded ad (AdMob requirement).
+        if (!window.confirm('▶ Watch a short ad to unlock this premium avatar?')) return;
+        b.disabled = true;
+        const earned = await playRewardedAd();
+        if (!earned) {
+          b.disabled = false;
+          toast('Ad not completed — avatar stays locked.');
+          return;
+        }
+        const u = unlockedAvatars();
+        u.push(emoji);
+        localStorage.setItem('dltx_avatar_unlocked', JSON.stringify(u));
+        toast('Premium avatar unlocked 🎉');
+      }
+      state.avatar = emoji;
       localStorage.setItem('dltx_avatar', state.avatar);
       renderProfile();
-      grid.querySelectorAll('.avatar-opt').forEach((x) => x.classList.toggle('active', x === b));
+      openAvatarPicker(); // re-render lock/active states
     })
   );
   $('avatarModal').hidden = false;
@@ -1471,8 +1498,9 @@ $('expSearch').addEventListener('keydown', (e) => {
 //   App id (AndroidManifest): ca-app-pub-6703659529197503~2016406742
 const ADMOB_BANNER_ID = 'ca-app-pub-6703659529197503/5133524678';
 const ADMOB_INTERSTITIAL_ID = 'ca-app-pub-6703659529197503/1357931192';
-// Rewarded unit (…/5850926156) intentionally unused: AdMob rewarded-ad rewards
-// must be non-transferable, and $DLTX is P2P-transferable.
+// Rewarded unit: used ONLY for non-transferable cosmetics (premium avatar
+// unlocks) — never $DLTX, which is P2P-transferable (AdMob rewarded-ad policy).
+const ADMOB_REWARDED_ID = 'ca-app-pub-6703659529197503/5850926156';
 const ADMOB_TESTING = false; // PRODUCTION BUILD: live AdMob creatives — flip to true for test-ads builds
 let adsReady = false;
 let gamesSinceInterstitial = 0;
@@ -1539,6 +1567,36 @@ async function updateTabAd(tabId) {
   }
 }
 window.updateTabAd = updateTabAd;
+
+/** Opt-in rewarded ad. Resolves true only on the SDK's own reward callback.
+ *  Rewards must stay non-transferable in-app benefits (never $DLTX). */
+function playRewardedAd() {
+  return new Promise((resolve) => {
+    const cap = window.Capacitor;
+    const AdMob = cap && cap.Plugins && cap.Plugins.AdMob;
+    if (cap && cap.isNativePlatform && cap.isNativePlatform() && AdMob) {
+      let earned = false, settled = false;
+      let handles = [];
+      const cleanup = () => handles.forEach((h) => h?.remove?.());
+      const finish = (val) => { if (settled) return; settled = true; cleanup(); resolve(val); };
+      Promise.all([
+        AdMob.addListener('onRewardedVideoAdReward', () => { earned = true; }),
+        AdMob.addListener('onRewardedVideoAdDismissed', () => finish(earned)),
+        AdMob.addListener('onRewardedVideoAdFailedToShow', () => finish(false)),
+      ]).then((hs) => { handles = hs; });
+      AdMob.prepareRewardVideoAd({ adId: ADMOB_REWARDED_ID, isTesting: ADMOB_TESTING })
+        .then(() => AdMob.showRewardVideoAd())
+        .then((item) => { if (item) earned = true; }) // showRewardVideoAd resolves with the reward item
+        .catch(() => finish(false));
+      return;
+    }
+    // Web / dev fallback — disclosed simulated ad so the flow is testable.
+    if (!confirm('▶ Simulated rewarded ad (web preview)\n\nOn a real device this plays a full AdMob rewarded video. Continue?')) {
+      return resolve(false);
+    }
+    setTimeout(() => resolve(true), 600);
+  });
+}
 
 // ---------- Hardware / browser back button ----------
 // A sentinel history entry absorbs the back press so we can close the topmost

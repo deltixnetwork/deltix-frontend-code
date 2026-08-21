@@ -195,15 +195,15 @@ async function finishGame(won, score) {
 // Banner + interstitial formats remain (they carry no reward).
 
 // ---------- Interstitial (native only, frequency-capped) ----------
-// Shown at most every 3rd completed game AND never sooner than 60s apart —
-// deliberately conservative to stay well inside AdMob's policy limits.
+// Shown at most every 2nd completed game AND never sooner than 45s apart —
+// conservative enough to stay well inside AdMob's policy limits.
 function maybeShowInterstitial() {
   const cap = window.Capacitor;
   const AdMob = cap && cap.Plugins && cap.Plugins.AdMob;
   if (!cap || !cap.isNativePlatform || !cap.isNativePlatform() || !AdMob) return;
   gamesSinceInterstitial++;
-  const cooledDown = Date.now() - lastInterstitialAt > 60000;
-  if (gamesSinceInterstitial < 3 || !cooledDown) return;
+  const cooledDown = Date.now() - lastInterstitialAt > 45000;
+  if (gamesSinceInterstitial < 2 || !cooledDown) return;
   gamesSinceInterstitial = 0;
   lastInterstitialAt = Date.now();
   AdMob.prepareInterstitial({ adId: ADMOB_INTERSTITIAL_ID, isTesting: ADMOB_TESTING })

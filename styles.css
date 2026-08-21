@@ -417,6 +417,8 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center;
 }
 .avatar-opt.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, #fff); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
+.avatar-opt.locked { opacity: 0.5; position: relative; }
+.avatar-opt.locked::after { content: '🔒'; position: absolute; right: 1px; bottom: 1px; font-size: 11px; opacity: 1; }
 
 /* Referral / ambassador */
 .ambassador-card {
