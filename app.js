@@ -302,6 +302,58 @@ function unlockedAvatars() {
   try { return JSON.parse(localStorage.getItem('dltx_avatar_unlocked') || '[]'); } catch { return []; }
 }
 
+// Premium app themes: same AdMob-compliant model — an opt-in rewarded ad
+// unlocks a non-transferable cosmetic color theme (never $DLTX).
+const THEMES = [
+  { id: 'classic', name: 'Classic', free: true },
+  { id: 'emerald', name: 'Emerald', free: false },
+  { id: 'sunset',  name: 'Sunset',  free: false },
+  { id: 'royal',   name: 'Royal',   free: false },
+];
+function unlockedThemes() {
+  try { return JSON.parse(localStorage.getItem('dltx_theme_unlocked') || '[]'); } catch { return []; }
+}
+function applyTheme(id) {
+  if (!THEMES.some((t) => t.id === id)) id = 'classic';
+  if (id === 'classic') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = id;
+}
+applyTheme(localStorage.getItem('dltx_theme') || 'classic');
+
+function renderThemeGrid() {
+  const grid = $('themeGrid');
+  if (!grid) return;
+  const unlocked = unlockedThemes();
+  const current = localStorage.getItem('dltx_theme') || 'classic';
+  grid.innerHTML = THEMES.map((t) => {
+    const locked = !t.free && !unlocked.includes(t.id);
+    return `<button class="theme-opt ${t.id === current ? 'active' : ''} ${locked ? 'locked' : ''}" data-theme-id="${t.id}"><span class="sw sw-${t.id}"></span>${t.name}</button>`;
+  }).join('');
+  grid.querySelectorAll('.theme-opt').forEach((b) =>
+    b.addEventListener('click', async () => {
+      const id = b.dataset.themeId;
+      if (b.classList.contains('locked')) {
+        // Clear opt-in disclosure before the rewarded ad (AdMob requirement).
+        if (!window.confirm('▶ Watch a short ad to unlock this theme?')) return;
+        b.disabled = true;
+        const earned = await playRewardedAd();
+        if (!earned) {
+          b.disabled = false;
+          toast('Ad not completed — theme stays locked.');
+          return;
+        }
+        const u = unlockedThemes();
+        u.push(id);
+        localStorage.setItem('dltx_theme_unlocked', JSON.stringify(u));
+        toast('Theme unlocked 🎉');
+      }
+      localStorage.setItem('dltx_theme', id);
+      applyTheme(id);
+      renderThemeGrid();
+    })
+  );
+}
+
 /** Masks an email to its first 2 letters + domain, e.g. de****@gmail.com */
 function maskEmail(email) {
   if (!email || !email.includes('@')) return '—';
@@ -353,6 +405,7 @@ function openAvatarPicker() {
       openAvatarPicker(); // re-render lock/active states
     })
   );
+  renderThemeGrid();
   $('avatarModal').hidden = false;
 }
 $('avatarBtn').addEventListener('click', openAvatarPicker);
@@ -1553,20 +1606,58 @@ async function updateTabAd(tabId) {
   }
 
   try {
-    // Show banner at bottom: margin 0 positions it at the base; body.has-ad-banner elevates footer tabbar above it
-    await cap.Plugins.AdMob.showBanner({
-      adId: ADMOB_BANNER_ID,
-      adSize: 'ADAPTIVE_BANNER',
-      position: 'BOTTOM_CENTER',
-      margin: 0,
-      isTesting: ADMOB_TESTING,
-    });
+    await showBannerAd('ADAPTIVE_BANNER');
     document.body.classList.add('has-ad-banner');
   } catch {
     /* ignore ad errors */
   }
 }
 window.updateTabAd = updateTabAd;
+
+/** Single-banner helper: the plugin holds one banner view, so switching sizes
+ *  (adaptive tab banner ↔ game-over MREC) requires a remove + re-show. */
+let shownBannerSize = null;
+async function showBannerAd(adSize) {
+  const AdMob = window.Capacitor.Plugins.AdMob;
+  if (shownBannerSize && shownBannerSize !== adSize) {
+    await AdMob.removeBanner().catch(() => {});
+    shownBannerSize = null;
+  }
+  await AdMob.showBanner({
+    adId: ADMOB_BANNER_ID,
+    adSize,
+    position: 'BOTTOM_CENTER',
+    margin: 0,
+    isTesting: ADMOB_TESTING,
+  });
+  shownBannerSize = adSize;
+}
+
+/** Medium-rectangle banner shown only on the game-over screen. */
+async function showGameOverAd() {
+  const cap = window.Capacitor;
+  if (!adsReady || !cap?.Plugins?.AdMob) return;
+  try {
+    await showBannerAd('MEDIUM_RECTANGLE');
+    // Pads #gameMount so replay/quit buttons never sit under the ad (accidental-click guardrail).
+    document.body.classList.add('has-gameover-ad');
+  } catch {
+    /* ignore ad errors */
+  }
+}
+async function hideGameOverAd() {
+  document.body.classList.remove('has-gameover-ad');
+  const cap = window.Capacitor;
+  if (!adsReady || !cap?.Plugins?.AdMob) return;
+  try {
+    await cap.Plugins.AdMob.removeBanner();
+    shownBannerSize = null;
+  } catch {
+    /* ignore ad errors */
+  }
+}
+window.showGameOverAd = showGameOverAd;
+window.hideGameOverAd = hideGameOverAd;
 
 /** Opt-in rewarded ad. Resolves true only on the SDK's own reward callback.
  *  Rewards must stay non-transferable in-app benefits (never $DLTX). */

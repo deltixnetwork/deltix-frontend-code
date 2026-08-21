@@ -104,6 +104,7 @@ function closeGame() {
   arcadeState.sessionId = null;
   gel('gameMount').innerHTML = '';
   gel('gameModal').hidden = true;
+  if (window.hideGameOverAd) window.hideGameOverAd();
   if (window.updateTabAd) window.updateTabAd();
 }
 
@@ -141,6 +142,7 @@ function showEndActions() {
   again.addEventListener('click', async () => {
     again.disabled = true;
     try {
+      if (window.hideGameOverAd) window.hideGameOverAd();
       if (arcadeState.cleanup) arcadeState.cleanup();
       arcadeState.cleanup = null;
       await startSession();
@@ -155,6 +157,7 @@ function showEndActions() {
   quit.addEventListener('click', closeGame);
   row.append(again, quit);
   mount.appendChild(row);
+  if (window.showGameOverAd) window.showGameOverAd();
   row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
