@@ -157,8 +157,12 @@ function showEndActions() {
   quit.addEventListener('click', closeGame);
   row.append(again, quit);
   mount.appendChild(row);
-  if (window.showGameOverAd) window.showGameOverAd();
-  row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  // Scroll only after the MREC (and #gameMount's ad padding) exist — otherwise
+  // tall games leave the buttons exactly under the native ad overlay.
+  const adShown = window.showGameOverAd ? window.showGameOverAd() : Promise.resolve();
+  Promise.resolve(adShown).then(() =>
+    row.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  );
 }
 
 function setGameStatus(text) {
