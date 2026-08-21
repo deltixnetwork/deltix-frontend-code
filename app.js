@@ -1471,7 +1471,8 @@ $('expSearch').addEventListener('keydown', (e) => {
 //   App id (AndroidManifest): ca-app-pub-6703659529197503~2016406742
 const ADMOB_BANNER_ID = 'ca-app-pub-6703659529197503/5133524678';
 const ADMOB_INTERSTITIAL_ID = 'ca-app-pub-6703659529197503/1357931192';
-const ADMOB_REWARDED_ID = 'ca-app-pub-6703659529197503/5850926156';
+// Rewarded unit (…/5850926156) intentionally unused: AdMob rewarded-ad rewards
+// must be non-transferable, and $DLTX is P2P-transferable.
 const ADMOB_TESTING = false; // PRODUCTION BUILD: live AdMob creatives — flip to true for test-ads builds
 let adsReady = false;
 let gamesSinceInterstitial = 0;

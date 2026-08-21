@@ -50,7 +50,6 @@ async function loadArcade() {
     ]
       .map(([k, v]) => `<div class="supply-row"><span class="k">${k}</span><span class="v">${v}</span></div>`)
       .join('');
-    updateAdBonusCard();
     gel('gamesGrid').innerHTML = a.games
       .map(
         (g) => `<button class="game-card game-card-${g.id}" data-game="${g.id}">
@@ -89,7 +88,7 @@ function openGame(id) {
 function updateRewardHint() {
   const g = arcadeState.currentGame;
   const r = arcadeState.difficulty === 'hard' ? g.rewardHard : g.rewardEasy;
-  gel('gameRewardHint').textContent = `Win, then watch a short ad to claim ${r} $DLTX (daily cap applies).`;
+  gel('gameRewardHint').textContent = `Win to earn ${r} $DLTX (daily cap applies).`;
 }
 document.querySelectorAll('.diff-btn').forEach((b) =>
   b.addEventListener('click', () => {
@@ -168,14 +167,13 @@ async function finishGame(won, score) {
   const sessionId = arcadeState.sessionId;
   arcadeState.sessionId = null;
   try {
-    const r = await api('POST', `/arcade/session/${sessionId}/complete`, { won, score });
-    if (r.won && r.adClaimAvailable) {
-      // Every win's reward is claimed via an opt-in rewarded ad.
-      setGameStatus('You won! Watch a short ad to claim your reward 🎬');
-      offerAdClaim(sessionId, won, score);
-      return; // no interstitial while a rewarded claim is pending
-    }
-    if (r.won && r.reward > 0) {
+    // Wins pay $DLTX directly — rewarded ads never gate rewards (AdMob policy:
+    // ad rewards must be non-transferable; $DLTX is transferable P2P).
+    const payload = { won, score, ...(won ? await getIntegrityPayload() : {}) };
+    const r = await api('POST', `/arcade/session/${sessionId}/complete`, payload);
+    if (r.won && r.tooFast) {
+      setGameStatus('You won — but too fast to count. Play a full game to earn.');
+    } else if (r.won && r.reward > 0) {
       setGameStatus(`You won! +${fmt(r.reward)} $DLTX earned 🏆`);
       toast(`+${fmt(r.reward)} $DLTX game reward`);
       Promise.all([loadWallet(), loadTx(), loadArcade()]).catch(() => {});
@@ -191,100 +189,10 @@ async function finishGame(won, score) {
   maybeShowInterstitial();
 }
 
-/** Win reward claim: play an opt-in rewarded ad, then settle the session. */
-function offerAdClaim(sessionId, won, score) {
-  const btn = document.createElement('button');
-  btn.className = 'btn primary ad-claim-btn';
-  btn.textContent = '▶ Watch ad · claim reward';
-  gel('gameMount').appendChild(btn);
-  btn.addEventListener('click', async () => {
-    btn.disabled = true;
-    btn.textContent = 'Loading ad…';
-    try {
-      const earned = await playRewardedAd();
-      if (!earned) {
-        toast('Ad not completed — reward unclaimed.');
-        btn.disabled = false;
-        btn.textContent = '▶ Watch ad · claim reward';
-        showEndActions();
-        return;
-      }
-      const r = await api('POST', `/arcade/session/${sessionId}/complete`, { won, score, adPlayed: true, ...(await getIntegrityPayload()) });
-      btn.remove();
-      if (r.won && r.reward > 0) {
-        setGameStatus(`Reward claimed! +${fmt(r.reward)} $DLTX 🏆`);
-        toast(`+${fmt(r.reward)} $DLTX game reward`);
-        Promise.all([loadWallet(), loadTx(), loadArcade()]).catch(() => {});
-      } else if (r.won && r.capped) {
-        setGameStatus('You won — but today\u2019s reward cap is reached. Come back tomorrow!');
-      }
-      showEndActions();
-    } catch (e) {
-      setGameStatus(e.message);
-      btn.remove();
-      showEndActions();
-    }
-  });
-}
-
-// ---------- Rewarded ad (Sustainability Fund bonus) ----------
-// Never gates staking, DAO actions, or rewards — purely an optional bonus tap
-// on the Arcade tab. Native: real AdMob rewarded ad, reward paid only on the
-// SDK's own "user earned reward" callback. Web/dev: disclosed simulated ad.
-function updateAdBonusCard() {
-  const card = gel('adBonusCard');
-  if (!card) return;
-  card.hidden = false;
-}
-gel('watchAdBtn')?.addEventListener('click', async () => {
-  const btn = gel('watchAdBtn');
-  btn.disabled = true;
-  btn.textContent = 'Loading…';
-  try {
-    const earned = await playRewardedAd();
-    if (!earned) {
-      toast('Ad not completed — no bonus this time.');
-      return;
-    }
-    const r = await api('POST', '/arcade/ad-bonus');
-    toast(`+${fmt(r.reward)} $DLTX bonus · ${r.usedToday}/${r.maxPerDay} today`);
-    Promise.all([loadWallet(), loadTx(), loadArcade()]).catch(() => {});
-  } catch (e) {
-    toast(e.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Watch';
-  }
-});
-
-function playRewardedAd() {
-  return new Promise((resolve) => {
-    const cap = window.Capacitor;
-    const AdMob = cap && cap.Plugins && cap.Plugins.AdMob;
-    if (cap && cap.isNativePlatform && cap.isNativePlatform() && AdMob) {
-      let earned = false, settled = false;
-      let rewardH, dismissH, failH;
-      const cleanup = () => { rewardH?.remove?.(); dismissH?.remove?.(); failH?.remove?.(); };
-      const finish = (val) => { if (settled) return; settled = true; cleanup(); resolve(val); };
-      // Capacitor addListener returns a Promise<handle>; capture handles to remove later.
-      Promise.all([
-        AdMob.addListener('onRewardedVideoAdReward', () => { earned = true; }),
-        AdMob.addListener('onRewardedVideoAdDismissed', () => finish(earned)),
-        AdMob.addListener('onRewardedVideoAdFailedToShow', () => finish(false)),
-      ]).then(([r, d, f]) => { rewardH = r; dismissH = d; failH = f; });
-      AdMob.prepareRewardVideoAd({ adId: ADMOB_REWARDED_ID, isTesting: ADMOB_TESTING })
-        .then(() => AdMob.showRewardVideoAd())
-        .then((item) => { if (item) earned = true; }) // showRewardVideoAd resolves with the reward item
-        .catch(() => finish(false));
-      return;
-    }
-    // Web / dev fallback — disclosed simulated ad so the flow is testable.
-    if (!confirm('▶ Simulated rewarded ad (web preview)\n\nOn a real device this plays a full AdMob rewarded video. Continue to claim the test bonus?')) {
-      return resolve(false);
-    }
-    setTimeout(() => resolve(true), 600);
-  });
-}
+// NOTE: rewarded ads were removed from the arcade (2026-08-21). AdMob's
+// rewarded-ad policy requires rewards to be non-transferable, and $DLTX is
+// P2P-transferable — so wins now pay directly and no ad ever grants $DLTX.
+// Banner + interstitial formats remain (they carry no reward).
 
 // ---------- Interstitial (native only, frequency-capped) ----------
 // Shown at most every 3rd completed game AND never sooner than 60s apart —

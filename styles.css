@@ -551,7 +551,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   from { filter: brightness(1); }
   to { filter: brightness(1.15); }
 }
-.ad-claim-btn { display: block; width: 100%; margin-top: 12px; }
+
 .game-end-actions { display: flex; gap: 10px; margin-top: 12px; }
 .game-end-actions .btn { flex: 1; min-height: 44px; padding: 10px 8px; font-size: 14px; }
 .board.memory .cell { font-size: 22px; color: var(--accent); }
@@ -709,10 +709,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 .tx.clickable:active, .block-card.clickable:active { background: #eef3ff; }
 .exp-body .supply-row .v { max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* -- Rewarded-ad bonus card --------------------------------- */
-.ad-bonus-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
-.ad-bonus-card .name { font-weight: 700; font-size: 14px; }
-.ad-bonus-card .meta { font-size: 12px; color: var(--muted, #64748b); }
+
 
 /* -- New Arcade games (Ludo, Chess, Three Card Draw, Carom, Slicer, Soccer, Racing) -- */
 .ludo-wrap2 { display: flex; flex-direction: column; align-items: center; gap: 12px; }
