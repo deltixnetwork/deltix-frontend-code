@@ -205,6 +205,7 @@ async function finishGame(won, score) {
 // Shown at most every 2nd completed game AND never sooner than 45s apart —
 // conservative enough to stay well inside AdMob's policy limits.
 function maybeShowInterstitial() {
+  if (window.ADS_ENABLED === false) return;
   const cap = window.Capacitor;
   const AdMob = cap && cap.Plugins && cap.Plugins.AdMob;
   if (!cap || !cap.isNativePlatform || !cap.isNativePlatform() || !AdMob) return;
@@ -684,7 +685,8 @@ GAME_IMPL.merge = (mount, diff, finish, status) => {
     if (over) return;
     let moved = false;
     const rotate = (g) => g[0].map((_, c) => g.map((row) => row[c]).reverse());
-    let turns = { left: 0, up: 1, right: 2, down: 3 }[d];
+    // rotate() is clockwise: 1 turn aligns "down" with the leftward slide, 3 turns align "up".
+    let turns = { left: 0, down: 1, right: 2, up: 3 }[d];
     let g = grid;
     for (let i = 0; i < turns; i++) g = rotate(g);
     g = g.map((row) => {

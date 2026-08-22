@@ -325,7 +325,7 @@ function renderThemeGrid() {
   if (!grid) return;
   const unlocked = unlockedThemes();
   const current = localStorage.getItem('dltx_theme') || 'classic';
-  grid.innerHTML = THEMES.map((t) => {
+  grid.innerHTML = THEMES.filter((t) => t.free || ADS_ENABLED || unlocked.includes(t.id)).map((t) => {
     const locked = !t.free && !unlocked.includes(t.id);
     return `<button class="theme-opt ${t.id === current ? 'active' : ''} ${locked ? 'locked' : ''}" data-theme-id="${t.id}"><span class="sw sw-${t.id}"></span>${t.name}</button>`;
   }).join('');
@@ -376,7 +376,9 @@ function openAvatarPicker() {
   const unlocked = unlockedAvatars();
   const all = [
     ...AVATAR_CHOICES.map((e) => ({ e, locked: false })),
-    ...PREMIUM_AVATARS.map((e) => ({ e, locked: !unlocked.includes(e) })),
+    // Ad-free builds hide still-locked premiums (no way to unlock them).
+    ...PREMIUM_AVATARS.filter((e) => ADS_ENABLED || unlocked.includes(e))
+      .map((e) => ({ e, locked: !unlocked.includes(e) })),
   ];
   grid.innerHTML = all
     .map(({ e, locked }) => `<button class="avatar-opt ${e === state.avatar ? 'active' : ''} ${locked ? 'locked' : ''}" data-emoji="${e}">${e}</button>`)
@@ -1554,13 +1556,16 @@ const ADMOB_INTERSTITIAL_ID = 'ca-app-pub-6703659529197503/1357931192';
 // Rewarded unit: used ONLY for non-transferable cosmetics (premium avatar
 // unlocks) — never $DLTX, which is P2P-transferable (AdMob rewarded-ad policy).
 const ADMOB_REWARDED_ID = 'ca-app-pub-6703659529197503/5850926156';
+const ADS_ENABLED = true; // master kill-switch: false ships a completely ad-free build
 const ADMOB_TESTING = false; // PRODUCTION BUILD: live AdMob creatives — flip to true for test-ads builds
+window.ADS_ENABLED = ADS_ENABLED;
 let adsReady = false;
 let gamesSinceInterstitial = 0;
 let lastInterstitialAt = 0;
 
 async function initAds() {
   try {
+    if (!ADS_ENABLED) return;
     const cap = window.Capacitor;
     if (!cap || !cap.isNativePlatform || !cap.isNativePlatform()) return;
     const AdMob = cap.Plugins && cap.Plugins.AdMob;
@@ -1663,6 +1668,7 @@ window.hideGameOverAd = hideGameOverAd;
  *  Rewards must stay non-transferable in-app benefits (never $DLTX). */
 function playRewardedAd() {
   return new Promise((resolve) => {
+    if (!ADS_ENABLED) return resolve(false);
     const cap = window.Capacitor;
     const AdMob = cap && cap.Plugins && cap.Plugins.AdMob;
     if (cap && cap.isNativePlatform && cap.isNativePlatform() && AdMob) {
