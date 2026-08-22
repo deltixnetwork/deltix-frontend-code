@@ -1556,7 +1556,7 @@ const ADMOB_INTERSTITIAL_ID = 'ca-app-pub-6703659529197503/1357931192';
 // Rewarded unit: used ONLY for non-transferable cosmetics (premium avatar
 // unlocks) — never $DLTX, which is P2P-transferable (AdMob rewarded-ad policy).
 const ADMOB_REWARDED_ID = 'ca-app-pub-6703659529197503/5850926156';
-const ADS_ENABLED = true; // master kill-switch: false ships a completely ad-free build
+const ADS_ENABLED = false; // policy hold default: ship ad-free unless explicitly re-enabled
 const ADMOB_TESTING = false; // PRODUCTION BUILD: live AdMob creatives — flip to true for test-ads builds
 window.ADS_ENABLED = ADS_ENABLED;
 let adsReady = false;
