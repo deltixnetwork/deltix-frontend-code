@@ -12,7 +12,7 @@ Deltix Network is a live, mobile-first Delegated Proof-of-Stake (DPoS) network b
 core economic design — staking-funded issuance and EIP-1559-style fee burning — delivered through a
 custodial mobile experience so anyone with an email address can participate in under a minute, with
 no seed phrase, gas management, or node operation required. On top of that Ethereum-inspired base,
-Deltix adds a capped, human-scale **referral program** and an **ambassador recognition program**,
+Deltix adds a single-level, human-scale **referral program** and an **ambassador recognition program**,
 giving it more built-in growth and community features than base-layer Ethereum offers out of the box.
 $DLTX, the native token, is an in-app utility and reward token — it has no monetary value and is not
 redeemable for real-world currency or any other cryptocurrency. It powers staking, transfers,
@@ -69,9 +69,9 @@ everything around it for the phone:
   encryption replaced the seed phrase.
 - **If validators require servers, let users delegate instead.** A curated validator set replaced
   node operation.
-- **If growth programs become pyramids, cap them at three.** A human-scale referral system — one
-  sponsor, three invites, rewards only for genuine staking participants — replaced viral
-  recruitment schemes.
+- **If growth programs become pyramids, keep them single-level.** A human-scale referral system —
+  one sponsor per user, no downlines, rewards only for genuine staking participants — replaced
+  viral recruitment schemes.
 - **If communities need leaders, recognize them.** The Ambassador program rewards the people who
   grow the network responsibly, with recognition rather than recruitment income.
 
@@ -103,7 +103,7 @@ Most staking networks demand technical sophistication: seed phrases, gas managem
    for mobile-first reach.
 4. **More than base Ethereum** — the referral and ambassador programs are Deltix additions with
    no Ethereum equivalent, built to grow the network human-by-human.
-5. **Human-scale growth** — referrals capped at three per person; no pyramids, no downlines.
+5. **Human-scale growth** — single-level referrals with no downlines; rewards gated on genuine staking, not headcount.
 6. **DAO from day one** — the Deltix DAO is live at genesis: protocol changes are decided by
    stake-weighted community vote inside the app, and the scope of binding on-chain control expands
    in phases toward full decentralization.
@@ -119,7 +119,7 @@ Most staking networks demand technical sophistication: seed phrases, gas managem
 | Self-custody wallet + seed phrase | Wallet auto-generated and AES-256-GCM encrypted server-side; unlocked with email + OTP — mobile-friendly, no seed phrase to lose |
 | MetaMask + external dApps | D-Browser — curated, allowlisted in-app gateway to real external dApps |
 | Off-chain governance (EIP process, social consensus) | **Deltix DAO** — in-app, stake-weighted proposals and voting, live from day one |
-| *(no equivalent)* | **Referral program** — capped at 3, stake-gated activation, automatic sponsor rewards |
+| *(no equivalent)* | **Referral program** — single-level (no downlines), stake-gated activation, automatic sponsor rewards |
 | *(no equivalent)* | **Ambassador program** — Participant / Advocate / Ambassador recognition tiers with live progress tracking |
 
 In short: Deltix keeps Ethereum's proven economics (staking, issuance, fee burn) and packages them for
@@ -138,9 +138,11 @@ tiers — that Ethereum itself does not have.
 | Annual issuance | 5% of supply (staking rewards) |
 | Base staking APY | ~8% (variable, validator-dependent) |
 | Transfer base fee | 0.1% of amount (min 0.01 $DLTX), **permanently burned** |
-| Referral cap | 3 direct referrals per account |
-| Referral reward | 25 $DLTX per activated referral |
+| Referral model | Unlimited direct referrals, single-level (no downlines) |
+| Referral reward | 10 $DLTX per activated referral (25 $DLTX during the launch window) |
 | Referral activation | Referred user verifies + stakes ≥ 50 $DLTX |
+| Welcome bonus | 50 $DLTX per verified account (100 $DLTX during the launch window), non-transferable |
+| Arcade rewards | 0.05 $DLTX (easy) / 0.1 $DLTX (hard) per win · 10 $DLTX daily cap |
 | Ambassador threshold | 3 activated referrals + 500 $DLTX self-staked |
 | Governance | Deltix DAO — stake-weighted voting (1 staked $DLTX = 1 vote), live at genesis |
 | DAO proposal threshold | 100 $DLTX self-staked |
@@ -169,13 +171,15 @@ APY_effective ≈ BASE_APY × uptime × (1 − commission)
 
 ### 3.3 The Deltix Application
 
-The application is organized into five surfaces:
+The application is organized into these surfaces:
 
 1. **Wallet** — balances, send/receive, network snapshot, activity history.
 2. **Stake** — validator directory, delegation, unbonding, reward tracking.
-3. **D-Browser** — a curated, allowlisted gateway to third-party dApps with a security interstitial (HTTPS-only; external sites are never trusted with credentials).
-4. **Community** — the Deltix DAO (proposals and stake-weighted voting), referral code, referral tracking, ambassador tiers.
-5. **Network** — live tokenomics: supply, staked totals, burned totals, participation.
+3. **Arcade** — original skill games with capped daily $DLTX utility rewards (no wagering, no entry fees).
+4. **D-Browser** — a curated, allowlisted gateway to third-party dApps with a security interstitial (HTTPS-only; external sites are never trusted with credentials).
+5. **Community** — the Deltix DAO (proposals and stake-weighted voting), referral code, referral tracking, ambassador tiers.
+6. **Network** — live tokenomics: supply, staked totals, burned totals, participation.
+7. **Deltix Energy** — a non-monetary status system: watch opt-in rewarded ads to earn Energy and climb ranks. Energy has no monetary value and is never $DLTX.
 
 ---
 
@@ -207,8 +211,8 @@ Total supply, staked supply, burned supply, and participation statistics are pub
 
 ### 4.4 Onboarding Allocations
 
-- **Signup bonus:** 100 $DLTX per verified account (one per person).
-- **Genesis faucet:** limited launch-phase top-ups to seed early staking participation. The faucet is a bootstrapping mechanism and will be reduced and retired by governance as the network matures.
+- **Welcome bonus:** 50 $DLTX per verified account (100 $DLTX during the launch window), one per person. The welcome bonus is **non-transferable** — it can be staked or used in-app but never sent peer-to-peer — which prevents multi-account bonus farming.
+- **Genesis faucet:** retired by governance (DIP-2); early participation is now seeded by the welcome bonus and play-to-earn Arcade rewards.
 
 ---
 
@@ -250,16 +254,16 @@ This gives $DLTX immediate utility as a medium of exchange within the network, i
 
 Growth mechanisms in crypto frequently degenerate into multi-level marketing. Deltix's referral program is deliberately constrained:
 
-- **Maximum 3 direct referrals** per account. No exceptions.
-- **No downlines.** Rewards flow only between a sponsor and their direct referral — never through chains or levels.
-- **Stake-gated activation.** Registration alone earns nothing.
+- **Single-level only.** Rewards flow only between a sponsor and their direct referral — never through chains, levels, or downlines.
+- **Stake-gated activation.** Registration alone earns nothing; a referral pays only after the referred user stakes.
+- **Abuse-resistant by design.** The non-transferable welcome bonus and stake-gated activation — not an arbitrary slot cap — keep referrals honest, so the number of direct referrals is unlimited.
 
 ### 7.2 Mechanics
 
 1. Every verified account receives a unique referral code (`DLTX-XXXXXX`).
 2. A new user enters the code at signup (or redeems it once, later, if they joined without one).
 3. The referral is **pending** until the new user verifies their email, and **activated** only when they stake **≥ 50 $DLTX**.
-4. On activation, the sponsor automatically receives **25 $DLTX**. One reward per referral, paid once, forever.
+4. On activation, the sponsor automatically receives **10 $DLTX** (**25 $DLTX** during the launch window). One reward per referral, paid once, forever.
 
 ### 7.3 Tracking
 
@@ -271,11 +275,11 @@ Requiring an eligible stake before any reward is paid means every rewarded refer
 
 ### 7.5 Reward Economics
 
-Referral rewards are protocol incentives drawn from the network incentive budget. At 25 $DLTX per activation with a hard cap of 3, the maximum lifetime referral reward per account is 75 $DLTX of in-app utility value — meaningful, but impossible to industrialize.
+Referral rewards are protocol incentives drawn from the network incentive budget: **10 $DLTX per activation** (25 $DLTX during the launch window). There is no slot cap, but every reward requires the referred user to verify and hold an eligible stake of ≥ 50 $DLTX — so rewards track genuine, capital-committed participants rather than raw signups, and cannot be industrialized with throwaway accounts.
 
 ### 7.6 Anti-Fraud
 
-The protocol enforces: self-referral rejection, one-sponsor-per-account, slot caps, one-time reward payment, rate limiting, and duplicate-account (Sybil) detection. Fraudulent referrals result in reward forfeiture and account termination.
+The protocol enforces: self-referral rejection, one-sponsor-per-account, a non-transferable welcome bonus, stake-gated one-time reward payment, rate limiting, Play Integrity attestation, and duplicate-account (Sybil) detection. Fraudulent referrals result in reward forfeiture and account termination.
 
 ---
 
@@ -285,7 +289,7 @@ Recognition tiers reward sustained, genuine contribution:
 
 | Tier | Requirements | Benefits |
 |---|---|---|
-| **Participant** | Verified account | Stake, delegate, govern, refer up to 3 |
+| **Participant** | Verified account | Stake, delegate, govern, refer others |
 | **Advocate** | 1 activated referral + an active stake | Community badge, early feature access |
 | **Ambassador** | 3 activated referrals + 500 $DLTX self-staked | Non-transferable ambassador badge, governance spotlight, priority validator invitations |
 
@@ -401,7 +405,7 @@ No user funds are ever used for operations. Staked balances belong to their dele
 
 ## 16. Conclusion
 
-Deltix Network makes Ethereum-style staking economics accessible to anyone with an email address — live from the very beginning. A fixed genesis supply, security-funding issuance, and transaction-driven burning form a disciplined monetary core. A hard-capped, stake-gated referral system grows the network human by human, not pyramid by pyramid. And the Deltix DAO — live from day one — puts every protocol change to a stake-weighted community vote, expanding its binding scope deliberately and verifiably until the network belongs entirely to its participants.
+Deltix Network makes Ethereum-style staking economics accessible to anyone with an email address — live from the very beginning. A fixed genesis supply, security-funding issuance, and transaction-driven burning form a disciplined monetary core. A single-level, stake-gated referral system grows the network human by human, not pyramid by pyramid. And the Deltix DAO — live from day one — puts every protocol change to a stake-weighted community vote, expanding its binding scope deliberately and verifiably until the network belongs entirely to its participants.
 
 **Deltix Network — stake, transfer, govern. From day one.**
 
