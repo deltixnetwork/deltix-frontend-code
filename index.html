@@ -272,7 +272,7 @@
       <div class="tab" id="tab-community">
         <div class="showcase-banner community-showcase">
           <div class="showcase-title">Deltix Community &amp; DAO</div>
-          <div class="showcase-sub">Vote on live DAO proposals, manage your 3 referral slots, and grow your ambassador tier.</div>
+          <div class="showcase-sub">Vote on live DAO proposals, invite unlimited participants, and grow your ambassador tier.</div>
         </div>
         <h3 class="section-title">Deltix DAO <span class="pill live" id="daoPill">Live</span></h3>
         <div class="feature-card">
@@ -304,14 +304,14 @@
         <div class="feature-card">
           <div class="name">Tiers &amp; benefits</div>
           <div class="meta">
-            <b>Participant</b> — stake, delegate, govern, refer up to 3.<br/>
+            <b>Participant</b> — stake, delegate, govern, refer others.<br/>
             <b>Advocate</b> — 1 activated referral + an active stake: community badge, early feature access.<br/>
             <b>Ambassador</b> — 3 activated referrals + 500 $DLTX staked: non-transferable ambassador badge,
             governance spotlight, priority validator invitations.
           </div>
         </div>
 
-        <h3 class="section-title">Your referral code <span class="pill">Max 3</span></h3>
+        <h3 class="section-title">Your referral code <span class="pill">Unlimited</span></h3>
         <div class="card">
           <div class="ref-code" id="myRefCode" title="Tap to copy">—</div>
           <div class="slots" id="refSlots"></div>
@@ -319,7 +319,7 @@
         </div>
 
         <h3 class="section-title">Your referrals</h3>
-        <div id="refList"><p class="muted center">No referrals yet. Share your code — up to three genuine participants.</p></div>
+        <div id="refList"><p class="muted center">No referrals yet. Share your code and invite genuine participants.</p></div>
 
         <div id="redeemBox">
           <h3 class="section-title">Have a sponsor code?</h3>
@@ -333,9 +333,9 @@
 
         <h3 class="section-title">Program rules</h3>
         <ul class="disclosure">
-          <li>Maximum of three direct referrals — no downlines or recruitment trees.</li>
+          <li>Unlimited direct referrals — still single-level: no downlines or recruitment trees.</li>
           <li>No reward for registration alone; activation requires a maintained eligible stake.</li>
-          <li>Referral rewards are modest, capped and paid once per referred participant.</li>
+          <li>Referral rewards are modest and paid once per referred participant.</li>
           <li>No reward from your referrals' future referrals.</li>
         </ul>
 
@@ -345,6 +345,61 @@
             This cannot be undone.</p>
           <button class="btn danger" id="deleteAccountBtn">Delete account</button>
         </div>
+      </div>
+
+      <!-- Deltix Energy: watch-to-earn status ranks (no monetary value, never $DLTX) -->
+      <div class="tab" id="tab-energy">
+        <div class="energy-hero">
+          <div class="energy-hero-bolt">⚡</div>
+          <div class="energy-hero-title">Deltix <span>ENERGY</span></div>
+          <div class="energy-hero-sub">Watch, earn Energy, climb the ranks — show your power</div>
+        </div>
+
+        <div class="energy-rank-card">
+          <div class="erc-shield" id="ercShield">D</div>
+          <div class="erc-main">
+            <div class="erc-rank" id="ercRankName">Deltix Soldier</div>
+            <div class="erc-energy"><b id="ercEnergy">0</b> Energy</div>
+            <div class="erc-next" id="ercNext">Next rank: Deltix Inspector</div>
+            <div class="erc-bar"><div class="erc-bar-fill" id="ercBarFill"></div></div>
+            <div class="erc-range" id="ercRange">0 / 50</div>
+          </div>
+          <button class="erc-earn" id="energyEarnBtn">▶ EARN +1</button>
+        </div>
+
+        <div class="card energy-earn-card">
+          <div class="eec-badge">⚡<span>+1</span></div>
+          <div class="eec-body">
+            <div class="eec-title">Watch a short ad</div>
+            <div class="eec-meta" id="eecMeta">Energy: 0</div>
+          </div>
+          <button class="btn primary" id="energyWatchBtn">▶ Watch</button>
+        </div>
+
+        <h3 class="section-title">👑 Deltix Energy Ranks</h3>
+        <p class="muted small-note">Earn Energy, climb ranks, show your power.</p>
+        <div class="energy-ranks-grid" id="energyRanksGrid"></div>
+
+        <div class="energy-features">
+          <div class="energy-feat" data-ef="streak">
+            <div class="ef-ic">🔥</div><div class="ef-name">Daily Streak</div>
+            <div class="ef-sub" id="efStreakSub">Build streaks, earn bonus Energy</div>
+          </div>
+          <div class="energy-feat" data-ef="leaderboard">
+            <div class="ef-ic">🏆</div><div class="ef-name">Leaderboard</div>
+            <div class="ef-sub">Top Energy earners this week</div>
+          </div>
+          <div class="energy-feat" data-ef="badges">
+            <div class="ef-ic">🎖️</div><div class="ef-name">Rank Badges</div>
+            <div class="ef-sub">Show your rank on your profile</div>
+          </div>
+          <div class="energy-feat" data-ef="events">
+            <div class="ef-ic">🎁</div><div class="ef-name">Special Events</div>
+            <div class="ef-sub">Join events, earn extra Energy</div>
+          </div>
+        </div>
+
+        <p class="energy-disclaimer">Energy has no monetary value and cannot be exchanged for $DLTX. Play games to earn up to 10 $DLTX daily.</p>
       </div>
     </main>
 
@@ -373,6 +428,10 @@
       <button class="tabbtn" data-tab="tab-network">
         <img src="assets/nav-network.svg" class="nav-3d-icon" alt="Network" />
         <span>Network</span>
+      </button>
+      <button class="tabbtn" data-tab="tab-energy">
+        <img src="assets/nav-energy.svg" class="nav-3d-icon" alt="Energy" />
+        <span>Energy</span>
       </button>
     </nav>
   </div>

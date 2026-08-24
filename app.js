@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.2.3';
+const APP_VERSION = '1.2.4';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -138,6 +138,7 @@ function showTab(id) {
     b.classList.toggle('active', b.dataset.tab === id)
   );
   updateTabAd(id);
+  if (id === 'tab-energy') renderEnergy();
 }
 let toastTimer;
 function toast(msg) {
@@ -627,17 +628,23 @@ async function loadReferrals() {
     state.refCode = r.code;
     renderProfile();
 
-    // 3-slot visual
-    $('refSlots').innerHTML = Array.from({ length: r.maxDirect }, (_, i) =>
-      `<div class="slot ${i < r.slotsUsed ? 'used' : ''}">${i < r.slotsUsed ? '✓' : i + 1}</div>`
-    ).join('');
-    $('refInfo').textContent =
-      `${r.slotsLeft} of ${r.maxDirect} invites left · +${fmt(r.rewardPerActivation)} $DLTX when a referral keeps a stake of ${fmt(r.minStakeToActivate)}+ $DLTX · Earned so far: ${fmt(r.totalReferralRewards)} $DLTX`;
+    // referral slots (unlimited or capped)
+    if (r.unlimited) {
+      $('refSlots').innerHTML = `<div class="slot used">✓</div><div class="slot-count">${r.slotsUsed} joined · unlimited invites</div>`;
+      $('refInfo').textContent =
+        `Unlimited invites · +${fmt(r.rewardPerActivation)} $DLTX when a referral keeps a stake of ${fmt(r.minStakeToActivate)}+ $DLTX · Earned so far: ${fmt(r.totalReferralRewards)} $DLTX`;
+    } else {
+      $('refSlots').innerHTML = Array.from({ length: r.maxDirect }, (_, i) =>
+        `<div class="slot ${i < r.slotsUsed ? 'used' : ''}">${i < r.slotsUsed ? '✓' : i + 1}</div>`
+      ).join('');
+      $('refInfo').textContent =
+        `${r.slotsLeft} of ${r.maxDirect} invites left · +${fmt(r.rewardPerActivation)} $DLTX when a referral keeps a stake of ${fmt(r.minStakeToActivate)}+ $DLTX · Earned so far: ${fmt(r.totalReferralRewards)} $DLTX`;
+    }
 
     // Referral list
     const list = $('refList');
     if (!r.referrals.length) {
-      list.innerHTML = '<p class="muted center">No referrals yet. Share your code — up to three genuine participants.</p>';
+      list.innerHTML = '<p class="muted center">No referrals yet. Share your code and invite genuine participants.</p>';
     } else {
       list.innerHTML = r.referrals
         .map((x) => {
@@ -1666,6 +1673,94 @@ async function hideGameOverAd() {
 }
 window.showGameOverAd = showGameOverAd;
 window.hideGameOverAd = hideGameOverAd;
+
+// ---------- Deltix Energy (watch-to-earn status ranks — no monetary value, never $DLTX) ----------
+const ENERGY_RANKS = [
+  { name: 'Deltix Soldier',   min: 1,    max: 49,       c: ['#94a3b8', '#475569'] },
+  { name: 'Deltix Inspector', min: 50,   max: 100,      c: ['#4ade80', '#15803d'] },
+  { name: 'Deltix Guardian',  min: 101,  max: 250,      c: ['#60a5fa', '#1d4ed8'] },
+  { name: 'Deltix Captain',   min: 251,  max: 500,      c: ['#c084fc', '#6d28d9'] },
+  { name: 'Deltix Major',     min: 501,  max: 1000,     c: ['#f87171', '#991b1b'] },
+  { name: 'Deltix Commander', min: 1001, max: 2500,     c: ['#38bdf8', '#1e40af'] },
+  { name: 'Deltix Elite',     min: 2501, max: 4000,     c: ['#f472b6', '#a21caf'] },
+  { name: 'Deltix Legend',    min: 4001, max: Infinity, c: ['#fbbf24', '#b45309'] },
+];
+function energyState() {
+  return {
+    energy: parseInt(localStorage.getItem('dltx_energy') || '0', 10) || 0,
+    streak: parseInt(localStorage.getItem('dltx_energy_streak') || '0', 10) || 0,
+    last: localStorage.getItem('dltx_energy_last') || '',
+  };
+}
+function rankForEnergy(e) {
+  for (let i = ENERGY_RANKS.length - 1; i >= 0; i--) if (e >= ENERGY_RANKS[i].min) return { rank: ENERGY_RANKS[i], index: i };
+  return { rank: ENERGY_RANKS[0], index: 0 };
+}
+function renderEnergy() {
+  const st = energyState();
+  const { rank, index } = rankForEnergy(st.energy);
+  const next = ENERGY_RANKS[index + 1] || null;
+  const base = rank.min <= 1 ? 0 : rank.min;
+  const shield = $('ercShield');
+  if (shield) shield.style.background = `linear-gradient(150deg, ${rank.c[0]}, ${rank.c[1]})`;
+  const set = (id, t) => { const el = $(id); if (el) el.textContent = t; };
+  set('ercRankName', rank.name);
+  set('ercEnergy', fmt(st.energy));
+  set('eecMeta', `Energy: ${fmt(st.energy)}`);
+  const fill = $('ercBarFill');
+  if (next) {
+    const pct = Math.max(0, Math.min(100, ((st.energy - base) / (next.min - base)) * 100));
+    if (fill) fill.style.width = pct + '%';
+    set('ercNext', `Next rank: ${next.name}`);
+    set('ercRange', `${fmt(st.energy)} / ${fmt(next.min)}`);
+  } else {
+    if (fill) fill.style.width = '100%';
+    set('ercNext', 'Max rank reached 🏆');
+    set('ercRange', `${fmt(st.energy)} Energy`);
+  }
+  const grid = $('energyRanksGrid');
+  if (grid) grid.innerHTML = ENERGY_RANKS.map((rk, i) => `
+    <div class="energy-rank ${i === index ? 'current' : ''}">
+      <div class="er-badge" style="background:linear-gradient(150deg,${rk.c[0]},${rk.c[1]})">D</div>
+      <div class="er-name">${rk.name.replace('Deltix ', '')}</div>
+      <div class="er-range">${rk.max === Infinity ? rk.min + '+' : rk.min + '\u2013' + rk.max}</div>
+      <div class="er-rate">+1 Energy / Ad</div>
+    </div>`).join('');
+  set('efStreakSub', st.streak > 0 ? `${st.streak}-day streak 🔥` : 'Build streaks, earn bonus Energy');
+}
+async function earnEnergy(btn) {
+  if (window.ADS_ENABLED === false) { toast('Ads are temporarily unavailable — please try again later.'); return; }
+  if (btn) btn.disabled = true;
+  try {
+    const earned = await playRewardedAd();
+    if (!earned) { toast('Ad not completed — no Energy earned.'); return; }
+    const st = energyState();
+    const today = new Date().toISOString().slice(0, 10);
+    if (st.last !== today) {
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const streak = st.last === yesterday ? st.streak + 1 : 1;
+      localStorage.setItem('dltx_energy_streak', String(streak));
+      localStorage.setItem('dltx_energy_last', today);
+    }
+    localStorage.setItem('dltx_energy', String(st.energy + 1));
+    renderEnergy();
+    toast('+1 Energy ⚡');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+$('energyEarnBtn')?.addEventListener('click', (e) => earnEnergy(e.currentTarget));
+$('energyWatchBtn')?.addEventListener('click', (e) => earnEnergy(e.currentTarget));
+document.querySelectorAll('.energy-feat').forEach((c) =>
+  c.addEventListener('click', () => {
+    if (c.dataset.ef === 'streak') {
+      const st = energyState();
+      toast(st.streak > 0 ? `You're on a ${st.streak}-day streak 🔥` : 'Watch an ad today to start your streak!');
+    } else {
+      toast('Coming soon 🚀');
+    }
+  })
+);
 
 /** Opt-in rewarded ad. Resolves true only on the SDK's own reward callback.
  *  Rewards must stay non-transferable in-app benefits (never $DLTX). */

@@ -1240,6 +1240,73 @@ body.has-ad-banner .tabbar {
   transform: translateY(-2px) scale(1.08);
 }
 
+/* ---------- Deltix Energy ---------- */
+.energy-hero {
+  border-radius: 20px; padding: 24px 18px; margin-bottom: 14px; text-align: center; color: #fff;
+  background: linear-gradient(135deg, #0b1e5b 0%, #1d4ed8 55%, #3b82f6 100%);
+  box-shadow: 0 12px 30px rgba(29, 78, 216, .28);
+}
+.energy-hero-bolt { font-size: 34px; filter: drop-shadow(0 2px 6px rgba(0,0,0,.3)); }
+.energy-hero-title { font-size: 30px; font-weight: 900; letter-spacing: .5px; line-height: 1; margin-top: 2px; }
+.energy-hero-title span { color: #7dd3fc; }
+.energy-hero-sub { font-size: 12px; opacity: .85; margin-top: 8px; }
+
+.energy-rank-card {
+  display: flex; align-items: center; gap: 12px; padding: 16px; border-radius: 18px; margin-bottom: 12px;
+  background: linear-gradient(150deg, #0f172a, #16204a); color: #fff; box-shadow: var(--shadow);
+}
+.erc-shield {
+  width: 50px; height: 58px; flex: none; display: grid; place-items: center;
+  font-weight: 900; font-size: 22px; color: #fff;
+  background: linear-gradient(150deg, #fbbf24, #b45309);
+  clip-path: polygon(50% 0, 100% 18%, 100% 70%, 50% 100%, 0 70%, 0 18%);
+  box-shadow: 0 4px 12px rgba(0,0,0,.35);
+}
+.erc-main { flex: 1; min-width: 0; }
+.erc-rank { font-weight: 800; font-size: 15px; }
+.erc-energy { font-size: 13px; color: #cbd5e1; margin: 2px 0 4px; }
+.erc-energy b { color: #38bdf8; font-size: 16px; }
+.erc-next { font-size: 11px; color: #94a3b8; }
+.erc-bar { height: 8px; border-radius: 999px; background: rgba(255,255,255,.12); margin: 6px 0 3px; overflow: hidden; }
+.erc-bar-fill { height: 100%; border-radius: 999px; width: 0; background: linear-gradient(90deg, #38bdf8, #2563eb); transition: width .4s ease; }
+.erc-range { font-size: 10.5px; color: #94a3b8; }
+.erc-earn {
+  flex: none; align-self: stretch; border: none; cursor: pointer; border-radius: 14px;
+  padding: 10px 12px; max-width: 96px; font-weight: 800; font-size: 12px; color: #fff;
+  background: linear-gradient(150deg, #2563eb, #1e3a8a); box-shadow: 0 4px 12px rgba(37, 99, 235, .4);
+}
+.erc-earn:disabled { opacity: .5; cursor: default; }
+
+.energy-earn-card { display: flex; align-items: center; gap: 12px; }
+.eec-badge { position: relative; font-size: 26px; flex: none; }
+.eec-badge span { position: absolute; right: -8px; bottom: -4px; background: #16a34a; color: #fff; font-size: 10px; font-weight: 800; border-radius: 999px; padding: 1px 5px; }
+.eec-body { flex: 1; min-width: 0; }
+.eec-title { font-weight: 700; font-size: 14px; }
+.eec-meta { font-size: 12px; color: var(--muted); }
+
+.energy-ranks-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 8px; }
+.energy-rank { border: 1px solid var(--border); border-radius: 14px; padding: 12px 10px; text-align: center; background: var(--panel-2); }
+.energy-rank.current { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
+.energy-rank .er-badge { width: 30px; height: 34px; margin: 0 auto 6px; display: grid; place-items: center; font-weight: 900; color: #fff; font-size: 13px; clip-path: polygon(50% 0, 100% 18%, 100% 70%, 50% 100%, 0 70%, 0 18%); }
+.energy-rank .er-name { font-weight: 800; font-size: 12px; }
+.energy-rank .er-range { font-size: 11px; color: var(--muted); margin: 2px 0 4px; }
+.energy-rank .er-rate { font-size: 10px; color: var(--accent); font-weight: 700; }
+
+.energy-features { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 14px; }
+.energy-feat { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: var(--panel); cursor: pointer; }
+.energy-feat .ef-ic { font-size: 20px; }
+.energy-feat .ef-name { font-weight: 800; font-size: 12.5px; margin-top: 4px; }
+.energy-feat .ef-sub { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+
+.energy-disclaimer { margin: 16px 4px 4px; font-size: 11px; color: var(--muted); text-align: center; background: var(--panel-2); border-radius: 12px; padding: 10px; }
+
+.slot-count { font-size: 12px; color: var(--muted); align-self: center; margin-left: 8px; }
+
+/* 7-item bottom nav — tighten so labels fit */
+.tabbar { padding-left: 2px; padding-right: 2px; }
+.nav-3d-icon { width: 26px; height: 26px; }
+.tabbtn span { font-size: 8.7px; }
+
 #screen-main.active {
   display: flex;
   padding-bottom: 96px;
