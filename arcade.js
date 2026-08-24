@@ -2476,15 +2476,15 @@ GAME_IMPL.soccer = (mount, diff, finish, status) => {
     ctx.strokeStyle = 'rgba(248,250,252,.35)'; ctx.lineWidth = 1; // net
     for (let x = GL + 14; x < GR; x += 14) { ctx.beginPath(); ctx.moveTo(x, GT); ctx.lineTo(x, GB); ctx.stroke(); }
     for (let y = GT + 12; y < GB; y += 12) { ctx.beginPath(); ctx.moveTo(GL, y); ctx.lineTo(GR, y); ctx.stroke(); }
-    // round pips
-    for (let i = 0; i < Math.max(rounds, results.length + (round > results.length ? 1 : 0)); i++) {
+    // shot pips (single row — you take every kick)
+    for (let i = 0; i < rounds; i++) {
       const r = results[i];
-      ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
-      ctx.fillStyle = '#dbeafe'; ctx.fillText(r ? r.me : '·', 14 + i * 16, 14);
-      ctx.fillStyle = '#fecaca'; ctx.fillText(r ? r.dario : '·', 14 + i * 16, H - 5);
+      ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillStyle = r ? (r.me === '⚽' ? '#bbf7d0' : '#fecaca') : '#4b5563';
+      ctx.fillText(r ? r.me : '·', 14 + i * 16, H - 6);
     }
     ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'right'; ctx.fillStyle = '#f8fafc';
-    ctx.fillText(`You ${myGoals} — ${dGoals} Dario`, W - 8, 14);
+    ctx.fillText(`Goals ${myGoals}/${target}`, W - 8, 14);
     if (scene.keeper) drawKeeper(scene.keeper.x, scene.keeper.tilt, phase.startsWith('defend') ? '#1f66f2' : '#dc2626');
     if (scene.dario) { // striker figure at run-up
       ctx.fillStyle = '#dc2626';
@@ -2509,16 +2509,14 @@ GAME_IMPL.soccer = (mount, diff, finish, status) => {
   }
   function loop() { if (over) return; draw(); raf = requestAnimationFrame(loop); }
 
-  function roundLabel() { return round <= rounds ? `round ${round}/${rounds}` : `sudden death ${round - rounds}`; }
+  const target = diff === 'hard' ? 4 : 3; // goals needed to win the shootout
+  function roundLabel() { return `shot ${round}/${rounds}`; }
   function checkEnd() {
     const played = results.length;
-    if (played >= rounds) {
-      if (myGoals !== dGoals) return finishUp(myGoals > dGoals);
-    } else { // decided early? (remaining rounds can't change it)
-      const left = rounds - played;
-      if (myGoals > dGoals + left) return finishUp(true);
-      if (dGoals > myGoals + left) return finishUp(false);
-    }
+    const left = rounds - played;
+    if (myGoals >= target) return finishUp(true);
+    if (myGoals + left < target) return finishUp(false);
+    if (played >= rounds) return finishUp(myGoals >= target);
     round++;
     startShoot();
   }
@@ -2535,7 +2533,7 @@ GAME_IMPL.soccer = (mount, diff, finish, status) => {
   function startShoot() {
     phase = 'shoot';
     scene = { ball: { x: W / 2, y: H - 32 }, keeper: { x: W / 2, tilt: 0 }, dario: null, cue: null, text: null };
-    status(`${roundLabel()} — tap inside the goal to place your shot`);
+    status(`${roundLabel()} — tap inside the goal (need ${target} of ${rounds})`);
   }
   function takeShot(px, py) {
     phase = 'shootAnim';
@@ -2562,8 +2560,8 @@ GAME_IMPL.soccer = (mount, diff, finish, status) => {
       scene.textCol = goal ? '#16a34a' : '#f87171';
       if (goal) myGoals++;
       results[round - 1] = { me: goal ? '⚽' : '✕', dario: '·' };
-      status(`${scene.text} You ${myGoals} — ${dGoals} Dario`);
-      later(startDefend, 950);
+      status(`${scene.text} — ${myGoals}/${target} goals`);
+      later(checkEnd, 950);
     })();
   }
 
@@ -2629,7 +2627,7 @@ GAME_IMPL.soccer = (mount, diff, finish, status) => {
       status(`Diving ${['LEFT', 'MIDDLE', 'RIGHT'][diveChoice]}…`);
     }
   });
-  status(`First to lead after ${rounds} rounds wins — you shoot, then you defend`);
+  status(`Score ${target} of ${rounds} penalties to win — you take every kick`);
   startShoot();
   loop();
   return () => { over = true; cancelAnimationFrame(raf); timers.forEach(clearTimeout); };
