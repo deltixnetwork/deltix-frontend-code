@@ -1566,8 +1566,11 @@ const ADMOB_INTERSTITIAL_ID = 'ca-app-pub-6703659529197503/1357931192';
 // Rewarded unit: used ONLY for non-transferable cosmetics (premium avatar
 // unlocks) — never $DLTX, which is P2P-transferable (AdMob rewarded-ad policy).
 const ADMOB_REWARDED_ID = 'ca-app-pub-6703659529197503/5850926156';
-const ADS_ENABLED = false; // policy hold default: ship ad-free unless explicitly re-enabled
-const ADMOB_TESTING = false; // PRODUCTION BUILD: live AdMob creatives — flip to true for test-ads builds
+// UX decision: disable all bottom banner placements (persistent footer + game-over MREC)
+// and keep only interstitial + rewarded formats.
+const BANNER_ADS_ENABLED = false;
+const ADS_ENABLED = false; // AD-FREE BUILD: shipped while AdMob serving is limited
+const ADMOB_TESTING = false; // PRODUCTION BUILD: live AdMob creatives
 window.ADS_ENABLED = ADS_ENABLED;
 let adsReady = false;
 let gamesSinceInterstitial = 0;
@@ -1604,6 +1607,15 @@ async function updateTabAd(tabId) {
   if (tabId) currentTabId = tabId;
   const cap = window.Capacitor;
   if (!adsReady || !cap || !cap.Plugins || !cap.Plugins.AdMob) return;
+
+  if (!BANNER_ADS_ENABLED) {
+    try {
+      await cap.Plugins.AdMob.hideBanner();
+      shownBannerSize = null;
+      document.body.classList.remove('has-ad-banner');
+    } catch {}
+    return;
+  }
 
   const isMainScreen = document.getElementById('screen-main')?.classList.contains('active');
   const isOverlayOpen = (!document.getElementById('dbrowser')?.hidden) ||
@@ -1650,6 +1662,7 @@ async function showBannerAd(adSize) {
 
 /** Medium-rectangle banner shown only on the game-over screen. */
 async function showGameOverAd() {
+  if (!BANNER_ADS_ENABLED) return;
   const cap = window.Capacitor;
   if (!adsReady || !cap?.Plugins?.AdMob) return;
   try {
@@ -1728,11 +1741,17 @@ function renderEnergy() {
     </div>`).join('');
   set('efStreakSub', st.streak > 0 ? `${st.streak}-day streak 🔥` : 'Build streaks, earn bonus Energy');
 }
+// Rewarded ads may not be requested back-to-back — enforce a 30s gap between views.
+const ENERGY_AD_COOLDOWN_MS = 30000;
+let lastEnergyAdAt = 0;
 async function earnEnergy(btn) {
   if (window.ADS_ENABLED === false) { toast('Ads are temporarily unavailable — please try again later.'); return; }
+  const waitMs = ENERGY_AD_COOLDOWN_MS - (Date.now() - lastEnergyAdAt);
+  if (waitMs > 0) { toast(`Please wait ${Math.ceil(waitMs / 1000)}s before the next ad.`); return; }
   if (btn) btn.disabled = true;
   try {
     const earned = await playRewardedAd();
+    if (earned) lastEnergyAdAt = Date.now();
     if (!earned) { toast('Ad not completed — no Energy earned.'); return; }
     const st = energyState();
     const today = new Date().toISOString().slice(0, 10);
