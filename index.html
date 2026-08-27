@@ -12,12 +12,21 @@
 </head>
 <body>
   <div id="app" class="phone">
+    <!-- Pull / Slide to refresh indicator -->
+    <div class="ptr-indicator" id="ptrIndicator" aria-live="polite">
+      <div class="ptr-pill">
+        <span class="ptr-icon" id="ptrIcon">↓</span>
+        <span class="ptr-text" id="ptrText">Slide to refresh</span>
+      </div>
+    </div>
+
     <!-- Top bar -->
     <header class="topbar" id="topbar" hidden>
       <div class="brand">
         <span class="logo">◆</span> Deltix
       </div>
       <div class="topbar-right">
+        <button class="refresh-btn" id="refreshBtn" title="Refresh data" aria-label="Refresh">↻</button>
         <button class="logout-btn" id="logoutBtn" title="Sign out of your account">Sign out</button>
       </div>
     </header>

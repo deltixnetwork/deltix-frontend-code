@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.2.4';
+const APP_VERSION = '1.2.5';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -111,10 +111,27 @@ async function checkAppVersion() {
   }
   return true;
 }
-// Re-check whenever the app returns to the foreground.
+// Re-check whenever the app returns to the foreground, and auto-refresh active tab data.
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) checkAppVersion();
+  if (!document.hidden) {
+    checkAppVersion();
+    if (state.token && $('screen-main')?.classList.contains('active')) {
+      refreshCurrentView({ silent: true });
+    }
+  }
 });
+
+// Capacitor native app lifecycle resume
+try {
+  window.Capacitor?.Plugins?.App?.addListener('appStateChange', ({ isActive }) => {
+    if (isActive) {
+      checkAppVersion();
+      if (state.token && $('screen-main')?.classList.contains('active')) {
+        refreshCurrentView({ silent: true });
+      }
+    }
+  });
+} catch {}
 
 // ---------- UI helpers ----------
 function showScreen(id) {
@@ -131,15 +148,192 @@ function showScreen(id) {
     updateTabAd();
   }
 }
-function showTab(id) {
+
+function showTab(id, { refresh = true } = {}) {
   document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
   $(id).classList.add('active');
   document.querySelectorAll('.tabbtn').forEach((b) =>
     b.classList.toggle('active', b.dataset.tab === id)
   );
   updateTabAd(id);
-  if (id === 'tab-energy') renderEnergy();
+  if (id === 'tab-energy') {
+    renderEnergy();
+  } else if (refresh && state.token) {
+    refreshTabContent(id);
+  }
 }
+
+function refreshTabContent(id) {
+  if (id === 'tab-wallet') {
+    Promise.allSettled([loadWallet(), loadTx(), loadStats()]);
+  } else if (id === 'tab-stake') {
+    Promise.allSettled([loadWallet(), loadStakes(), loadValidators()]);
+  } else if (id === 'tab-arcade') {
+    if (typeof loadArcade === 'function') loadArcade().catch(() => {});
+  } else if (id === 'tab-community') {
+    Promise.allSettled([loadGovernance(), loadReferrals()]);
+  } else if (id === 'tab-network') {
+    Promise.allSettled([loadChain(), loadStats()]);
+  }
+}
+
+let isRefreshing = false;
+async function refreshCurrentView({ isPull = false, silent = false } = {}) {
+  if (isRefreshing || !state.token) return;
+  isRefreshing = true;
+  const refreshBtn = $('refreshBtn');
+  if (refreshBtn) refreshBtn.classList.add('spinning');
+
+  const activeTab = document.querySelector('.tab.active')?.id || 'tab-wallet';
+  const tasks = [loadWallet(), loadStats()];
+
+  if (activeTab === 'tab-wallet') {
+    tasks.push(loadTx(), loadStakes());
+  } else if (activeTab === 'tab-stake') {
+    tasks.push(loadStakes(), loadValidators());
+  } else if (activeTab === 'tab-community') {
+    tasks.push(loadGovernance(), loadReferrals());
+  } else if (activeTab === 'tab-arcade') {
+    if (typeof loadArcade === 'function') tasks.push(loadArcade());
+  } else if (activeTab === 'tab-network') {
+    tasks.push(loadChain());
+  } else if (activeTab === 'tab-energy') {
+    renderEnergy();
+  }
+
+  try {
+    await Promise.allSettled(tasks);
+    if (!silent && !isPull) toast('Updated');
+  } catch {
+    /* errors handled in individual loaders */
+  } finally {
+    isRefreshing = false;
+    if (refreshBtn) refreshBtn.classList.remove('spinning');
+  }
+}
+
+// ---------- Pull / Slide to Refresh (mobile touch + gesture) ----------
+function initPullToRefresh() {
+  const ptr = $('ptrIndicator');
+  const icon = $('ptrIcon');
+  const text = $('ptrText');
+  if (!ptr || !icon || !text) return;
+
+  let startY = 0;
+  let startX = 0;
+  let isTracking = false;
+  let isPulling = false;
+  const PULL_THRESHOLD = 58;
+  const MAX_PULL = 84;
+
+  function isEligible() {
+    const isMain = $('screen-main')?.classList.contains('active');
+    if (!isMain || !state.token || isRefreshing) return false;
+
+    // Must not have any modal/overlay open
+    const overlays = ['gameModal', 'dbrowser', 'explorer', 'dappPage', 'stakeModal', 'sendModal', 'deleteModal', 'swapModal', 'dappModal'];
+    for (const id of overlays) {
+      const el = $(id);
+      if (el && !el.hidden) return false;
+    }
+
+    const scrollTop = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+    return scrollTop <= 1;
+  }
+
+  document.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    if (!isEligible()) return;
+    startY = e.touches[0].screenY;
+    startX = e.touches[0].screenX;
+    isTracking = true;
+    isPulling = false;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    if (!isTracking || isRefreshing) return;
+    if (e.touches.length !== 1) return;
+
+    const touchY = e.touches[0].screenY;
+    const touchX = e.touches[0].screenX;
+    const deltaY = touchY - startY;
+    const deltaX = Math.abs(touchX - startX);
+
+    // Cancel if pulling up or horizontal swipe
+    if (deltaY <= 0 || deltaX > deltaY) {
+      isTracking = false;
+      resetPtr();
+      return;
+    }
+
+    const scrollTop = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+    if (scrollTop > 1) {
+      isTracking = false;
+      resetPtr();
+      return;
+    }
+
+    isPulling = true;
+    const pullDistance = Math.min(MAX_PULL, deltaY * 0.45);
+    ptr.style.height = `${pullDistance}px`;
+    ptr.classList.add('pulling');
+    ptr.classList.remove('resetting');
+
+    if (pullDistance >= PULL_THRESHOLD) {
+      ptr.classList.add('ready');
+      icon.textContent = '↑';
+      text.textContent = 'Release to refresh';
+    } else {
+      ptr.classList.remove('ready');
+      icon.textContent = '↓';
+      text.textContent = 'Slide to refresh';
+    }
+  }, { passive: true });
+
+  async function handleEnd() {
+    if (!isTracking && !isPulling) return;
+    const wasPulling = isPulling;
+    const isReady = ptr.classList.contains('ready');
+    isTracking = false;
+    isPulling = false;
+
+    if (wasPulling && isReady && !isRefreshing) {
+      ptr.classList.remove('pulling', 'ready');
+      ptr.classList.add('refreshing');
+      ptr.style.height = '48px';
+      icon.textContent = '↻';
+      text.textContent = 'Refreshing…';
+
+      try {
+        window.Capacitor?.Plugins?.Haptics?.impact?.({ style: 'Light' });
+      } catch {}
+
+      await refreshCurrentView({ isPull: true });
+
+      icon.textContent = '✓';
+      text.textContent = 'Refreshed';
+      setTimeout(resetPtr, 350);
+    } else {
+      resetPtr();
+    }
+  }
+
+  function resetPtr() {
+    ptr.classList.remove('pulling', 'ready', 'refreshing');
+    ptr.classList.add('resetting');
+    ptr.style.height = '0px';
+    setTimeout(() => {
+      ptr.classList.remove('resetting');
+      icon.textContent = '↓';
+      text.textContent = 'Slide to refresh';
+    }, 280);
+  }
+
+  document.addEventListener('touchend', handleEnd, { passive: true });
+  document.addEventListener('touchcancel', resetPtr, { passive: true });
+}
+
+$('refreshBtn')?.addEventListener('click', () => refreshCurrentView());
 let toastTimer;
 function toast(msg) {
   const t = $('toast');
@@ -272,7 +466,7 @@ document.querySelectorAll('.tabbtn').forEach((b) =>
 // ---------- Data loading ----------
 async function enterApp() {
   showScreen('screen-main');
-  showTab('tab-wallet');
+  showTab('tab-wallet', { refresh: false });
   // Recover the email from the JWT for sessions that signed in before we
   // started persisting it (so the profile never shows a blank email).
   if (!state.email && state.token) {
@@ -280,7 +474,17 @@ async function enterApp() {
     if (state.email) localStorage.setItem('dltx_email', state.email);
   }
   renderProfile();
-  await Promise.all([loadWallet(), loadStats(), loadValidators(), loadStakes(), loadTx(), loadReferrals(), loadGovernance(), loadChain(), loadArcade()]);
+  await Promise.allSettled([
+    loadWallet(),
+    loadStats(),
+    loadValidators(),
+    loadStakes(),
+    loadTx(),
+    loadReferrals(),
+    loadGovernance(),
+    loadChain(),
+    typeof loadArcade === 'function' ? loadArcade() : Promise.resolve(),
+  ]);
 }
 
 /** Extracts the email claim from the JWT payload (no verification needed). */
@@ -436,13 +640,14 @@ async function loadWallet() {
     state.balances = w;
     renderBalances();
     const addr = $('walletAddress');
-    addr.onclick = () => {
-      navigator.clipboard?.writeText(state.address);
-      toast('Address copied');
-    };
+    if (addr) {
+      addr.onclick = () => {
+        navigator.clipboard?.writeText(state.address);
+        toast('Address copied');
+      };
+    }
   } catch (e) {
-    if (/token/i.test(e.message)) return $('logoutBtn').click();
-    toast(e.message);
+    console.warn('loadWallet:', e.message);
   }
 }
 
@@ -513,104 +718,119 @@ async function loadStats() {
 }
 
 async function loadValidators() {
-  const r = await api('GET', '/network/validators');
-  state.validators = r.validators;
-  const list = $('validatorList');
-  list.innerHTML = r.validators
-    .map((v, i) => {
-      const apy = (0.08 * (1 - v.commission) * 100).toFixed(1);
-      const shield = getValidatorShield(v.name, i);
-      return `
-      <div class="validator-card-3d">
-        <div class="val-left">
-          <img src="${shield}" class="val-3d-shield" alt="Shield"/>
-          <div class="val-info">
-            <div class="val-title-row">
-              <span class="val-name ${v.name.toLowerCase().includes('genesis') ? 'genesis-txt' : ''}">${v.name}</span>
-              <span class="timer-badge">● ${v.uptime}% uptime</span>
+  try {
+    const r = await api('GET', '/network/validators');
+    state.validators = r.validators || [];
+    const list = $('validatorList');
+    if (!list) return;
+    list.innerHTML = state.validators
+      .map((v, i) => {
+        const apy = (0.08 * (1 - v.commission) * 100).toFixed(1);
+        const shield = getValidatorShield(v.name, i);
+        return `
+        <div class="validator-card-3d">
+          <div class="val-left">
+            <img src="${shield}" class="val-3d-shield" alt="Shield"/>
+            <div class="val-info">
+              <div class="val-title-row">
+                <span class="val-name ${v.name.toLowerCase().includes('genesis') ? 'genesis-txt' : ''}">${v.name}</span>
+                <span class="timer-badge">● ${v.uptime}% uptime</span>
+              </div>
+              <div class="meta">Commission ${(v.commission * 100).toFixed(0)}% · Staked ${fmt(v.total_staked)} $DLTX</div>
             </div>
-            <div class="meta">Commission ${(v.commission * 100).toFixed(0)}% · Staked ${fmt(v.total_staked)} $DLTX</div>
           </div>
-        </div>
-        <div class="val-actions-col">
-          <span class="apy-badge-red">~${apy}% APY</span>
-          <button class="delegate-btn-red" data-validator="${v.id}" data-name="${v.name}">Delegate</button>
-        </div>
-      </div>`;
-    })
-    .join('');
-  list.querySelectorAll('[data-validator]').forEach((btn) =>
-    btn.addEventListener('click', () => openStakeModal(btn.dataset.validator, btn.dataset.name))
-  );
+          <div class="val-actions-col">
+            <span class="apy-badge-red">~${apy}% APY</span>
+            <button class="delegate-btn-red" data-validator="${v.id}" data-name="${v.name}">Delegate</button>
+          </div>
+        </div>`;
+      })
+      .join('');
+    list.querySelectorAll('[data-validator]').forEach((btn) =>
+      btn.addEventListener('click', () => openStakeModal(btn.dataset.validator, btn.dataset.name))
+    );
+  } catch (e) {
+    /* non-critical; ignore */
+  }
 }
 
 async function loadStakes() {
-  const r = await api('GET', '/staking');
-  const el = $('myStakes');
-  const active = r.stakes.filter((s) => s.status === 'active');
-  if (!active.length) {
-    el.innerHTML = '<p class="muted center">You have no active stakes.</p>';
-    return;
-  }
-  el.innerHTML = active
-    .map(
-      (s, i) => {
-        const shield = getValidatorShield(s.validator, i);
-        return `
-    <div class="stake-card-3d">
-      <div class="stake-card-top">
-        <img src="${shield}" class="stake-3d-shield" alt="Shield"/>
-        <div class="stake-info">
-          <div class="stake-title-row">
-            <span class="stake-val-name">${s.validator}</span>
-            <span class="timer-badge">${s.startedAt ? 'Since ' + new Date(s.startedAt).toLocaleDateString() : 'Active'}</span>
+  try {
+    const r = await api('GET', '/staking');
+    const el = $('myStakes');
+    if (!el) return;
+    const active = (r.stakes || []).filter((s) => s.status === 'active');
+    if (!active.length) {
+      el.innerHTML = '<p class="muted center">You have no active stakes.</p>';
+      return;
+    }
+    el.innerHTML = active
+      .map(
+        (s, i) => {
+          const shield = getValidatorShield(s.validator, i);
+          return `
+      <div class="stake-card-3d">
+        <div class="stake-card-top">
+          <img src="${shield}" class="stake-3d-shield" alt="Shield"/>
+          <div class="stake-info">
+            <div class="stake-title-row">
+              <span class="stake-val-name">${s.validator}</span>
+              <span class="timer-badge">${s.startedAt ? 'Since ' + new Date(s.startedAt).toLocaleDateString() : 'Active'}</span>
+            </div>
+            <div class="meta">${fmt(s.amount)} $DLTX · ${(s.apy * 100).toFixed(1)}% APY · x${s.multiplier.toFixed(2)}</div>
+            <div class="stake-rewards-txt">Rewards: ${fmt(s.pendingRewards)} $DLTX</div>
           </div>
-          <div class="meta">${fmt(s.amount)} $DLTX · ${(s.apy * 100).toFixed(1)}% APY · x${s.multiplier.toFixed(2)}</div>
-          <div class="stake-rewards-txt">Rewards: ${fmt(s.pendingRewards)} $DLTX</div>
+          <img src="assets/chips-stack.svg" class="stake-3d-chips" alt="Chips"/>
         </div>
-        <img src="assets/chips-stack.svg" class="stake-3d-chips" alt="Chips"/>
-      </div>
-      <div class="stake-actions-row">
-        <button class="stake-action-btn ghost" data-claim="${s.id}">Claim</button>
-        <button class="stake-action-btn primary" data-unstake="${s.id}">Unstake</button>
-      </div>
-    </div>`;
-      }
-    )
-    .join('');
-  el.querySelectorAll('[data-claim]').forEach((b) =>
-    b.addEventListener('click', () => claim(b.dataset.claim))
-  );
-  el.querySelectorAll('[data-unstake]').forEach((b) =>
-    b.addEventListener('click', () => unstake(b.dataset.unstake))
-  );
+        <div class="stake-actions-row">
+          <button class="stake-action-btn ghost" data-claim="${s.id}">Claim</button>
+          <button class="stake-action-btn primary" data-unstake="${s.id}">Unstake</button>
+        </div>
+      </div>`;
+        }
+      )
+      .join('');
+    el.querySelectorAll('[data-claim]').forEach((b) =>
+      b.addEventListener('click', () => claim(b.dataset.claim))
+    );
+    el.querySelectorAll('[data-unstake]').forEach((b) =>
+      b.addEventListener('click', () => unstake(b.dataset.unstake))
+    );
+  } catch (e) {
+    /* non-critical; ignore */
+  }
 }
 
 async function loadTx() {
-  const r = await api('GET', '/wallet/transactions');
-  state.txs = r.transactions;
-  const el = $('txList');
-  if (!r.transactions.length) {
-    el.innerHTML = '<p class="muted center">No activity yet.</p>';
-    return;
+  try {
+    const r = await api('GET', '/wallet/transactions');
+    state.txs = r.transactions || [];
+    const el = $('txList');
+    if (!el) return;
+    if (!state.txs.length) {
+      el.innerHTML = '<p class="muted center">No activity yet.</p>';
+      return;
+    }
+    const negatives = ['stake', 'send', 'treasury_burn'];
+    el.innerHTML = state.txs
+      .map((t, i) => {
+        const neg = negatives.includes(t.type);
+        const cls = neg ? 'minus' : 'plus';
+        const sign = neg ? '−' : '+';
+        const date = new Date(t.created_at).toLocaleString();
+        return `
+        <div class="tx clickable" data-txi="${i}" title="Inspect transaction">
+          <div><div class="type">${t.type.replace(/_/g, ' ')}</div><div class="date">${date}</div></div>
+          <div class="amt ${cls}">${sign}${fmt(t.amount)}</div>
+        </div>`;
+      })
+      .join('');
+    el.querySelectorAll('[data-txi]').forEach((row) =>
+      row.addEventListener('click', () => openExplorer({ v: 'wtx', tx: state.txs[Number(row.dataset.txi)] }))
+    );
+  } catch (e) {
+    /* non-critical; ignore */
   }
-  const negatives = ['stake', 'send', 'treasury_burn'];
-  el.innerHTML = r.transactions
-    .map((t, i) => {
-      const neg = negatives.includes(t.type);
-      const cls = neg ? 'minus' : 'plus';
-      const sign = neg ? '−' : '+';
-      const date = new Date(t.created_at).toLocaleString();
-      return `
-      <div class="tx clickable" data-txi="${i}" title="Inspect transaction">
-        <div><div class="type">${t.type.replace(/_/g, ' ')}</div><div class="date">${date}</div></div>
-        <div class="amt ${cls}">${sign}${fmt(t.amount)}</div>
-      </div>`;
-    })
-    .join('');
-  el.querySelectorAll('[data-txi]').forEach((row) =>
-    row.addEventListener('click', () => openExplorer({ v: 'wtx', tx: state.txs[Number(row.dataset.txi)] }))
-  );
 }
 
 // ---------- Referrals + Ambassador program ----------
@@ -1569,7 +1789,7 @@ const ADMOB_REWARDED_ID = 'ca-app-pub-6703659529197503/5850926156';
 // UX decision: disable all bottom banner placements (persistent footer + game-over MREC)
 // and keep only interstitial + rewarded formats.
 const BANNER_ADS_ENABLED = false;
-const ADS_ENABLED = false; // AD-FREE BUILD: shipped while AdMob serving is limited
+const ADS_ENABLED = true; // ADS ENABLED: interstitial + rewarded (Energy/cosmetics) live
 const ADMOB_TESTING = false; // PRODUCTION BUILD: live AdMob creatives
 window.ADS_ENABLED = ADS_ENABLED;
 let adsReady = false;
@@ -1860,13 +2080,23 @@ window.addEventListener('popstate', () => {
 (async function boot() {
   if (!(await checkAppVersion())) return; // outdated client — blocked until update
   initAds();
+  initPullToRefresh();
   if (state.token) {
     try {
       await enterApp();
       return;
-    } catch {
-      localStorage.removeItem('dltx_token');
-      state.token = null;
+    } catch (err) {
+      console.warn('Initial app boot load encountered an error:', err);
+      // Only wipe the token if api() deemed it 401/expired and cleared state.token.
+      // If state.token is still present (e.g. offline/network glitch on launch), keep
+      // the user signed in on screen-main rather than logging them out.
+      if (state.token) {
+        showScreen('screen-main');
+        showTab('tab-wallet', { refresh: false });
+        renderProfile();
+        toast('Offline mode — slide down to refresh when connected');
+        return;
+      }
     }
   }
   showScreen('screen-email');
