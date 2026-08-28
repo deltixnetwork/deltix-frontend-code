@@ -38,6 +38,60 @@ const ARCADE_3D_IMAGES = {
 
 const arcadeState = { games: [], sessionId: null, currentGame: null, difficulty: 'easy', cleanup: null };
 
+const ArcadeSound = (() => {
+  let ctx = null;
+  let musicTimer = null;
+  let musicStep = 0;
+  const melody = [262, 330, 392, 523, 440, 392, 330, 294];
+  function context() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    return ctx;
+  }
+  function tone(freq, duration, type = 'sine', gain = 0.045, delay = 0) {
+    try {
+      const audio = context();
+      const start = audio.currentTime + delay;
+      const osc = audio.createOscillator();
+      const vol = audio.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, start);
+      vol.gain.setValueAtTime(0.0001, start);
+      vol.gain.exponentialRampToValueAtTime(gain, start + 0.012);
+      vol.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+      osc.connect(vol).connect(audio.destination);
+      osc.start(start);
+      osc.stop(start + duration + 0.02);
+    } catch {
+      /* sound is optional */
+    }
+  }
+  function startMusic() {
+    if (musicTimer) return;
+    musicStep = 0;
+    musicTimer = setInterval(() => {
+      const root = melody[musicStep % melody.length];
+      const harmony = musicStep % 2 === 0 ? root * 1.5 : root * 1.25;
+      tone(root, 0.16, 'triangle', 0.012);
+      tone(harmony, 0.12, 'sine', 0.007, 0.03);
+      musicStep++;
+    }, 420);
+  }
+  function stopMusic() {
+    if (!musicTimer) return;
+    clearInterval(musicTimer);
+    musicTimer = null;
+  }
+  return {
+    tap: () => tone(520, 0.055, 'triangle', 0.028),
+    start: () => { tone(392, 0.08, 'triangle'); tone(588, 0.1, 'triangle', 0.045, 0.08); },
+    win: () => { tone(523, 0.09, 'sine'); tone(659, 0.09, 'sine', 0.045, 0.09); tone(784, 0.16, 'sine', 0.05, 0.18); },
+    lose: () => { tone(330, 0.1, 'sawtooth', 0.028); tone(247, 0.16, 'sawtooth', 0.025, 0.1); },
+    startMusic,
+    stopMusic,
+  };
+})();
+
 // ---------- Arcade tab ----------
 async function loadArcade() {
   try {
@@ -99,6 +153,7 @@ document.querySelectorAll('.diff-btn').forEach((b) =>
 );
 gel('quitGame').addEventListener('click', closeGame);
 function closeGame() {
+  ArcadeSound.stopMusic();
   if (arcadeState.cleanup) arcadeState.cleanup();
   arcadeState.cleanup = null;
   arcadeState.sessionId = null;
@@ -127,7 +182,17 @@ async function startSession() {
   gel('gameArea').hidden = false;
   const mount = gel('gameMount');
   mount.innerHTML = '';
-  arcadeState.cleanup = GAME_IMPL[g.id](mount, arcadeState.difficulty, finishGame, setGameStatus);
+  ArcadeSound.start();
+  ArcadeSound.startMusic();
+  const tapSound = (e) => {
+    if (e.target.closest('button, canvas, .cell')) ArcadeSound.tap();
+  };
+  mount.addEventListener('pointerdown', tapSound, { passive: true });
+  const gameCleanup = GAME_IMPL[g.id](mount, arcadeState.difficulty, finishGame, setGameStatus);
+  arcadeState.cleanup = () => {
+    mount.removeEventListener('pointerdown', tapSound);
+    if (gameCleanup) gameCleanup();
+  };
 }
 
 /** End-of-game actions — always give a way to replay or leave without scrolling hunts. */
@@ -171,6 +236,9 @@ function setGameStatus(text) {
 
 async function finishGame(won, score) {
   if (!arcadeState.sessionId) return;
+  ArcadeSound.stopMusic();
+  if (won) ArcadeSound.win();
+  else ArcadeSound.lose();
   const sessionId = arcadeState.sessionId;
   arcadeState.sessionId = null;
   try {

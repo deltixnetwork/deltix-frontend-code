@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.2.5';
+const APP_VERSION = '1.2.6';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -1909,14 +1909,14 @@ window.hideGameOverAd = hideGameOverAd;
 
 // ---------- Deltix Energy (watch-to-earn status ranks — no monetary value, never $DLTX) ----------
 const ENERGY_RANKS = [
-  { name: 'Deltix Soldier',   min: 1,    max: 49,       c: ['#94a3b8', '#475569'] },
-  { name: 'Deltix Inspector', min: 50,   max: 100,      c: ['#4ade80', '#15803d'] },
-  { name: 'Deltix Guardian',  min: 101,  max: 250,      c: ['#60a5fa', '#1d4ed8'] },
-  { name: 'Deltix Captain',   min: 251,  max: 500,      c: ['#c084fc', '#6d28d9'] },
-  { name: 'Deltix Major',     min: 501,  max: 1000,     c: ['#f87171', '#991b1b'] },
-  { name: 'Deltix Commander', min: 1001, max: 2500,     c: ['#38bdf8', '#1e40af'] },
-  { name: 'Deltix Elite',     min: 2501, max: 4000,     c: ['#f472b6', '#a21caf'] },
-  { name: 'Deltix Legend',    min: 4001, max: Infinity, c: ['#fbbf24', '#b45309'] },
+  { name: 'Deltix Soldier',   min: 1,    max: 49,       asset: '09_soldier_shield.png' },
+  { name: 'Deltix Inspector', min: 50,   max: 100,      asset: '10_inspector_shield.png' },
+  { name: 'Deltix Guardian',  min: 101,  max: 250,      asset: '11_guardian_shield.png' },
+  { name: 'Deltix Captain',   min: 251,  max: 500,      asset: '12_captain_shield.png' },
+  { name: 'Deltix Major',     min: 501,  max: 1000,     asset: '13_major_shield.png' },
+  { name: 'Deltix Commander', min: 1001, max: 2500,     asset: '14_commander_shield.png' },
+  { name: 'Deltix Elite',     min: 2501, max: 4000,     asset: '15_elite_shield.png' },
+  { name: 'Deltix Legend',    min: 4001, max: Infinity, asset: '16_legend_shield.png' },
 ];
 function energyState() {
   return {
@@ -1935,9 +1935,9 @@ function renderEnergy() {
   const next = ENERGY_RANKS[index + 1] || null;
   const base = rank.min <= 1 ? 0 : rank.min;
   const shield = $('ercShield');
-  if (shield) shield.style.background = `linear-gradient(150deg, ${rank.c[0]}, ${rank.c[1]})`;
+  if (shield) shield.src = `assets/energy/${rank.asset}`;
   const set = (id, t) => { const el = $(id); if (el) el.textContent = t; };
-  set('ercRankName', rank.name);
+  set('ercRankName', rank.name.toUpperCase());
   set('ercEnergy', fmt(st.energy));
   set('eecMeta', `Energy: ${fmt(st.energy)}`);
   const fill = $('ercBarFill');
@@ -1946,16 +1946,18 @@ function renderEnergy() {
     if (fill) fill.style.width = pct + '%';
     set('ercNext', `Next rank: ${next.name}`);
     set('ercRange', `${fmt(st.energy)} / ${fmt(next.min)}`);
+    set('eecUntil', `${fmt(Math.max(0, next.min - st.energy))} Energy until ${next.name}`);
   } else {
     if (fill) fill.style.width = '100%';
-    set('ercNext', 'Max rank reached 🏆');
+    set('ercNext', 'Max rank reached');
     set('ercRange', `${fmt(st.energy)} Energy`);
+    set('eecUntil', 'Max Energy rank reached');
   }
   const grid = $('energyRanksGrid');
   if (grid) grid.innerHTML = ENERGY_RANKS.map((rk, i) => `
     <div class="energy-rank ${i === index ? 'current' : ''}">
-      <div class="er-badge" style="background:linear-gradient(150deg,${rk.c[0]},${rk.c[1]})">D</div>
-      <div class="er-name">${rk.name.replace('Deltix ', '')}</div>
+      <div class="er-name">${rk.name.replace(' ', '<br>')}</div>
+      <img src="assets/energy/${rk.asset}" class="er-badge" alt="${rk.name}" />
       <div class="er-range">${rk.max === Infinity ? rk.min + '+' : rk.min + '\u2013' + rk.max}</div>
       <div class="er-rate">+1 Energy / Ad</div>
     </div>`).join('');
