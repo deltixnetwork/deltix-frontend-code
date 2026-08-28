@@ -2,7 +2,7 @@
 
 **$DLTX — A Mobile-First Delegated Proof-of-Stake Network**
 
-Version 1.0 · Effective August 4, 2026 · Deltix Network
+Version 1.1 · Effective August 28, 2026 · Deltix Network
 
 ---
 
@@ -22,7 +22,8 @@ Deltix is a standalone network — not a subsidiary token or dependent chain —
 own economic and technical merits.
 
 This paper describes the network's architecture, monetary policy, staking mechanics, fee-burn model,
-referral and ambassador programs, security model, governance roadmap, and sustainability strategy.
+referral and ambassador programs, security model, governance roadmap, sustainability strategy, and a
+plainly stated account of what is **delivered today** versus what remains **planned** (§13).
 
 ---
 
@@ -143,6 +144,8 @@ tiers — that Ethereum itself does not have.
 | Referral activation | Referred user verifies + stakes ≥ 50 $DLTX |
 | Welcome bonus | 50 $DLTX per verified account (100 $DLTX during the launch window), non-transferable |
 | Arcade rewards | 0.05 $DLTX (easy) / 0.1 $DLTX (hard) per win · 10 $DLTX daily cap |
+| Arcade catalogue | 22 original skill games (5 opened with Deltix Energy) |
+| Deltix Energy | 8 non-monetary status ranks · never exchangeable for $DLTX |
 | Ambassador threshold | 3 activated referrals + 500 $DLTX self-staked |
 | Governance | Deltix DAO — stake-weighted voting (1 staked $DLTX = 1 vote), live at genesis |
 | DAO proposal threshold | 100 $DLTX self-staked |
@@ -175,11 +178,11 @@ The application is organized into these surfaces:
 
 1. **Wallet** — balances, send/receive, network snapshot, activity history.
 2. **Stake** — validator directory, delegation, unbonding, reward tracking.
-3. **Arcade** — original skill games with capped daily $DLTX utility rewards (no wagering, no entry fees).
+3. **Arcade** — 22 original skill games with capped daily $DLTX utility rewards (no wagering, no entry fees). Play sessions are opened and settled server-side against a minimum play time, and every reward is recorded on the Deltix chain.
 4. **D-Browser** — a curated, allowlisted gateway to third-party dApps with a security interstitial (HTTPS-only; external sites are never trusted with credentials).
 5. **Community** — the Deltix DAO (proposals and stake-weighted voting), referral code, referral tracking, ambassador tiers.
 6. **Network** — live tokenomics: supply, staked totals, burned totals, participation.
-7. **Deltix Energy** — a non-monetary status system: watch opt-in rewarded ads to earn Energy and climb ranks. Energy has no monetary value and is never $DLTX.
+7. **Deltix Energy** — a non-monetary status system: watch opt-in rewarded ads to earn Energy and climb eight ranks. Energy may be spent to open bonus Arcade games. Energy has no monetary value, is never $DLTX, and can never be transferred, sold, or exchanged.
 
 ---
 
@@ -337,14 +340,14 @@ adjustable by community vote.
 ### 10.3 Expanding Scope of Decentralization
 
 The DAO's voting machinery is live from day one; what expands over time is the **scope of binding
-on-chain control**:
+on-chain control**. These phases map one-to-one onto the delivery phases in §13.2:
 
-| Phase | Scope of DAO control |
-|---|---|
-| **Phase 1 — Live DAO** (current) | Stake-weighted proposals and voting live in-app; parameter changes ratified by community ballot |
-| **Phase 2 — Validator governance** | Validator admission and removal put to DAO vote; proposal timelocks |
-| **Phase 3 — Treasury governance** | Treasury allocation and incentive budgets controlled by DAO vote with public accounting |
-| **Phase 4 — Full decentralization** | Protocol upgrades, parameter changes, and treasury spending controlled entirely by the DAO |
+| Phase | Status | Scope of DAO control |
+|---|---|---|
+| **Phase 1 — Live DAO** | ✅ Delivered | Stake-weighted proposals and voting live in-app; parameter changes ratified by community ballot |
+| **Phase 2 — Validator governance** | ▶ In progress | Validator admission and removal put to DAO vote; proposal timelocks |
+| **Phase 3 — Treasury governance** | ○ Planned | Treasury allocation and incentive budgets controlled by DAO vote with public accounting |
+| **Phase 4 — Full decentralization** | ○ Planned | Protocol upgrades, parameter changes, and treasury spending controlled entirely by the DAO |
 
 ---
 
@@ -353,8 +356,9 @@ on-chain control**:
 - **Key custody:** wallet private keys encrypted at rest (AES-256-GCM); encryption keys never leave the server boundary.
 - **Authentication:** short-lived OTPs delivered by email; signed, expiring session tokens.
 - **Transport:** HTTPS everywhere.
-- **Abuse resistance:** per-IP rate limiting, one-account-per-person policy, Sybil detection, referral-fraud enforcement (§7.6).
-- **Roadmap:** validator slashing, optional self-custody export, third-party security audits before each major decentralization phase.
+- **Client integrity:** Google Play Integrity attestation on account creation and reward settlement, plus a server-side minimum-version gate for retiring unsupported clients.
+- **Abuse resistance:** per-IP rate limiting, disposable-domain and mail-exchange screening, one-account-per-person policy, a non-transferable welcome bonus, Sybil detection, and referral-fraud enforcement (§7.6).
+- **Planned (§13.2, Phase 3):** validator slashing enforcement, optional self-custody export, and an independent third-party security audit before the remaining decentralization phases.
 
 ---
 
@@ -368,16 +372,69 @@ participants the network is trying to serve.
 
 ---
 
-## 13. Roadmap
+## 13. Delivery Status and Roadmap
 
-| Milestone | Scope |
-|---|---|
-| **Launch** (live) | Wallet, staking/delegation, P2P transfers with fee burn, **Deltix DAO with stake-weighted voting**, referral + ambassador programs, D-Browser, public tokenomics |
-| **Growth** | Mobile store releases (Android/iOS), validator set expansion, expanded DAO scope (validator governance) |
-| **Decentralization** | DAO treasury control, slashing, timelocks, security audits |
-| **Ecosystem** | Exchange listings, bridges, expanded dApp directory, developer APIs |
+Deltix publishes what is **actually running** separately from what is **planned**. Everything in
+§13.1 is live in the shipped application today and can be verified inside the app; everything in
+§13.2 is a development objective, not a guarantee.
 
-Roadmap items are development objectives, not guarantees; sequencing may change based on security review and governance input.
+### 13.1 Delivered — Live Today
+
+**Core protocol**
+
+- Genesis supply of 100,000,000 $DLTX with public, real-time supply accounting (issued, staked, burned, circulating).
+- Hash-linked Deltix block ledger with a **public block explorer** that requires no account, and a chain-verification endpoint that re-derives every hash link.
+- Peer-to-peer transfers with the EIP-1559-style base fee **permanently burned** on every transaction.
+- Delegated Proof-of-Stake delegation and unbonding against a published validator directory, with commission and uptime reflected in effective yield.
+
+**Governance**
+
+- The **Deltix DAO is live**: proposal creation above the self-stake threshold, stake-weighted voting, quorum and majority resolution, and public tallies.
+- Genesis ballots DIP-1 (parameter ratification) and DIP-2 (faucet retirement) were opened at launch and DIP-2 has been executed — the faucet is retired and its endpoints now return a permanent retirement response.
+
+**Accounts and community**
+
+- Email-OTP onboarding with a custodial wallet generated at registration, private keys encrypted at rest with AES-256-GCM.
+- Separate **Sign in** and **Sign up** flows; sign-up carries the 18+ and Terms acceptance gate.
+- **Unlimited** single-level referrals with stake-gated activation, plus the ambassador recognition tiers.
+- Self-service **account deletion** with immediate and irreversible erasure.
+
+**Application surfaces**
+
+- All seven surfaces described in §3.3 are shipped: Wallet, Stake, Arcade, D-Browser, Community, Network and Deltix Energy.
+- **22 original Arcade games**, each an in-house implementation of a public-domain game concept, with server-side session settlement, a minimum play time, and a 10 $DLTX daily reward cap.
+- **Deltix Energy** with eight status ranks, daily streaks, and Energy-funded unlocking of five bonus Arcade games.
+- Personalisation: 82 avatar characters and 12 application themes, including a free dark theme.
+
+**Platform and integrity**
+
+- The Android application is published on Google Play, targeting the current required API level, with code shrinking and resource optimisation enabled.
+- **Google Play Integrity** attestation is wired into account creation and reward settlement to resist cloned or tampered installs.
+- A server-side minimum-version gate lets the network retire unsupported clients without an app-store dependency.
+- Anti-abuse controls in production: disposable-domain blocking, mail-exchange validation, request rate limiting, and a **non-transferable welcome bonus** so onboarding grants cannot be farmed and drained between accounts.
+
+### 13.2 Planned — In Sequence
+
+Phases are ordered by dependency. Each phase must clear security review before the next begins.
+
+| Phase | Status | Scope |
+|---|---|---|
+| **Phase 1 — Live Network** | ✅ Delivered | Everything in §13.1: wallet, staking, burn-bearing transfers, live DAO, referrals and ambassadors, D-Browser, Arcade, Energy, public explorer, Android release |
+| **Phase 2 — Reach and Validators** | ▶ In progress | iOS release; third-party validator onboarding and validator-set expansion; DAO control extended to validator admission and removal; proposal timelocks |
+| **Phase 3 — Hardening** | ○ Planned | Validator slashing enforcement; independent third-party security audit; optional self-custody key export; DAO control of the protocol treasury with public accounting |
+| **Phase 4 — Full Decentralization** | ○ Planned | Protocol upgrades, parameter changes and treasury spending controlled entirely by the DAO |
+| **Phase 5 — Ecosystem** | ○ Planned | Exchange listings and liquidity venues per §12; bridges; expanded dApp directory; public developer APIs |
+
+Community-requested features currently queued for delivery inside Phase 2 include Energy
+leaderboards, profile rank badges, and seasonal Energy events.
+
+**Honest limitations at the time of writing.** The initial validator set is operated under network
+supervision while third-party validator onboarding is built; slashing is specified but not yet
+enforced; wallets are custodial and key export is a Phase 3 item; and no independent security audit
+has been completed yet. These are stated plainly so that participation is an informed choice.
+
+Roadmap items are development objectives, not guarantees; sequencing may change based on security
+review and governance input.
 
 ---
 
@@ -386,8 +443,15 @@ Roadmap items are development objectives, not guarantees; sequencing may change 
 Long-term operations are funded by a combination of:
 
 1. **Protocol treasury** — a governance-controlled share of issuance.
-2. **Clearly separated advertising** — optional sponsored placements in non-protocol surfaces (e.g., the D-Browser discovery area), never mixed with consensus, rewards, or balances, and always labeled.
+2. **Clearly separated advertising** — optional sponsored placements in non-protocol surfaces, never mixed with consensus, balances, or the ledger, and always labeled. Two formats are used: interstitials between Arcade sessions, and **opt-in rewarded video** that the user chooses to watch.
 3. **Standalone sustainability** — the network is designed to fund its own operations without dependence on external ecosystems.
+
+**Advertising never pays $DLTX.** Rewarded video grants only non-transferable, in-app cosmetic or
+status benefits — Deltix Energy, avatar characters, and application themes. These cannot be sent to
+another account, sold, or converted into $DLTX or any currency. $DLTX is earned only by staking,
+referral activation, and Arcade skill wins, and it is never gated behind watching an advertisement.
+This separation is deliberate: it keeps advertising revenue independent of the token economy and
+keeps the network compliant with advertising-network policy on non-transferable rewards.
 
 No user funds are ever used for operations. Staked balances belong to their delegators, full stop.
 
