@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.3.1';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -43,8 +43,7 @@ async function api(method, path, body) {
     }
     const staleSession = res.status === 401 || (res.status === 404 && /wallet not found/i.test(json.error || ''));
     if (staleSession && state.token) {
-      state.token = null;
-      localStorage.removeItem('dltx_token');
+      clearAccountSession();
       showScreen('screen-email');
       toast('Your session has expired — please sign in again.');
     }
@@ -428,6 +427,46 @@ $('sendCodeBtn').addEventListener('click', async () => {
 
 $('backToEmail').addEventListener('click', () => showScreen('screen-email'));
 
+/** Blanks every account-scoped value in memory and on screen.
+ *  Without this the next account inherits the previous one's rendered
+ *  balances, address, history and referral code until its own loads land. */
+function resetAccountUI() {
+  state.refCode = null;
+  state.address = null;
+  state.balances = null;
+
+  const setText = (id, text) => { const el = $(id); if (el) el.textContent = text; };
+  const setHtml = (id, html) => { const el = $(id); if (el) el.innerHTML = html; };
+  $('totalBalance').innerHTML = '0.00 <small>$DLTX</small>';
+  ['liquidBalance', 'stakedBalance', 'pendingRewards'].forEach((id) => setText(id, '0'));
+  setText('walletAddressTxt', '0x…');
+  setText('profileEmail', '—');
+  setText('profileRef', 'Ref —');
+  setText('myRefCode', '—');
+  setText('refInfo', '');
+  setHtml('refSlots', '');
+  setHtml('refList', '');
+  setHtml('txList', '<p class="muted center">No activity yet.</p>');
+  setHtml('myStakes', '<p class="muted center">You have no active stakes.</p>');
+  setHtml('statsGrid', '');
+  setHtml('arcadeMeta', '');
+}
+
+/** Full sign-out: drops the session as well as the rendered account data. */
+function clearAccountSession() {
+  state.token = null;
+  state.email = null;
+  localStorage.removeItem('dltx_token');
+  localStorage.removeItem('dltx_email');
+  // Shared devices must not keep the previous person's email/code on the form.
+  ['emailInput', 'codeInput', 'refCodeInput'].forEach((id) => { const el = $(id); if (el) el.value = ''; });
+  const ageGate = $('ageGate');
+  if (ageGate) ageGate.checked = false;
+  const devBanner = $('devBanner');
+  if (devBanner) devBanner.hidden = true;
+  resetAccountUI();
+}
+
 $('verifyBtn').addEventListener('click', async () => {
   const code = $('codeInput').value.trim();
   const hint = $('otpHint');
@@ -455,10 +494,9 @@ $('verifyBtn').addEventListener('click', async () => {
 });
 
 $('logoutBtn').addEventListener('click', () => {
-  state.token = null;
-  localStorage.removeItem('dltx_token');
-  localStorage.removeItem('dltx_email');
+  clearAccountSession();
   showScreen('screen-email');
+  setAuthMode('signin');
 });
 
 // ---------- Account deletion (required by Apple 5.1.1(v) / Play policy) ----------
@@ -481,10 +519,9 @@ $('confirmDelete').addEventListener('click', async () => {
   try {
     await api('DELETE', '/auth/account');
     $('deleteModal').hidden = true;
-    state.token = null;
-    localStorage.removeItem('dltx_token');
-    localStorage.removeItem('dltx_email');
+    clearAccountSession();
     showScreen('screen-email');
+    setAuthMode('signup');
     toast('Account permanently deleted');
   } catch (e) {
     hint.textContent = e.message;
@@ -501,6 +538,8 @@ document.querySelectorAll('.tabbtn').forEach((b) =>
 
 // ---------- Data loading ----------
 async function enterApp() {
+  // Never let the previous account's numbers survive into this session.
+  resetAccountUI();
   showScreen('screen-main');
   showTab('tab-wallet', { refresh: false });
   // Recover the email from the JWT for sessions that signed in before we
