@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.3.2';
+const APP_VERSION = '1.3.3';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -22,17 +22,49 @@ const state = {
 // gone (stale token, or — in local dev — a server restart that wiped
 // in-memory data), sign the user out and return to the sign-in screen
 // instead of leaving stale cached numbers on screen.
-async function api(method, path, body) {
-  const res = await fetch(API + path, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Deltix-Client': 'deltix-app',
-      'X-App-Version': APP_VERSION,
-      ...(state.token ? { Authorization: 'Bearer ' + state.token } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+//
+// Mobile networks drop requests and hosts restart, so idempotent reads are
+// retried briefly before the user ever sees an error.
+const RETRY_STATUSES = new Set([502, 503, 504]);
+const RETRY_BACKOFF_MS = 500;
+
+function friendlyError(status, json) {
+  if (json && json.error) return json.error;
+  if (status === 429) return 'You are going a little fast. Please wait a moment and try again.';
+  if (status >= 500) return 'Deltix is busy right now. Please try again in a moment.';
+  if (status === 404) return 'That is not available right now.';
+  return 'Something went wrong. Please try again.';
+}
+
+async function api(method, path, body, { retries = method === 'GET' ? 2 : 0 } = {}) {
+  let res = null;
+  let offline = false;
+  for (let attempt = 0; ; attempt++) {
+    offline = false;
+    try {
+      res = await fetch(API + path, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Deltix-Client': 'deltix-app',
+          'X-App-Version': APP_VERSION,
+          ...(state.token ? { Authorization: 'Bearer ' + state.token } : {}),
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    } catch {
+      offline = true; // DNS failure, dropped connection, airplane mode…
+    }
+    const transient = offline || RETRY_STATUSES.has(res.status);
+    if (!transient || attempt >= retries) break;
+    await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS * (attempt + 1)));
+  }
+  if (offline) {
+    const err = new Error('No connection. Check your internet and try again.');
+    err.offline = true;
+    throw err;
+  }
+
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     // Server-side forced update — lock the UI until the app is updated.
@@ -48,7 +80,7 @@ async function api(method, path, body) {
       showScreen('screen-email');
       toast('Your session has expired — please sign in again.');
     }
-    const err = new Error(json.error || 'Request failed');
+    const err = new Error(friendlyError(res.status, json));
     err.status = res.status;
     err.data = json;
     throw err;
@@ -112,24 +144,24 @@ async function checkAppVersion() {
   return true;
 }
 // Re-check whenever the app returns to the foreground, and auto-refresh active tab data.
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) {
-    checkAppVersion();
-    if (state.token && $('screen-main')?.classList.contains('active')) {
-      refreshCurrentView({ silent: true });
-    }
+// Web and native both signal a resume, so coalesce them into one round of requests.
+let lastResumeAt = 0;
+function onAppResumed() {
+  if (Date.now() - lastResumeAt < 1500) return;
+  lastResumeAt = Date.now();
+  checkAppVersion();
+  if (state.token && $('screen-main')?.classList.contains('active')) {
+    refreshCurrentView({ silent: true });
   }
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) onAppResumed();
 });
 
 // Capacitor native app lifecycle resume
 try {
   window.Capacitor?.Plugins?.App?.addListener('appStateChange', ({ isActive }) => {
-    if (isActive) {
-      checkAppVersion();
-      if (state.token && $('screen-main')?.classList.contains('active')) {
-        refreshCurrentView({ silent: true });
-      }
-    }
+    if (isActive) onAppResumed();
   });
 } catch {}
 
