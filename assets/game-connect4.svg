@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="c4Board" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/><stop offset="100%" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <radialGradient id="c4R" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#fca5a5"/><stop offset="100%" stop-color="#dc2626"/>
+    </radialGradient>
+    <radialGradient id="c4Y" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#fde68a"/><stop offset="100%" stop-color="#f59e0b"/>
+    </radialGradient>
+  </defs>
+  <!-- Deltix Delta Four — drop-in board with a winning diagonal -->
+  <rect x="10" y="18" width="80" height="70" rx="9" fill="url(#c4Board)" stroke="#bfdbfe" stroke-width="2.5"/>
+  <g fill="#0b1120" opacity=".55">
+    <circle cx="25" cy="33" r="8"/><circle cx="42" cy="33" r="8"/><circle cx="58" cy="33" r="8"/><circle cx="75" cy="33" r="8"/>
+    <circle cx="25" cy="53" r="8"/><circle cx="42" cy="53" r="8"/><circle cx="58" cy="53" r="8"/><circle cx="75" cy="53" r="8"/>
+    <circle cx="25" cy="73" r="8"/><circle cx="42" cy="73" r="8"/><circle cx="58" cy="73" r="8"/><circle cx="75" cy="73" r="8"/>
+  </g>
+  <circle cx="25" cy="73" r="8" fill="url(#c4R)"/>
+  <circle cx="42" cy="53" r="8" fill="url(#c4R)"/>
+  <circle cx="58" cy="33" r="8" fill="url(#c4R)"/>
+  <circle cx="42" cy="73" r="8" fill="url(#c4Y)"/>
+  <circle cx="58" cy="73" r="8" fill="url(#c4Y)"/>
+  <circle cx="58" cy="53" r="8" fill="url(#c4Y)"/>
+  <circle cx="75" cy="14" r="8" fill="url(#c4R)"/>
+</svg>

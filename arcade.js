@@ -14,7 +14,31 @@ const ARCADE_ICONS = {
   tictactoe: '◍', memory: '❖', snake: '➰', merge: '⬚', sudoku: '▦',
   minehunt: '☄', slide: '⇄', reversi: '◐', recall: '◌', reaction: '⚡',
   ludo: '⛃', chess: '♞', threecard: 'Δ', carom: '⬤', slicer: '◈', soccer: '◎', racing: '»',
+  connect4: '◉', breaker: '▬', tower: '▮', blocks: '▤', flyer: '➤',
 };
+
+// One emoji per game — the community asked for more personality on the cards.
+const ARCADE_EMOJI = {
+  tictactoe: '❌', memory: '🧠', snake: '🐍', merge: '🔢', sudoku: '🔡',
+  minehunt: '💣', slide: '🧩', reversi: '⚫', recall: '🎼', reaction: '⚡',
+  ludo: '🎲', chess: '♟️', threecard: '🃏', carom: '🎱', slicer: '🍉', soccer: '⚽', racing: '🏎️',
+  connect4: '🔴', breaker: '🧱', tower: '🏗️', blocks: '🟦', flyer: '🚀',
+};
+
+// The rival personas players meet across the arcade.
+const ARCADE_CREW = [
+  { emoji: '🧑‍🎤', name: 'Maya', role: 'Tic-Tac-Toe' },
+  { emoji: '🧠', name: 'Iris', role: 'Memory Match' },
+  { emoji: '🐍', name: 'Rex', role: 'Delta Snake' },
+  { emoji: '🎩', name: 'Victor', role: 'Reversi' },
+  { emoji: '♟️', name: 'Elena', role: 'Chess' },
+  { emoji: '🃏', name: 'Rio', role: 'Card Draw' },
+  { emoji: '🧤', name: 'Dario', role: 'Penalty Kicks' },
+  { emoji: '🤖', name: 'Nova', role: 'Delta Four' },
+  { emoji: '🌞', name: 'Sunny', role: 'Delta Ludo' },
+  { emoji: '💧', name: 'Aqua', role: 'Delta Ludo' },
+  { emoji: '❤️', name: 'Ruby', role: 'Delta Ludo' },
+];
 
 const ARCADE_3D_IMAGES = {
   tictactoe: 'assets/game-tictactoe.svg',
@@ -34,6 +58,11 @@ const ARCADE_3D_IMAGES = {
   slicer: 'assets/game-slicer.svg',
   soccer: 'assets/game-soccer.svg',
   racing: 'assets/game-racing.svg',
+  connect4: 'assets/game-connect4.svg',
+  breaker: 'assets/game-breaker.svg',
+  tower: 'assets/game-tower.svg',
+  blocks: 'assets/game-blocks.svg',
+  flyer: 'assets/game-flyer.svg',
 };
 
 const arcadeState = { games: [], sessionId: null, currentGame: null, difficulty: 'easy', cleanup: null };
@@ -93,29 +122,41 @@ const ArcadeSound = (() => {
 })();
 
 // ---------- Arcade tab ----------
+function gameCardHtml(g) {
+  const locked = g.energyUnlock && !(window.isGameUnlocked && window.isGameUnlocked(g.id));
+  return `<button class="game-card game-card-${g.id} ${locked ? 'locked' : ''}" data-game="${g.id}">
+      ${g.energyUnlock ? `<span class="g-energy-badge">${locked ? '🔒 ' + g.energyUnlock + ' ⚡' : '✅ Unlocked'}</span>` : ''}
+      <div class="game-card-img-wrap"><img src="${ARCADE_3D_IMAGES[g.id] || 'assets/nav-arcade.svg'}" class="game-card-3d-img" alt="${g.name}" /></div>
+      <div class="game-card-info">
+        <span class="g-name"><span class="g-emoji">${ARCADE_EMOJI[g.id] || '🎮'}</span> ${g.name}</span>
+        <span class="g-tag">${g.tagline}</span>
+      </div>
+    </button>`;
+}
+
 async function loadArcade() {
   try {
     const a = await api('GET', '/arcade');
     arcadeState.games = a.games;
     gel('arcadeMeta').innerHTML = [
-      ['Reward per win', `${a.arcade.rewardEasyWin} (easy) / ${a.arcade.rewardHardWin} (hard) $DLTX`],
-      ['Earned today', `${fmt(a.earnedToday)} $DLTX`],
-      ['Remaining today', `${fmt(a.remainingToday)} of ${fmt(a.arcade.dailyCap)} $DLTX`],
+      ['🏆 Reward per win', `${a.arcade.rewardEasyWin} (easy) / ${a.arcade.rewardHardWin} (hard) $DLTX`],
+      ['💰 Earned today', `${fmt(a.earnedToday)} $DLTX`],
+      ['⏳ Remaining today', `${fmt(a.remainingToday)} of ${fmt(a.arcade.dailyCap)} $DLTX`],
     ]
       .map(([k, v]) => `<div class="supply-row"><span class="k">${k}</span><span class="v">${v}</span></div>`)
       .join('');
-    gel('gamesGrid').innerHTML = a.games
-      .map(
-        (g) => `<button class="game-card game-card-${g.id}" data-game="${g.id}">
-          <div class="game-card-img-wrap"><img src="${ARCADE_3D_IMAGES[g.id] || 'assets/nav-arcade.svg'}" class="game-card-3d-img" alt="${g.name}" /></div>
-          <div class="game-card-info">
-            <span class="g-name">${g.name}</span>
-            <span class="g-tag">${g.tagline}</span>
-          </div>
-        </button>`
-      )
-      .join('');
-    gel('gamesGrid').querySelectorAll('.game-card').forEach((c) =>
+    const crew = gel('crewStrip');
+    if (crew) {
+      crew.innerHTML = ARCADE_CREW.map(
+        (c) => `<div class="crew-chip"><span class="crew-emoji">${c.emoji}</span><span class="crew-name">${c.name}</span><span class="crew-role">${c.role}</span></div>`
+      ).join('');
+    }
+    const bonus = a.games.filter((g) => g.energyUnlock);
+    const core = a.games.filter((g) => !g.energyUnlock);
+    gel('gamesGrid').innerHTML = core.map(gameCardHtml).join('');
+    const bonusGrid = gel('bonusGamesGrid');
+    if (bonusGrid) bonusGrid.innerHTML = bonus.map(gameCardHtml).join('');
+    document.querySelectorAll('#gamesGrid .game-card, #bonusGamesGrid .game-card').forEach((c) =>
       c.addEventListener('click', () => openGame(c.dataset.game))
     );
   } catch (e) {
@@ -129,16 +170,44 @@ function openGame(id) {
   if (!g) return;
   arcadeState.currentGame = g;
   arcadeState.difficulty = 'easy';
-  gel('gameTitle').textContent = g.name;
+  gel('gameTitle').textContent = `${ARCADE_EMOJI[g.id] || '🎮'} ${g.name}`;
   gel('gameTagline').textContent = g.tagline;
   updateRewardHint();
   gel('diffEasy').classList.add('active');
   gel('diffHard').classList.remove('active');
+  renderGameLock();
   gel('gameSetup').hidden = false;
   gel('gameArea').hidden = true;
   gel('gameModal').hidden = false;
   if (window.updateTabAd) window.updateTabAd();
 }
+
+/** Bonus games stay behind an Energy paywall until the player spends Energy. */
+function renderGameLock() {
+  const g = arcadeState.currentGame;
+  const locked = g.energyUnlock && !(window.isGameUnlocked && window.isGameUnlocked(g.id));
+  gel('gameLocked').hidden = !locked;
+  gel('gamePlayable').hidden = !!locked;
+  if (!locked) return;
+  const have = window.energyBalance ? window.energyBalance() : 0;
+  gel('lockCost').textContent = `⚡ ${g.energyUnlock} Energy to unlock`;
+  gel('lockBalance').textContent =
+    have >= g.energyUnlock ? `You have ${have} ⚡ — ready to unlock!` : `You have ${have} ⚡ — ${g.energyUnlock - have} more needed`;
+  gel('unlockGameBtn').disabled = have < g.energyUnlock;
+}
+gel('unlockGameBtn')?.addEventListener('click', () => {
+  const g = arcadeState.currentGame;
+  if (!g || !window.unlockGameWithEnergy) return;
+  const r = window.unlockGameWithEnergy(g.id, g.energyUnlock);
+  if (r === 'short') return toast('Not enough Energy yet — earn more in the Energy tab.');
+  toast(`${g.name} unlocked! 🎉`);
+  renderGameLock();
+  loadArcade().catch(() => {});
+});
+gel('getEnergyBtn')?.addEventListener('click', () => {
+  closeGame();
+  showTab('tab-energy');
+});
 function updateRewardHint() {
   const g = arcadeState.currentGame;
   const r = arcadeState.difficulty === 'hard' ? g.rewardHard : g.rewardEasy;
@@ -2823,5 +2892,611 @@ GAME_IMPL.racing = (mount, diff, finish, status) => {
     cancelAnimationFrame(raf);
     clearTimeout(spawnTimer);
     cleanupInput();
+  };
+};
+
+// ═══════════ ENERGY BONUS GAMES (opened with Deltix Energy) ═══════════
+
+// ---- 18. Delta Four — connect four in a row before Nova does ----
+GAME_IMPL.connect4 = (mount, diff, finish, status) => {
+  const COLS = 7, ROWS = 6, ME = 1, NOVA = 2;
+  const DEPTH = diff === 'hard' ? 5 : 3;
+  const slip = diff === 'hard' ? 0 : 0.3; // easy Nova sometimes plays a lazy column
+  let board = new Int8Array(ROWS * COLS);
+  let over = false, myTurn = true, lastIdx = -1;
+
+  const grid = makeGrid(mount, COLS, 'c4');
+  const cells = [];
+  for (let i = 0; i < ROWS * COLS; i++) {
+    const c = document.createElement('button');
+    c.className = 'cell';
+    c.addEventListener('click', () => human(i % COLS));
+    grid.appendChild(c);
+    cells.push(c);
+  }
+  const at = (b, r, c) => b[r * COLS + c];
+  const lowest = (b, c) => { for (let r = ROWS - 1; r >= 0; r--) if (!at(b, r, c)) return r; return -1; };
+  const moves = (b) => { const m = []; for (let c = 0; c < COLS; c++) if (lowest(b, c) >= 0) m.push(c); return m; };
+  const DIRS = [[0, 1], [1, 0], [1, 1], [1, -1]];
+  function lineFor(b, p) {
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      if (at(b, r, c) !== p) continue;
+      for (const [dr, dc] of DIRS) {
+        const idx = [];
+        let ok = true;
+        for (let k = 0; k < 4; k++) {
+          const rr = r + dr * k, cc = c + dc * k;
+          if (rr < 0 || rr >= ROWS || cc < 0 || cc >= COLS || at(b, rr, cc) !== p) { ok = false; break; }
+          idx.push(rr * COLS + cc);
+        }
+        if (ok) return idx;
+      }
+    }
+    return null;
+  }
+  function evaluate(b) {
+    // Window scoring: 3-in-a-row with a free slot is worth chasing, centre files matter.
+    let s = 0;
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      for (const [dr, dc] of DIRS) {
+        const er = r + dr * 3, ec = c + dc * 3;
+        if (er < 0 || er >= ROWS || ec < 0 || ec >= COLS) continue;
+        let mine = 0, theirs = 0;
+        for (let k = 0; k < 4; k++) {
+          const v = at(b, r + dr * k, c + dc * k);
+          if (v === NOVA) mine++; else if (v === ME) theirs++;
+        }
+        if (mine && theirs) continue;
+        if (mine === 3) s += 50; else if (mine === 2) s += 8; else if (mine === 1) s += 1;
+        if (theirs === 3) s -= 60; else if (theirs === 2) s -= 9; else if (theirs === 1) s -= 1;
+      }
+    }
+    for (let r = 0; r < ROWS; r++) { const v = at(b, r, 3); if (v === NOVA) s += 6; else if (v === ME) s -= 6; }
+    return s;
+  }
+  function search(b, depth, alpha, beta, player) {
+    if (lineFor(b, NOVA)) return { score: 100000 + depth };
+    if (lineFor(b, ME)) return { score: -100000 - depth };
+    const list = moves(b);
+    if (!list.length || depth === 0) return { score: evaluate(b) };
+    list.sort((a, z) => Math.abs(3 - a) - Math.abs(3 - z)); // centre-first ordering prunes better
+    let best = null;
+    for (const c of list) {
+      const r = lowest(b, c);
+      b[r * COLS + c] = player;
+      const s = search(b, depth - 1, alpha, beta, player === NOVA ? ME : NOVA).score;
+      b[r * COLS + c] = 0;
+      if (!best || (player === NOVA ? s > best.score : s < best.score)) best = { score: s, move: c };
+      if (player === NOVA) alpha = Math.max(alpha, s); else beta = Math.min(beta, s);
+      if (alpha >= beta) break;
+    }
+    return best;
+  }
+  function render(dropped) {
+    for (let i = 0; i < board.length; i++) {
+      const v = board[i];
+      cells[i].textContent = v === ME ? '🔴' : v === NOVA ? '🔵' : '';
+      cells[i].classList.toggle('p1', v === ME);
+      cells[i].classList.toggle('p2', v === NOVA);
+      cells[i].classList.toggle('last', i === lastIdx);
+    }
+    if (dropped != null) {
+      cells[dropped].classList.remove('pop');
+      void cells[dropped].offsetWidth;
+      cells[dropped].classList.add('pop');
+    }
+  }
+  function end(winner) {
+    over = true;
+    const L = lineFor(board, winner);
+    if (L) L.forEach((i) => cells[i].classList.add('win'));
+    render();
+    if (winner === ME) { status('Four in a row — you beat Nova! 🏆'); finish(true, 1); }
+    else { status('Nova connected four. 🤖'); finish(false, 0); }
+  }
+  function place(col, player) {
+    const r = lowest(board, col);
+    if (r < 0) return false;
+    lastIdx = r * COLS + col;
+    board[lastIdx] = player;
+    render(lastIdx);
+    return true;
+  }
+  function human(col) {
+    if (over || !myTurn) return;
+    if (!place(col, ME)) return;
+    if (lineFor(board, ME)) return end(ME);
+    if (!moves(board).length) { over = true; status('Board full — a draw. No reward.'); return finish(false, 0); }
+    myTurn = false;
+    status(aiThinkLine('Nova'));
+    novaTurn();
+  }
+  async function novaTurn() {
+    await humanPause(500, 1300);
+    if (over) return;
+    const list = moves(board);
+    let col = search(board, DEPTH, -Infinity, Infinity, NOVA).move;
+    if (Math.random() < slip) col = list[Math.floor(Math.random() * list.length)];
+    if (col == null) col = list[0];
+    place(col, NOVA);
+    if (lineFor(board, NOVA)) return end(NOVA);
+    if (!moves(board).length) { over = true; status('Board full — a draw. No reward.'); return finish(false, 0); }
+    myTurn = true;
+    status('Your turn — drop a 🔴 into any column.');
+  }
+  render();
+  status('You are 🔴 — tap a column. Four in a row wins.');
+  return () => { over = true; };
+};
+
+// ---- 19. Delta Breaker — clear every brick, catch the ball ----
+GAME_IMPL.breaker = (mount, diff, finish, status) => {
+  const W = 260, H = 380;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  cv.className = 'game-canvas';
+  mount.appendChild(cv);
+  const ctx = cv.getContext('2d');
+
+  const COLS = diff === 'hard' ? 7 : 6;
+  const ROWS = diff === 'hard' ? 5 : 4;
+  const padW = diff === 'hard' ? 46 : 62;
+  const speed0 = diff === 'hard' ? 3.4 : 2.7;
+  let lives = diff === 'hard' ? 2 : 3;
+  const BW = (W - 20) / COLS, BH = 15;
+  const COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#a855f7'];
+  let bricks = [];
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    bricks.push({ x: 10 + c * BW, y: 46 + r * (BH + 5), alive: true, col: COLORS[r % COLORS.length] });
+  }
+  let padX = W / 2, ball = null, over = false, launched = false, raf = 0, lastTs = 0;
+  function resetBall() {
+    launched = false;
+    ball = { x: padX, y: H - 40, vx: 0, vy: 0, r: 5 };
+  }
+  resetBall();
+  const remaining = () => bricks.filter((b) => b.alive).length;
+
+  function movePad(clientX) {
+    const rect = cv.getBoundingClientRect();
+    padX = Math.max(padW / 2, Math.min(W - padW / 2, ((clientX - rect.left) / rect.width) * W));
+    if (!launched) ball.x = padX;
+  }
+  const onDown = (e) => { movePad(e.clientX); launch(); };
+  const onMove = (e) => { if (e.buttons || e.pointerType === 'touch') movePad(e.clientX); };
+  function launch() {
+    if (launched || over) return;
+    launched = true;
+    ball.vx = (Math.random() < 0.5 ? -1 : 1) * speed0 * 0.6;
+    ball.vy = -speed0;
+  }
+  cv.addEventListener('pointerdown', onDown);
+  cv.addEventListener('pointermove', onMove);
+  const onKey = (e) => {
+    if (e.key === 'ArrowLeft') { padX = Math.max(padW / 2, padX - 18); if (!launched) ball.x = padX; }
+    if (e.key === 'ArrowRight') { padX = Math.min(W - padW / 2, padX + 18); if (!launched) ball.x = padX; }
+    if (e.key === ' ') launch();
+  };
+  document.addEventListener('keydown', onKey);
+
+  function draw() {
+    ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, W, H);
+    bricks.forEach((b) => {
+      if (!b.alive) return;
+      ctx.fillStyle = b.col;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(b.x + 2, b.y, BW - 4, BH, 4); else ctx.rect(b.x + 2, b.y, BW - 4, BH);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.25)';
+      ctx.fillRect(b.x + 4, b.y + 2, BW - 8, 3);
+    });
+    ctx.fillStyle = '#38bdf8';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(padX - padW / 2, H - 26, padW, 9, 5); else ctx.rect(padX - padW / 2, H - 26, padW, 9);
+    ctx.fill();
+    ctx.fillStyle = '#fde047';
+    ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, 6.29); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.75)';
+    ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText('❤'.repeat(lives), 10, 22);
+    ctx.textAlign = 'right';
+    ctx.fillText(`${remaining()} bricks`, W - 10, 22);
+  }
+  function loop(ts) {
+    if (over) return;
+    const dt = lastTs ? Math.min(3, (ts - lastTs) / (1000 / 60)) : 1;
+    lastTs = ts;
+    if (launched) {
+      ball.x += ball.vx * dt;
+      ball.y += ball.vy * dt;
+      if (ball.x < ball.r) { ball.x = ball.r; ball.vx = Math.abs(ball.vx); }
+      if (ball.x > W - ball.r) { ball.x = W - ball.r; ball.vx = -Math.abs(ball.vx); }
+      if (ball.y < ball.r + 28) { ball.y = ball.r + 28; ball.vy = Math.abs(ball.vy); }
+      // Paddle bounce: the contact point steers the ball, so you can aim.
+      if (ball.vy > 0 && ball.y > H - 26 - ball.r && ball.y < H - 12 && Math.abs(ball.x - padX) < padW / 2 + ball.r) {
+        const rel = (ball.x - padX) / (padW / 2);
+        const sp = Math.hypot(ball.vx, ball.vy) * 1.01;
+        const ang = rel * 1.05;
+        ball.vx = Math.sin(ang) * sp;
+        ball.vy = -Math.abs(Math.cos(ang) * sp);
+      }
+      for (const b of bricks) {
+        if (!b.alive) continue;
+        if (ball.x > b.x && ball.x < b.x + BW && ball.y > b.y - ball.r && ball.y < b.y + BH + ball.r) {
+          b.alive = false;
+          ball.vy = -ball.vy;
+          break;
+        }
+      }
+      if (ball.y > H) {
+        lives--;
+        if (lives <= 0) {
+          over = true; draw();
+          status(`💀 Out of balls — ${remaining()} bricks left.`);
+          return finish(false, (ROWS * COLS) - remaining());
+        }
+        status(`Ball lost — ${lives} left. Tap to launch.`);
+        resetBall();
+      }
+      if (!remaining()) {
+        over = true; draw();
+        status('All bricks cleared! 🏆');
+        return finish(true, ROWS * COLS);
+      }
+    }
+    draw();
+    if (launched) status(`${remaining()} bricks left · ${lives} ${lives === 1 ? 'ball' : 'balls'} ❤`);
+    raf = requestAnimationFrame(loop);
+  }
+  status('Drag to move the paddle · tap to launch the ball.');
+  draw();
+  raf = requestAnimationFrame(loop);
+  return () => {
+    over = true;
+    cancelAnimationFrame(raf);
+    cv.removeEventListener('pointerdown', onDown);
+    cv.removeEventListener('pointermove', onMove);
+    document.removeEventListener('keydown', onKey);
+  };
+};
+
+// ---- 20. Delta Tower — stack the beams, one miss trims you ----
+GAME_IMPL.tower = (mount, diff, finish, status) => {
+  const W = 260, H = 380, BH = 18;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  cv.className = 'game-canvas';
+  mount.appendChild(cv);
+  const ctx = cv.getContext('2d');
+  const target = diff === 'hard' ? 14 : 8;
+  const baseW = diff === 'hard' ? 74 : 96;
+  const speed0 = diff === 'hard' ? 2.6 : 1.6;
+  const COLORS = ['#2f6bff', '#7c3aed', '#0ea5e9', '#22c55e', '#f59e0b', '#ef4444'];
+  const stack = [{ x: (W - baseW) / 2, w: baseW }];
+  let moving = { x: 0, w: baseW, dir: 1 };
+  let over = false, raf = 0, lastTs = 0, flash = 0;
+
+  const rowY = (i) => H - 30 - (i + 1) * BH; // index 0 = base row
+  const camera = () => Math.max(0, (stack.length - 12) * BH); // scroll once the tower is tall
+  function nextBeam() {
+    const prev = stack[stack.length - 1];
+    moving = { x: 0, w: prev.w, dir: 1 };
+  }
+  function drop() {
+    if (over) return;
+    const prev = stack[stack.length - 1];
+    const left = Math.max(prev.x, moving.x);
+    const right = Math.min(prev.x + prev.w, moving.x + moving.w);
+    const overlap = right - left;
+    if (overlap <= 2) {
+      over = true;
+      draw();
+      status(`💥 Missed the tower at floor ${stack.length} — needed ${target}.`);
+      return finish(false, stack.length);
+    }
+    stack.push({ x: left, w: overlap });
+    flash = performance.now() + 180;
+    if (stack.length >= target + 1) {
+      over = true; draw();
+      status(`Tower complete — ${target} floors! 🏆`);
+      return finish(true, stack.length);
+    }
+    const perfect = overlap > prev.w - 3;
+    status(`${perfect ? 'Perfect! ✨ ' : ''}Floor ${stack.length - 1}/${target} · beam ${Math.round(overlap)}px wide`);
+    nextBeam();
+  }
+  const onDown = () => drop();
+  cv.addEventListener('pointerdown', onDown);
+  const onKey = (e) => { if (e.key === ' ' || e.key === 'ArrowDown') { e.preventDefault(); drop(); } };
+  document.addEventListener('keydown', onKey);
+
+  function draw() {
+    const cam = camera();
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#0b1a3a'); g.addColorStop(1, '#123a6b');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(255,255,255,.14)';
+    for (let i = 0; i < 22; i++) ctx.fillRect((i * 61) % W, (i * 37) % 200, 2, 2); // stars
+    stack.forEach((b, i) => {
+      const y = rowY(i) + cam;
+      if (y < -BH || y > H) return;
+      ctx.fillStyle = COLORS[i % COLORS.length];
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(b.x, y, b.w, BH - 2, 3); else ctx.rect(b.x, y, b.w, BH - 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.22)';
+      ctx.fillRect(b.x + 2, y + 2, b.w - 4, 3);
+    });
+    if (!over) {
+      const y = rowY(stack.length) + cam;
+      ctx.fillStyle = COLORS[stack.length % COLORS.length];
+      ctx.globalAlpha = performance.now() < flash ? 0.6 : 1;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(moving.x, y, moving.w, BH - 2, 3); else ctx.rect(moving.x, y, moving.w, BH - 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText(`Floor ${stack.length - 1}/${target}`, 10, 20);
+    ctx.textAlign = 'right';
+    ctx.fillText(`width ${Math.round(stack[stack.length - 1].w)}`, W - 10, 20);
+  }
+  function loop(ts) {
+    if (over) return;
+    const dt = lastTs ? Math.min(3, (ts - lastTs) / (1000 / 60)) : 1;
+    lastTs = ts;
+    const v = speed0 + stack.length * (diff === 'hard' ? 0.12 : 0.07);
+    moving.x += v * moving.dir * dt;
+    if (moving.x <= 0) { moving.x = 0; moving.dir = 1; }
+    if (moving.x + moving.w >= W) { moving.x = W - moving.w; moving.dir = -1; }
+    draw();
+    raf = requestAnimationFrame(loop);
+  }
+  nextBeam();
+  status(`Tap to drop the beam · stack ${target} floors`);
+  raf = requestAnimationFrame(loop);
+  return () => {
+    over = true;
+    cancelAnimationFrame(raf);
+    cv.removeEventListener('pointerdown', onDown);
+    document.removeEventListener('keydown', onKey);
+  };
+};
+
+// ---- 21. Delta Blocks — clear lines before the stack tops out ----
+GAME_IMPL.blocks = (mount, diff, finish, status) => {
+  const COLS = 10, ROWS = 16, CS = 22;
+  const W = COLS * CS, H = ROWS * CS;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  cv.className = 'game-canvas';
+  mount.appendChild(cv);
+  const ctx = cv.getContext('2d');
+  const target = diff === 'hard' ? 10 : 5;
+  const baseDrop = diff === 'hard' ? 620 : 900;
+  const SHAPES = [
+    { cells: [[0, 0], [0, 1], [0, 2], [0, 3]], col: '#22d3ee' },
+    { cells: [[0, 0], [0, 1], [1, 0], [1, 1]], col: '#facc15' },
+    { cells: [[0, 1], [1, 0], [1, 1], [1, 2]], col: '#a855f7' },
+    { cells: [[0, 0], [1, 0], [1, 1], [1, 2]], col: '#3b82f6' },
+    { cells: [[0, 2], [1, 0], [1, 1], [1, 2]], col: '#f97316' },
+    { cells: [[0, 1], [0, 2], [1, 0], [1, 1]], col: '#22c55e' },
+    { cells: [[0, 0], [0, 1], [1, 1], [1, 2]], col: '#ef4444' },
+  ];
+  const board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+  let piece = null, lines = 0, over = false, raf = 0, dropTimer = 0;
+
+  function spawn() {
+    const s = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+    piece = { cells: s.cells.map(([r, c]) => [r, c]), col: s.col, r: 0, c: 3 };
+    if (collides(piece.cells, piece.r, piece.c)) {
+      over = true;
+      draw();
+      status(`💀 Stack topped out — ${lines}/${target} lines.`);
+      finish(false, lines);
+      return false;
+    }
+    return true;
+  }
+  function collides(cells, r0, c0) {
+    return cells.some(([r, c]) => {
+      const rr = r0 + r, cc = c0 + c;
+      return rr < 0 || rr >= ROWS || cc < 0 || cc >= COLS || board[rr][cc];
+    });
+  }
+  function rotate() {
+    if (!piece) return;
+    const h = Math.max(...piece.cells.map(([r]) => r)) + 1;
+    const rotated = piece.cells.map(([r, c]) => [c, h - 1 - r]);
+    for (const kick of [0, -1, 1, -2, 2]) {
+      if (!collides(rotated, piece.r, piece.c + kick)) { piece.cells = rotated; piece.c += kick; draw(); return; }
+    }
+  }
+  function move(dc) {
+    if (!piece || collides(piece.cells, piece.r, piece.c + dc)) return;
+    piece.c += dc;
+    draw();
+  }
+  function step() {
+    if (over || !piece) return;
+    if (!collides(piece.cells, piece.r + 1, piece.c)) { piece.r++; draw(); return; }
+    piece.cells.forEach(([r, c]) => { board[piece.r + r][piece.c + c] = piece.col; });
+    let cleared = 0;
+    for (let r = ROWS - 1; r >= 0; r--) {
+      if (board[r].every(Boolean)) {
+        board.splice(r, 1);
+        board.unshift(Array(COLS).fill(null));
+        cleared++;
+        r++;
+      }
+    }
+    if (cleared) {
+      lines += cleared;
+      status(cleared > 1 ? `${cleared} lines at once! ⚡ ${lines}/${target}` : `Line cleared · ${lines}/${target}`);
+    } else {
+      const firstFilled = board.findIndex((row) => row.some(Boolean));
+      const height = firstFilled < 0 ? 0 : ROWS - firstFilled;
+      status(`${lines}/${target} lines · stack ${height}/${ROWS}`);
+    }
+    if (lines >= target) {
+      over = true;
+      draw();
+      status(`${target} lines cleared! 🏆`);
+      return finish(true, lines);
+    }
+    spawn();
+    draw();
+  }
+  function tick() {
+    if (over) return;
+    step();
+    dropTimer = setTimeout(tick, Math.max(220, baseDrop - lines * 55));
+  }
+  const cleanupInput = directionInput(mount, (d) => {
+    if (over) return;
+    if (d === 'left') move(-1);
+    else if (d === 'right') move(1);
+    else if (d === 'up') rotate();
+    else if (d === 'down') step();
+  });
+  function cell(r, c, col) {
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(c * CS + 1, r * CS + 1, CS - 2, CS - 2, 3);
+    else ctx.rect(c * CS + 1, r * CS + 1, CS - 2, CS - 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.22)';
+    ctx.fillRect(c * CS + 3, r * CS + 3, CS - 6, 3);
+  }
+  function draw() {
+    ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(148,163,184,.14)'; ctx.lineWidth = 1;
+    for (let c = 1; c < COLS; c++) { ctx.beginPath(); ctx.moveTo(c * CS, 0); ctx.lineTo(c * CS, H); ctx.stroke(); }
+    for (let r = 1; r < ROWS; r++) { ctx.beginPath(); ctx.moveTo(0, r * CS); ctx.lineTo(W, r * CS); ctx.stroke(); }
+    board.forEach((row, r) => row.forEach((v, c) => v && cell(r, c, v)));
+    if (piece && !over) piece.cells.forEach(([r, c]) => cell(piece.r + r, piece.c + c, piece.col));
+  }
+  spawn();
+  draw();
+  status(`◀ ▶ move · ▲ rotate · ▼ drop · clear ${target} lines`);
+  tick();
+  return () => {
+    over = true;
+    clearTimeout(dropTimer);
+    cancelAnimationFrame(raf);
+    cleanupInput();
+  };
+};
+
+// ---- 22. Delta Flyer — tap to fly, thread every gate ----
+GAME_IMPL.flyer = (mount, diff, finish, status) => {
+  const W = 260, H = 380;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  cv.className = 'game-canvas';
+  mount.appendChild(cv);
+  const ctx = cv.getContext('2d');
+  const target = diff === 'hard' ? 18 : 10;
+  const gap = diff === 'hard' ? 92 : 116;
+  const gateSpeed = diff === 'hard' ? 2.4 : 1.9;
+  const GRAV = 0.32, FLAP = -5.2, GW = 34;
+  let y = H / 2, vy = 0, gates = [], passed = 0, over = false, raf = 0, lastTs = 0, started = false, tilt = 0;
+
+  function addGate(x) {
+    const top = 40 + Math.random() * (H - gap - 110);
+    gates.push({ x, top, scored: false });
+  }
+  addGate(W + 40);
+  addGate(W + 40 + 170);
+
+  function flap() {
+    if (over) return;
+    started = true;
+    vy = FLAP;
+  }
+  const onDown = () => flap();
+  cv.addEventListener('pointerdown', onDown);
+  const onKey = (e) => { if (e.key === ' ' || e.key === 'ArrowUp') { e.preventDefault(); flap(); } };
+  document.addEventListener('keydown', onKey);
+
+  function draw() {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#0b1a3a'); g.addColorStop(1, '#1e3a8a');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(255,255,255,.18)';
+    for (let i = 0; i < 26; i++) ctx.fillRect((i * 71 + passed * 3) % W, (i * 43) % H, 2, 2);
+    gates.forEach((gt) => {
+      ctx.fillStyle = '#22c55e';
+      ctx.beginPath();
+      if (ctx.roundRect) { ctx.roundRect(gt.x, 0, GW, gt.top, 5); ctx.roundRect(gt.x, gt.top + gap, GW, H - gt.top - gap, 5); }
+      else { ctx.rect(gt.x, 0, GW, gt.top); ctx.rect(gt.x, gt.top + gap, GW, H - gt.top - gap); }
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.25)';
+      ctx.fillRect(gt.x + 3, gt.top - 10, GW - 6, 8);
+      ctx.fillRect(gt.x + 3, gt.top + gap + 2, GW - 6, 8);
+    });
+    ctx.save();
+    ctx.translate(70, y);
+    ctx.rotate(tilt);
+    ctx.font = '26px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('🚀', 0, 0);
+    ctx.restore();
+    ctx.fillStyle = 'rgba(255,255,255,.9)';
+    ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(`${passed} / ${target}`, 10, 24);
+    if (!started) {
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillText('Tap to fly', W / 2, H - 40);
+    }
+  }
+  function crash(msg) {
+    over = true;
+    draw();
+    status(msg);
+    finish(false, passed);
+  }
+  function loop(ts) {
+    if (over) return;
+    const dt = lastTs ? Math.min(3, (ts - lastTs) / (1000 / 60)) : 1;
+    lastTs = ts;
+    if (started) {
+      vy += GRAV * dt;
+      y += vy * dt;
+      tilt = Math.max(-0.5, Math.min(0.8, vy * 0.06));
+      const v = gateSpeed + passed * 0.045;
+      gates.forEach((gt) => (gt.x -= v * dt));
+      if (gates.length && gates[0].x < -GW) gates.shift();
+      const lastX = gates.length ? gates[gates.length - 1].x : 0;
+      if (lastX < W - 150) addGate(W + 20);
+      for (const gt of gates) {
+        if (!gt.scored && gt.x + GW < 70 - 12) {
+          gt.scored = true;
+          passed++;
+          if (passed >= target) {
+            over = true; draw();
+            status(`${target} gates cleared! 🏆`);
+            return finish(true, passed);
+          }
+        }
+        const hitX = 70 + 12 > gt.x && 70 - 12 < gt.x + GW;
+        if (hitX && (y - 11 < gt.top || y + 11 > gt.top + gap)) return crash(`💥 Clipped a gate at ${passed}/${target}.`);
+      }
+      if (y > H - 10) return crash(`💥 Down at ${passed}/${target}.`);
+      if (y < 10) { y = 10; vy = 0; }
+      status(`Gate ${passed}/${target} · tap to fly`);
+    }
+    draw();
+    raf = requestAnimationFrame(loop);
+  }
+  status(`Tap to fly · thread ${target} gates`);
+  draw();
+  raf = requestAnimationFrame(loop);
+  return () => {
+    over = true;
+    cancelAnimationFrame(raf);
+    cv.removeEventListener('pointerdown', onDown);
+    document.removeEventListener('keydown', onKey);
   };
 };

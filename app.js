@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.2.7';
+const APP_VERSION = '1.3.0';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -345,14 +345,46 @@ function toast(msg) {
 const fmt = (n) => Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 4 });
 
 // ---------- Auth flow ----------
-$('ageGate').addEventListener('change', () => {
-  $('sendCodeBtn').disabled = !$('ageGate').checked;
-});
+// Separate Sign in / Sign up paths: sign-up collects the referral code and the
+// 18+ / terms acceptance, sign-in only needs the email.
+let authMode = 'signin';
+function setAuthMode(mode) {
+  authMode = mode === 'signup' ? 'signup' : 'signin';
+  const isSignup = authMode === 'signup';
+  document.querySelectorAll('.auth-switch-btn').forEach((b) => {
+    const on = b.dataset.mode === authMode;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', String(on));
+  });
+  $('signupFields').hidden = !isSignup;
+  $('authTitle').textContent = isSignup ? 'Create your account 🚀' : 'Welcome back 👋';
+  $('authSub').textContent = isSignup
+    ? 'Enter your email — we’ll send a one-time code and create your wallet instantly.'
+    : 'Enter the email you signed up with — we’ll send a one-time code.';
+  $('sendCodeBtn').textContent = isSignup ? 'Create account →' : 'Sign in →';
+  $('authAlt').innerHTML = isSignup
+    ? 'Already have an account? <button type="button" class="link-btn" id="authAltBtn">Sign in instead</button>'
+    : 'New to Deltix? <button type="button" class="link-btn" id="authAltBtn">Create an account</button>';
+  $('authAltBtn').addEventListener('click', () => setAuthMode(isSignup ? 'signin' : 'signup'));
+  $('verifyBtn').textContent = isSignup ? 'Verify & create wallet' : 'Verify & sign in';
+  $('emailHint').textContent = '';
+  updateSendCodeState();
+}
+function updateSendCodeState() {
+  $('sendCodeBtn').disabled = authMode === 'signup' && !$('ageGate').checked;
+}
+document.querySelectorAll('.auth-switch-btn').forEach((b) =>
+  b.addEventListener('click', () => setAuthMode(b.dataset.mode))
+);
+$('ageGate').addEventListener('change', updateSendCodeState);
+setAuthMode('signin');
+
 $('sendCodeBtn').addEventListener('click', async () => {
   const email = $('emailInput').value.trim().toLowerCase();
   const hint = $('emailHint');
+  const isSignup = authMode === 'signup';
   hint.className = 'hint';
-  if (!$('ageGate').checked) {
+  if (isSignup && !$('ageGate').checked) {
     hint.textContent = 'You must confirm you are 18+ and accept the Terms to continue.';
     hint.classList.add('error');
     return;
@@ -364,10 +396,11 @@ $('sendCodeBtn').addEventListener('click', async () => {
   }
   $('sendCodeBtn').disabled = true;
   try {
-    const referralCode = $('refCodeInput').value.trim().toUpperCase();
+    const referralCode = isSignup ? $('refCodeInput').value.trim().toUpperCase() : '';
     const integrityPayload = await getIntegrityPayload();
     const r = await api('POST', '/auth/register', {
       email,
+      mode: authMode,
       ...(referralCode ? { referralCode } : {}),
       ...integrityPayload,
     });
@@ -383,10 +416,13 @@ $('sendCodeBtn').addEventListener('click', async () => {
     }
     showScreen('screen-otp');
   } catch (e) {
+    // Guide the user straight to the right tab instead of a dead end.
+    if (e.data?.code === 'ACCOUNT_NOT_FOUND') setAuthMode('signup');
+    else if (e.data?.code === 'ACCOUNT_EXISTS') setAuthMode('signin');
     hint.textContent = e.message;
     hint.classList.add('error');
   } finally {
-    $('sendCodeBtn').disabled = false;
+    updateSendCodeState();
   }
 });
 
@@ -499,29 +535,47 @@ function emailFromToken(token) {
 }
 
 // ---------- Profile (avatar + masked email + referral) ----------
-const AVATAR_CHOICES = ['🦊','🐼','🐯','🦁','🐸','🐵','🐨','🐧','🦉','🐙','🐝','🦄','🐳','🦖','👾','🤖','👽','🎮','⚡','🔥','🌟','💎'];
+const AVATAR_CHOICES = [
+  '🦊','🐼','🐯','🦁','🐸','🐵','🐨','🐧','🦉','🐙','🐝','🦄','🐳','🦖','🐺','🐻','🐰','🐷',
+  '🐮','🐔','🦩','🦋','🐢','🦈','🐬','🦓','🦍','🐹','🦔','🐴','🦌','🦚',
+  '👾','🤖','👽','🎮','🕹️','🎲','🎯','🎨','🎧','🎸','🚀','🛰️','⚽','🏀','🏆','🥇',
+  '⚡','🔥','🌟','💎','🌈','🌙','☀️','🍀','🌸','🍕','🍩','🧊','🪐','🔮','🎃','🦴',
+];
 // Premium avatars: unlocked via an opt-in rewarded ad. The unlock is a
 // non-transferable cosmetic on this account — the AdMob-compliant reward.
-const PREMIUM_AVATARS = ['🐉','🦅','🧙','🥷','👑','🛸'];
+const PREMIUM_AVATARS = ['🐉','🦅','🧙','🥷','👑','🛸','🦸','🧛','🧜','🧚','🤴','👸','🦹','🧞','🐲','⚔️','🗿','💫'];
 function unlockedAvatars() {
   try { return JSON.parse(localStorage.getItem('dltx_avatar_unlocked') || '[]'); } catch { return []; }
 }
 
-// Premium app themes: same AdMob-compliant model — an opt-in rewarded ad
-// unlocks a non-transferable cosmetic color theme (never $DLTX).
+// App themes: "classic" and the community-requested dark "midnight" are free.
+// The colour packs use the same AdMob-compliant model — an opt-in rewarded ad
+// unlocks a non-transferable cosmetic theme (never $DLTX).
 const THEMES = [
-  { id: 'classic', name: 'Classic', free: true },
-  { id: 'emerald', name: 'Emerald', free: false },
-  { id: 'sunset',  name: 'Sunset',  free: false },
-  { id: 'royal',   name: 'Royal',   free: false },
+  { id: 'classic',  name: 'Classic',  free: true },
+  { id: 'midnight', name: 'Midnight', free: true, dark: true },
+  { id: 'emerald',  name: 'Emerald',  free: false },
+  { id: 'sunset',   name: 'Sunset',   free: false },
+  { id: 'royal',    name: 'Royal',    free: false },
+  { id: 'ocean',    name: 'Ocean',    free: false },
+  { id: 'rose',     name: 'Rose',     free: false },
+  { id: 'mint',     name: 'Mint',     free: false },
+  { id: 'amber',    name: 'Amber',    free: false },
+  { id: 'carbon',   name: 'Carbon',   free: false, dark: true },
+  { id: 'cyber',    name: 'Cyber',    free: false, dark: true },
+  { id: 'aurora',   name: 'Aurora',   free: false, dark: true },
 ];
 function unlockedThemes() {
   try { return JSON.parse(localStorage.getItem('dltx_theme_unlocked') || '[]'); } catch { return []; }
 }
 function applyTheme(id) {
-  if (!THEMES.some((t) => t.id === id)) id = 'classic';
-  if (id === 'classic') delete document.documentElement.dataset.theme;
-  else document.documentElement.dataset.theme = id;
+  const t = THEMES.find((x) => x.id === id) || THEMES[0];
+  if (t.id === 'classic') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = t.id;
+  if (t.dark) document.documentElement.dataset.dark = 'on';
+  else delete document.documentElement.dataset.dark;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', t.dark ? '#0b1120' : '#ffffff');
 }
 applyTheme(localStorage.getItem('dltx_theme') || 'classic');
 
@@ -1935,6 +1989,31 @@ function rankForEnergy(e) {
   for (let i = ENERGY_RANKS.length - 1; i >= 0; i--) if (e >= ENERGY_RANKS[i].min) return { rank: ENERGY_RANKS[i], index: i };
   return { rank: ENERGY_RANKS[0], index: 0 };
 }
+
+// ---- Energy spending: bonus arcade games are opened with Energy ----
+// Energy is a non-monetary status point (never $DLTX), so spending it only
+// unlocks in-app content on this device.
+function unlockedGames() {
+  try { return JSON.parse(localStorage.getItem('dltx_games_unlocked') || '[]'); } catch { return []; }
+}
+function isGameUnlocked(id) {
+  return unlockedGames().includes(id);
+}
+/** Spends Energy on a bonus game. Returns 'ok' | 'short' | 'already'. */
+function unlockGameWithEnergy(id, cost) {
+  if (isGameUnlocked(id)) return 'already';
+  const st = energyState();
+  if (st.energy < cost) return 'short';
+  localStorage.setItem('dltx_energy', String(st.energy - cost));
+  const list = unlockedGames();
+  list.push(id);
+  localStorage.setItem('dltx_games_unlocked', JSON.stringify(list));
+  renderEnergy();
+  return 'ok';
+}
+window.energyBalance = () => energyState().energy;
+window.isGameUnlocked = isGameUnlocked;
+window.unlockGameWithEnergy = unlockGameWithEnergy;
 function renderEnergy() {
   const st = energyState();
   const { rank, index } = rankForEnergy(st.energy);
@@ -1968,6 +2047,8 @@ function renderEnergy() {
       <div class="er-rate">+1 Energy / Ad</div>
     </div>`).join('');
   set('efStreakSub', st.streak > 0 ? `${st.streak}-day streak 🔥` : 'Build streaks, earn bonus Energy');
+  const opened = unlockedGames().length;
+  set('efGamesSub', opened >= 5 ? 'All 5 bonus games unlocked ✅' : `${opened}/5 unlocked · spend Energy in the Arcade`);
 }
 // Rewarded ads may not be requested back-to-back — enforce a 30s gap between views.
 const ENERGY_AD_COOLDOWN_MS = 30000;
@@ -2003,6 +2084,9 @@ document.querySelectorAll('.energy-feat').forEach((c) =>
     if (c.dataset.ef === 'streak') {
       const st = energyState();
       toast(st.streak > 0 ? `You're on a ${st.streak}-day streak 🔥` : 'Watch an ad today to start your streak!');
+    } else if (c.dataset.ef === 'games') {
+      showTab('tab-arcade');
+      toast('Spend Energy to open bonus games 🎮');
     } else {
       toast('Coming soon 🚀');
     }

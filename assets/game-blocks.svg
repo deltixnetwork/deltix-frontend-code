@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Deltix Delta Blocks — falling tetromino above a stacked well -->
+  <rect x="8" y="8" width="84" height="84" rx="12" fill="#0f172a"/>
+  <g stroke="#1e293b" stroke-width="1">
+    <line x1="29" y1="10" x2="29" y2="90"/><line x1="50" y1="10" x2="50" y2="90"/><line x1="71" y1="10" x2="71" y2="90"/>
+  </g>
+  <g rx="2">
+    <rect x="34" y="20" width="14" height="14" rx="3" fill="#22d3ee"/>
+    <rect x="49" y="20" width="14" height="14" rx="3" fill="#22d3ee"/>
+    <rect x="49" y="35" width="14" height="14" rx="3" fill="#22d3ee"/>
+    <rect x="64" y="35" width="14" height="14" rx="3" fill="#22d3ee"/>
+  </g>
+  <g rx="2">
+    <rect x="14" y="62" width="14" height="14" rx="3" fill="#a855f7"/>
+    <rect x="29" y="62" width="14" height="14" rx="3" fill="#f97316"/>
+    <rect x="64" y="62" width="14" height="14" rx="3" fill="#22c55e"/>
+    <rect x="14" y="77" width="14" height="12" rx="3" fill="#facc15"/>
+    <rect x="29" y="77" width="14" height="12" rx="3" fill="#ef4444"/>
+    <rect x="44" y="77" width="14" height="12" rx="3" fill="#3b82f6"/>
+    <rect x="59" y="77" width="14" height="12" rx="3" fill="#a855f7"/>
+    <rect x="74" y="77" width="12" height="12" rx="3" fill="#22c55e"/>
+  </g>
+</svg>

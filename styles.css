@@ -1456,4 +1456,208 @@ body.has-ad-banner #screen-main.active {
   .dapp-grid { gap: 8px; }
   .games-grid { gap: 10px; }
   .bal-3d-icon { width: 38px; height: 38px; }
+  .board.c4 .cell { font-size: 15px; }
 }
+
+/* ═══════════ Sign in / Sign up switch ═══════════ */
+.auth-switch {
+  display: flex; gap: 4px; padding: 4px; margin-bottom: 14px;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px;
+}
+.auth-switch-btn {
+  flex: 1; padding: 9px 10px; border: none; border-radius: 999px; cursor: pointer;
+  background: transparent; color: var(--muted); font-size: 14px; font-weight: 700;
+  transition: background .15s ease, color .15s ease, box-shadow .15s ease;
+}
+.auth-switch-btn.active {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff; box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.auth-alt { margin-top: 12px; text-align: center; font-size: 12.5px; color: var(--muted); }
+.link-btn {
+  border: none; background: none; padding: 0; cursor: pointer;
+  color: var(--accent); font-size: 12.5px; font-weight: 800; text-decoration: underline;
+}
+
+/* ═══════════ Arcade: emojis, crew, Energy unlocks ═══════════ */
+.game-card { position: relative; }
+.game-card .g-emoji { font-size: 15px; margin-right: 2px; }
+.game-card.locked .game-card-3d-img { filter: grayscale(1) brightness(.85); opacity: .6; }
+.game-card.locked .g-name { color: var(--muted); }
+.g-energy-badge {
+  position: absolute; top: 7px; right: 7px; z-index: 1;
+  font-size: 9.5px; font-weight: 900; padding: 3px 7px; border-radius: 999px;
+  background: linear-gradient(135deg, #f59e0b, #f97316); color: #fff;
+  box-shadow: 0 3px 8px rgba(249, 115, 22, .35);
+}
+.game-card:not(.locked) .g-energy-badge { background: linear-gradient(135deg, #22c55e, #16a34a); box-shadow: 0 3px 8px rgba(22, 163, 74, .3); }
+
+.crew-strip {
+  display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 8px; margin-bottom: 4px;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.crew-strip::-webkit-scrollbar { display: none; }
+.crew-chip {
+  flex: 0 0 auto; width: 78px; padding: 9px 6px; border-radius: 14px; text-align: center;
+  border: 1px solid var(--border); background: var(--panel);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, .06);
+}
+.crew-emoji { display: block; font-size: 26px; line-height: 1.2; }
+.crew-name { display: block; font-size: 12px; font-weight: 800; color: var(--text); }
+.crew-role { display: block; font-size: 9.5px; color: var(--muted); }
+
+.lock-panel {
+  text-align: center; padding: 18px 14px; border-radius: 16px; margin: 10px 0;
+  border: 1px dashed color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel-2));
+}
+.lock-emoji { font-size: 40px; line-height: 1; }
+.lock-title { font-size: 16px; font-weight: 800; margin-top: 6px; color: var(--text); }
+.lock-cost { font-size: 15px; font-weight: 900; color: #f59e0b; margin-top: 4px; }
+.lock-balance { font-size: 12px; color: var(--muted); margin: 4px 0 12px; }
+.lock-panel .btn { margin-top: 8px; }
+.energy-feat.highlight { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 7%, #fff); }
+
+/* Delta Four board */
+.board.c4 { max-width: 300px; background: var(--accent); padding: 6px; border-radius: 12px; gap: 3px; }
+.board.c4 .cell { font-size: 17px; border: none; border-radius: 50%; background: color-mix(in srgb, var(--accent) 18%, #fff); }
+.board.c4 .cell.last { box-shadow: inset 0 0 0 2.5px #fde047; }
+
+/* ═══════════ Premium colour themes ═══════════ */
+html[data-theme="ocean"]  { --accent: #0284c7; --accent-2: #0891b2; }
+html[data-theme="ocean"] body { background: radial-gradient(1200px 560px at 50% -240px, #f2fbff 20%, #daeef8 70%, #c9e5f4 100%); }
+html[data-theme="rose"]   { --accent: #e11d48; --accent-2: #db2777; }
+html[data-theme="rose"] body { background: radial-gradient(1200px 560px at 50% -240px, #fff5f7 20%, #fbe0e7 70%, #f7d2dc 100%); }
+html[data-theme="mint"]   { --accent: #0d9488; --accent-2: #22c55e; }
+html[data-theme="mint"] body { background: radial-gradient(1200px 560px at 50% -240px, #f2fffb 20%, #d9f5ec 70%, #cbeee2 100%); }
+html[data-theme="amber"]  { --accent: #d97706; --accent-2: #eab308; }
+html[data-theme="amber"] body { background: radial-gradient(1200px 560px at 50% -240px, #fffaf0 20%, #fbeed3 70%, #f7e4bd 100%); }
+html[data-theme="ocean"] .balance-card { background: linear-gradient(145deg, #075985 0%, #0284c7 40%, #082f49 100%); }
+html[data-theme="rose"] .balance-card { background: linear-gradient(145deg, #9f1239 0%, #e11d48 40%, #4c0519 100%); }
+html[data-theme="mint"] .balance-card { background: linear-gradient(145deg, #115e59 0%, #0d9488 40%, #052e2b 100%); }
+html[data-theme="amber"] .balance-card { background: linear-gradient(145deg, #92400e 0%, #d97706 40%, #451a03 100%); }
+html[data-theme="ocean"] .pill-btn.primary { background: linear-gradient(180deg, #0284c7 0%, #075985 100%); border-color: #38bdf8; }
+html[data-theme="rose"] .pill-btn.primary { background: linear-gradient(180deg, #e11d48 0%, #9f1239 100%); border-color: #fb7185; }
+html[data-theme="mint"] .pill-btn.primary { background: linear-gradient(180deg, #0d9488 0%, #115e59 100%); border-color: #5eead4; }
+html[data-theme="amber"] .pill-btn.primary { background: linear-gradient(180deg, #d97706 0%, #92400e 100%); border-color: #fbbf24; }
+
+.sw-midnight { background: linear-gradient(135deg, #1e293b, #3b82f6); }
+.sw-ocean { background: linear-gradient(135deg, #0284c7, #0891b2); }
+.sw-rose { background: linear-gradient(135deg, #e11d48, #db2777); }
+.sw-mint { background: linear-gradient(135deg, #0d9488, #22c55e); }
+.sw-amber { background: linear-gradient(135deg, #d97706, #eab308); }
+.sw-carbon { background: linear-gradient(135deg, #0f172a, #64748b); }
+.sw-cyber { background: linear-gradient(135deg, #0f172a, #22d3ee); }
+.sw-aurora { background: linear-gradient(135deg, #4c1d95, #22d3ee); }
+
+/* ═══════════ Dark themes (Midnight / Carbon / Cyber / Aurora) ═══════════ */
+html[data-dark] {
+  color-scheme: dark;
+  --bg: #0b1120;
+  --panel: #111a2e;
+  --panel-2: #17223c;
+  --border: #263351;
+  --text: #e6edf9;
+  --muted: #93a4c3;
+  --green-bg: #0f2f22;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 20px rgba(0, 0, 0, .35);
+}
+html[data-theme="midnight"] { --accent: #3b82f6; --accent-2: #8b5cf6; }
+html[data-theme="carbon"]   { --accent: #94a3b8; --accent-2: #64748b; }
+html[data-theme="cyber"]    { --accent: #22d3ee; --accent-2: #a855f7; }
+html[data-theme="aurora"]   { --accent: #34d399; --accent-2: #818cf8; }
+html[data-dark] body { background: radial-gradient(1200px 560px at 50% -240px, #16233f 15%, #0d1526 65%, #070c17 100%); color: var(--text); }
+html[data-theme="cyber"] body { background: radial-gradient(1200px 560px at 50% -240px, #0d2b38 15%, #0a1524 65%, #05080f 100%); }
+html[data-theme="aurora"] body { background: radial-gradient(1200px 560px at 50% -240px, #17303f 15%, #131a35 65%, #080a18 100%); }
+html[data-dark] .phone { background: var(--panel); box-shadow: 0 14px 44px rgba(0, 0, 0, .5); }
+html[data-dark] .topbar { background: rgba(17, 26, 46, .96); border-bottom-color: var(--border); }
+html[data-dark] .brand { color: var(--text); }
+html[data-dark] .logout-btn,
+html[data-dark] .refresh-btn,
+html[data-dark] .icon-btn,
+html[data-dark] .numpad button,
+html[data-dark] .dpad button,
+html[data-dark] .swap-venue,
+html[data-dark] input,
+html[data-dark] select,
+html[data-dark] textarea { background: var(--panel-2); border-color: var(--border); color: var(--text); }
+html[data-dark] .logout-btn:active,
+html[data-dark] .refresh-btn:active,
+html[data-dark] .numpad button:active,
+html[data-dark] .dpad button:active,
+html[data-dark] .swap-venue:active,
+html[data-dark] .feature-card.clickable:active,
+html[data-dark] .tx.clickable:active,
+html[data-dark] .block-card.clickable:active { background: #1d2a49; }
+html[data-dark] .btn.danger { background: #3a1417; border-color: #7f1d1d; }
+html[data-dark] .pill,
+html[data-dark] .status-pill.voting,
+html[data-dark] .mini-btn.ghost,
+html[data-dark] .status-pill.pending,
+html[data-dark] .diff-btn.active,
+html[data-dark] .ref-code { background: #1b2a4d; color: var(--accent); border-color: var(--border); }
+html[data-dark] .pill.paused,
+html[data-dark] .status-pill.waiting { background: #3a2c0d; color: #fbbf24; }
+html[data-dark] .status-pill.rejected,
+html[data-dark] .vote-actions .mini-btn.against { background: #3a1417; color: #fca5a5; border-color: #7f1d1d; }
+html[data-dark] .votebar,
+html[data-dark] .progress-row .bar { background: #1d2a49; }
+html[data-dark] .toast { background: #1e293b; }
+html[data-dark] .exp-body,
+html[data-dark] .db-frame-wrap,
+html[data-dark] .db-loading { background: var(--bg); }
+html[data-dark] .dbrowser,
+html[data-dark] .explorer,
+html[data-dark] .db-bar,
+html[data-dark] .db-nav,
+html[data-dark] .exp-head,
+html[data-dark] .exp-body .card,
+html[data-dark] .game-card,
+html[data-dark] .energy-rank,
+html[data-dark] .energy-feat,
+html[data-dark] .crew-chip,
+html[data-dark] .ref-item { background: var(--panel); border-color: var(--border); color: var(--text); }
+html[data-dark] .game-card .g-name { color: var(--text); }
+html[data-dark] .ambassador-card { background: linear-gradient(135deg, #16203a 0%, #1b1a35 100%); border-color: var(--border); }
+html[data-dark] .energy-hero { background: linear-gradient(180deg, #16233f 0%, #101a30 100%); border-color: var(--border); color: var(--text); }
+html[data-dark] .energy-hero-title { color: var(--text); text-shadow: none; }
+html[data-dark] .eec-meta { color: var(--text); }
+html[data-dark] .energy-disclaimer { background: #16233f; color: #9db4dc; }
+html[data-dark] .tabbar { background: rgba(17, 26, 46, .97); border-top-color: var(--border); }
+html[data-dark] .tabbtn.active { background: #1b2a4d; color: var(--accent); }
+html[data-dark] .modal { background: var(--panel); color: var(--text); }
+html[data-dark] .board .cell { background: var(--panel-2); border-color: var(--border); color: var(--text); }
+html[data-dark] .board.merge .cell,
+html[data-dark] .board.reaction .cell,
+html[data-dark] .board.chess .cell { background: #1b2a4d; }
+html[data-dark] .board.mines .cell { background: #23334f; }
+html[data-dark] .board.mines .cell.open,
+html[data-dark] .board.sudoku .cell.given,
+html[data-dark] .board.slide .cell { background: #16223c; }
+html[data-dark] .board.sudoku .cell.peer { background: #1d2c4d; }
+html[data-dark] .board.reversi .cell { background: #14352a; border-color: #1f5140; }
+html[data-dark] .board.memory .cell.face-down { background: linear-gradient(135deg, #1b2a4d, #16233f); }
+html[data-dark] .board .cell.win { background: #14532d; }
+html[data-dark] .lb-cell,
+html[data-dark] .ludo-token,
+html[data-dark] .ludo-dice2 { background: #16233f; color: var(--text); }
+html[data-dark] .lb-cell.lb-path { background: #101a30; border-color: var(--border); }
+html[data-dark] .ludo-board { border-color: #475569; }
+html[data-dark] .disc.ai { background: #e2e8f0; }
+html[data-dark] .energy-feat.highlight { background: #1b2a4d; }
+html[data-dark] .auth-switch-btn.active { color: #0b1120; }
+html[data-dark] .board.c4 .cell { background: #0b1120; }
+html[data-dark] .section-title,
+html[data-dark] .auth-title,
+html[data-dark] .stat .v,
+html[data-dark] .swap-venue-name,
+html[data-dark] .validator-card-3d .name,
+html[data-dark] .feature-card.collectible.locked .name { color: var(--text); }
+html[data-dark] .stat { background: linear-gradient(180deg, #17223c, #131c33); border-color: var(--border); }
+html[data-dark] .btn.ghost,
+html[data-dark] .pill-btn.ghost { background: var(--panel-2); border-color: var(--border); color: var(--text); }
+html[data-dark] .swap-venue:first-child { background: #1b2a4d; }
+html[data-dark] .showcase-banner,
+html[data-dark] .ambassador-card { color: var(--text); }
+html[data-dark] .hero-logo { color: var(--accent); }
+html[data-dark] .lock-panel { background: #16233f; }

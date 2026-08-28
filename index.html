@@ -39,21 +39,28 @@
         <p class="tagline">Mobile-first Proof of Stake. Stake, delegate &amp; govern — no mining rigs.</p>
       </div>
       <div class="card">
-        <h3 class="auth-title">Sign in or Sign up</h3>
-        <p class="muted small-note auth-sub">Enter your email — we’ll send a one-time code. New here? Your account and wallet are created automatically.</p>
+        <div class="auth-switch" role="tablist" aria-label="Sign in or sign up">
+          <button class="auth-switch-btn active" id="authSignInBtn" data-mode="signin" role="tab" aria-selected="true">Sign in</button>
+          <button class="auth-switch-btn" id="authSignUpBtn" data-mode="signup" role="tab" aria-selected="false">Sign up</button>
+        </div>
+        <h3 class="auth-title" id="authTitle">Welcome back 👋</h3>
+        <p class="muted small-note auth-sub" id="authSub">Enter the email you signed up with — we’ll send a one-time code.</p>
         <label for="emailInput">Email address</label>
         <input id="emailInput" type="email" inputmode="email" placeholder="you@example.com" autocomplete="email" />
-        <label for="refCodeInput">Referral code (optional)</label>
-        <input id="refCodeInput" type="text" placeholder="DLTX-XXXXXX" autocomplete="off" style="text-transform:uppercase" />
-        <label class="check-row" for="ageGate">
-          <input id="ageGate" type="checkbox" />
-          <span>I am 18 years of age or older, and I understand $DLTX has no monetary value,
-            is not redeemable for real currency, and is not an investment. I accept the
-            <a href="/terms.html" class="legal-link" target="_blank" rel="noopener">Terms of Service</a> and
-            <a href="/privacy.html" class="legal-link" target="_blank" rel="noopener">Privacy Policy</a>.</span>
-        </label>
-        <button class="btn primary" id="sendCodeBtn" disabled>Send verification code</button>
+        <div class="signup-only" id="signupFields" hidden>
+          <label for="refCodeInput">Referral code (optional)</label>
+          <input id="refCodeInput" type="text" placeholder="DLTX-XXXXXX" autocomplete="off" style="text-transform:uppercase" />
+          <label class="check-row" for="ageGate">
+            <input id="ageGate" type="checkbox" />
+            <span>I am 18 years of age or older, and I understand $DLTX has no monetary value,
+              is not redeemable for real currency, and is not an investment. I accept the
+              <a href="/terms.html" class="legal-link" target="_blank" rel="noopener">Terms of Service</a> and
+              <a href="/privacy.html" class="legal-link" target="_blank" rel="noopener">Privacy Policy</a>.</span>
+          </label>
+        </div>
+        <button class="btn primary" id="sendCodeBtn">Sign in →</button>
         <p class="hint" id="emailHint"></p>
+        <p class="auth-alt" id="authAlt">New to Deltix? <button type="button" class="link-btn" id="authAltBtn">Create an account</button></p>
       </div>
       <button class="btn ghost" id="publicExplorerBtn">🔍 Explore the live Deltix chain — no account needed</button>
       <p class="footnote">A standalone, Ethereum-inspired DPoS network.<br/>OTP verification is identity-only — it never controls your wallet keys.</p>
@@ -201,9 +208,19 @@
           <img src="assets/art-arcade-banner.png" class="banner-3d-img" alt="Arcade" onerror="this.onerror=null;this.src='assets/art-arcade-banner.svg'" />
         </div>
         <h3 class="section-title">Deltix Arcade <span class="pill live">Live</span></h3>
-        <p class="muted small-note">Seventeen original Deltix games — classic, ownerless game concepts rebuilt in our own style. Win to earn $DLTX.</p>
+        <p class="muted small-note">Twenty-two original Deltix games — classic, ownerless game concepts rebuilt in our own style. Win to earn $DLTX.</p>
         <div class="card supply-list" id="arcadeMeta"></div>
+
+        <h3 class="section-title">Meet the Deltix crew 👋</h3>
+        <p class="muted small-note">Every game has a rival with their own style. Beat them all.</p>
+        <div class="crew-strip" id="crewStrip"></div>
+
+        <h3 class="section-title">All games 🎮</h3>
         <div class="games-grid" id="gamesGrid"></div>
+
+        <h3 class="section-title">Energy bonus games ⚡</h3>
+        <p class="muted small-note">Unlock these with Deltix Energy from the <b>Energy</b> tab — once opened they stay yours.</p>
+        <div class="games-grid" id="bonusGamesGrid"></div>
         <ul class="disclosure">
           <li>Game rewards are $DLTX utility points with <b>no monetary value</b>.</li>
           <li>No wagering, no entry fees — all games are free skill games.</li>
@@ -251,9 +268,9 @@
             infrastructure.</div>
         </div>
 
-        <h3 class="section-title">Referral program <span class="pill">Max 3</span></h3>
+        <h3 class="section-title">Referral program <span class="pill">Unlimited</span></h3>
         <div class="feature-card">
-          <div class="meta">Each verified account may sponsor a maximum of <b>three</b> participants.
+          <div class="meta">Every verified account can sponsor an <b>unlimited</b> number of participants.
             No downlines, no paid membership, no rewards for registration alone. Rewards activate only
             after the referred participant verifies and maintains an eligible stake. Manage yours in
             the <b>Community</b> tab.</div>
@@ -409,21 +426,21 @@
         <div class="energy-ranks-grid" id="energyRanksGrid"></div>
 
         <div class="energy-features">
+          <div class="energy-feat highlight" data-ef="games">
+            <img src="assets/energy/20_gift.png" class="ef-ic" alt="" /><div class="ef-name">Bonus Games 🎮</div>
+            <div class="ef-sub" id="efGamesSub">Spend Energy to open 5 bonus games</div>
+          </div>
           <div class="energy-feat" data-ef="streak">
-            <img src="assets/energy/17_flame.png" class="ef-ic" alt="" /><div class="ef-name">Daily Streak</div>
+            <img src="assets/energy/17_flame.png" class="ef-ic" alt="" /><div class="ef-name">Daily Streak 🔥</div>
             <div class="ef-sub" id="efStreakSub">Build streaks, earn bonus Energy</div>
           </div>
           <div class="energy-feat" data-ef="leaderboard">
-            <img src="assets/energy/18_trophy.png" class="ef-ic" alt="" /><div class="ef-name">Leaderboard</div>
+            <img src="assets/energy/18_trophy.png" class="ef-ic" alt="" /><div class="ef-name">Leaderboard 🏆</div>
             <div class="ef-sub">Top Energy earners this week</div>
           </div>
           <div class="energy-feat" data-ef="badges">
-            <img src="assets/energy/19_medal.png" class="ef-ic" alt="" /><div class="ef-name">Rank Badges</div>
+            <img src="assets/energy/19_medal.png" class="ef-ic" alt="" /><div class="ef-name">Rank Badges 🎖️</div>
             <div class="ef-sub">Show your rank on your profile</div>
-          </div>
-          <div class="energy-feat" data-ef="events">
-            <img src="assets/energy/20_gift.png" class="ef-ic" alt="" /><div class="ef-name">Special Events</div>
-            <div class="ef-sub">Join events, earn extra Energy</div>
           </div>
         </div>
 
@@ -634,12 +651,24 @@
       </div>
       <div id="gameSetup">
         <p class="muted small-note" id="gameTagline"></p>
-        <div class="diff-row">
-          <button class="btn ghost diff-btn active" data-diff="easy" id="diffEasy">Easy</button>
-          <button class="btn ghost diff-btn" data-diff="hard" id="diffHard">Hard</button>
+        <div id="gameLocked" hidden>
+          <div class="lock-panel">
+            <div class="lock-emoji">🔒</div>
+            <div class="lock-title">Energy bonus game</div>
+            <div class="lock-cost" id="lockCost">⚡ 30 Energy to unlock</div>
+            <div class="lock-balance" id="lockBalance">You have 0 ⚡</div>
+            <button class="btn primary" id="unlockGameBtn">⚡ Unlock forever</button>
+            <button class="btn ghost" id="getEnergyBtn">Earn more Energy →</button>
+          </div>
         </div>
-        <p class="hint" id="gameRewardHint"></p>
-        <button class="btn primary" id="startGameBtn">Play</button>
+        <div id="gamePlayable">
+          <div class="diff-row">
+            <button class="btn ghost diff-btn active" data-diff="easy" id="diffEasy">Easy</button>
+            <button class="btn ghost diff-btn" data-diff="hard" id="diffHard">Hard</button>
+          </div>
+          <p class="hint" id="gameRewardHint"></p>
+          <button class="btn primary" id="startGameBtn">Play</button>
+        </div>
       </div>
       <div id="gameArea" hidden>
         <div class="game-status" id="gameStatus"></div>
