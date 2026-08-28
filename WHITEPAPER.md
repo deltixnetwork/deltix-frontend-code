@@ -182,7 +182,7 @@ The application is organized into these surfaces:
 4. **D-Browser** — a curated, allowlisted gateway to third-party dApps with a security interstitial (HTTPS-only; external sites are never trusted with credentials).
 5. **Community** — the Deltix DAO (proposals and stake-weighted voting), referral code, referral tracking, ambassador tiers.
 6. **Network** — live tokenomics: supply, staked totals, burned totals, participation.
-7. **Deltix Energy** — a non-monetary status system: watch opt-in rewarded ads to earn Energy and climb eight ranks. Energy may be spent to open bonus Arcade games. Energy has no monetary value, is never $DLTX, and can never be transferred, sold, or exchanged.
+7. **Deltix Energy** — a non-monetary status system: watch opt-in rewarded ads to earn Energy and climb eight ranks. Energy may be spent to open bonus Arcade games. It is held **against the account**, so a rank survives a reinstall or a change of device. Energy has no monetary value, is never $DLTX, and can never be transferred, sold, or exchanged.
 
 ---
 
@@ -403,7 +403,7 @@ Deltix publishes what is **actually running** separately from what is **planned*
 
 - All seven surfaces described in §3.3 are shipped: Wallet, Stake, Arcade, D-Browser, Community, Network and Deltix Energy.
 - **22 original Arcade games**, each an in-house implementation of a public-domain game concept, with server-side session settlement, a minimum play time, and a 10 $DLTX daily reward cap.
-- **Deltix Energy** with eight status ranks, daily streaks, and Energy-funded unlocking of five bonus Arcade games.
+- **Deltix Energy** with eight status ranks, daily streaks, and Energy-funded unlocking of five bonus Arcade games. Energy, streaks and cosmetic ownership are held per account and settled server-side against a daily limit.
 - Personalisation: 82 avatar characters and 12 application themes, including a free dark theme.
 
 **Platform and integrity**

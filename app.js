@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.3.1';
+const APP_VERSION = '1.3.2';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -13,6 +13,7 @@ const state = {
   validators: [],
   address: null,
   balances: null,
+  energy: null,
   hideBalances: localStorage.getItem('dltx_hide_balances') === '1',
 };
 
@@ -157,6 +158,7 @@ function showTab(id, { refresh = true } = {}) {
   updateTabAd(id);
   if (id === 'tab-energy') {
     renderEnergy();
+    if (state.token) loadEnergy();
   } else if (refresh && state.token) {
     refreshTabContent(id);
   }
@@ -197,7 +199,7 @@ async function refreshCurrentView({ isPull = false, silent = false } = {}) {
   } else if (activeTab === 'tab-network') {
     tasks.push(loadChain());
   } else if (activeTab === 'tab-energy') {
-    renderEnergy();
+    tasks.push(loadEnergy());
   }
 
   try {
@@ -434,6 +436,7 @@ function resetAccountUI() {
   state.refCode = null;
   state.address = null;
   state.balances = null;
+  state.energy = null;
 
   const setText = (id, text) => { const el = $(id); if (el) el.textContent = text; };
   const setHtml = (id, html) => { const el = $(id); if (el) el.innerHTML = html; };
@@ -450,6 +453,7 @@ function resetAccountUI() {
   setHtml('myStakes', '<p class="muted center">You have no active stakes.</p>');
   setHtml('statsGrid', '');
   setHtml('arcadeMeta', '');
+  renderEnergy();
 }
 
 /** Full sign-out: drops the session as well as the rendered account data. */
@@ -558,6 +562,7 @@ async function enterApp() {
     loadReferrals(),
     loadGovernance(),
     loadChain(),
+    loadEnergy(),
     typeof loadArcade === 'function' ? loadArcade() : Promise.resolve(),
   ]);
 }
@@ -581,15 +586,14 @@ const AVATAR_CHOICES = [
   '⚡','🔥','🌟','💎','🌈','🌙','☀️','🍀','🌸','🍕','🍩','🧊','🪐','🔮','🎃','🦴',
 ];
 // Premium avatars: unlocked via an opt-in rewarded ad. The unlock is a
-// non-transferable cosmetic on this account — the AdMob-compliant reward.
+// non-transferable cosmetic owned by the account — the AdMob-compliant reward.
+// unlockedAvatars() / unlockedThemes() read that account state (see loadEnergy).
 const PREMIUM_AVATARS = ['🐉','🦅','🧙','🥷','👑','🛸','🦸','🧛','🧜','🧚','🤴','👸','🦹','🧞','🐲','⚔️','🗿','💫'];
-function unlockedAvatars() {
-  try { return JSON.parse(localStorage.getItem('dltx_avatar_unlocked') || '[]'); } catch { return []; }
-}
 
 // App themes: "classic" and the community-requested dark "midnight" are free.
 // The colour packs use the same AdMob-compliant model — an opt-in rewarded ad
-// unlocks a non-transferable cosmetic theme (never $DLTX).
+// unlocks a non-transferable cosmetic theme (never $DLTX). Ownership is stored
+// on the account (see loadEnergy); only the current selection is per-device.
 const THEMES = [
   { id: 'classic',  name: 'Classic',  free: true },
   { id: 'midnight', name: 'Midnight', free: true, dark: true },
@@ -604,9 +608,6 @@ const THEMES = [
   { id: 'cyber',    name: 'Cyber',    free: false, dark: true },
   { id: 'aurora',   name: 'Aurora',   free: false, dark: true },
 ];
-function unlockedThemes() {
-  try { return JSON.parse(localStorage.getItem('dltx_theme_unlocked') || '[]'); } catch { return []; }
-}
 function applyTheme(id) {
   const t = THEMES.find((x) => x.id === id) || THEMES[0];
   if (t.id === 'classic') delete document.documentElement.dataset.theme;
@@ -640,9 +641,10 @@ function renderThemeGrid() {
           toast('Ad not completed — theme stays locked.');
           return;
         }
-        const u = unlockedThemes();
-        u.push(id);
-        localStorage.setItem('dltx_theme_unlocked', JSON.stringify(u));
+        if (!(await unlockCosmetic('theme', id))) {
+          b.disabled = false;
+          return;
+        }
         toast('Theme unlocked 🎉');
       }
       localStorage.setItem('dltx_theme', id);
@@ -694,9 +696,10 @@ function openAvatarPicker() {
           toast('Ad not completed — avatar stays locked.');
           return;
         }
-        const u = unlockedAvatars();
-        u.push(emoji);
-        localStorage.setItem('dltx_avatar_unlocked', JSON.stringify(u));
+        if (!(await unlockCosmetic('avatar', emoji))) {
+          b.disabled = false;
+          return;
+        }
         toast('Premium avatar unlocked 🎉');
       }
       state.avatar = emoji;
@@ -2018,10 +2021,12 @@ const ENERGY_RANKS = [
   { name: 'Deltix Legend',    min: 4001, max: Infinity, asset: '16_legend_shield.png' },
 ];
 function energyState() {
+  const e = state.energy;
   return {
-    energy: parseInt(localStorage.getItem('dltx_energy') || '0', 10) || 0,
-    streak: parseInt(localStorage.getItem('dltx_energy_streak') || '0', 10) || 0,
-    last: localStorage.getItem('dltx_energy_last') || '',
+    energy: Number(e?.energy) || 0,
+    streak: Number(e?.streak) || 0,
+    last: e?.lastEarnedOn || '',
+    remainingToday: e ? Number(e.remainingToday) || 0 : null,
   };
 }
 function rankForEnergy(e) {
@@ -2029,26 +2034,76 @@ function rankForEnergy(e) {
   return { rank: ENERGY_RANKS[0], index: 0 };
 }
 
-// ---- Energy spending: bonus arcade games are opened with Energy ----
-// Energy is a non-monetary status point (never $DLTX), so spending it only
-// unlocks in-app content on this device.
-function unlockedGames() {
-  try { return JSON.parse(localStorage.getItem('dltx_games_unlocked') || '[]'); } catch { return []; }
+// ---- Energy + cosmetic ownership live on the account, not the device ----
+// Held server-side so a rank survives a reinstall or a new phone and cannot be
+// edited locally. Energy is still non-monetary and is never $DLTX.
+const LEGACY_ENERGY_KEYS = [
+  'dltx_energy', 'dltx_energy_streak', 'dltx_energy_last',
+  'dltx_games_unlocked', 'dltx_avatar_unlocked', 'dltx_theme_unlocked',
+];
+/** Reads the pre-migration device values so nobody loses what they earned. */
+function legacyEnergyPayload() {
+  const json = (k) => { try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch { return []; } };
+  const payload = {
+    energy: parseInt(localStorage.getItem('dltx_energy') || '0', 10) || 0,
+    streak: parseInt(localStorage.getItem('dltx_energy_streak') || '0', 10) || 0,
+    games: json('dltx_games_unlocked'),
+    avatars: json('dltx_avatar_unlocked'),
+    themes: json('dltx_theme_unlocked'),
+  };
+  const hasSomething =
+    payload.energy > 0 || payload.games.length || payload.avatars.length || payload.themes.length;
+  return hasSomething ? payload : null;
 }
+
+async function loadEnergy() {
+  try {
+    let e = await api('GET', '/energy');
+    const legacy = legacyEnergyPayload();
+    if (!e.migrated && legacy) {
+      const r = await api('POST', '/energy/migrate', legacy).catch(() => null);
+      if (r?.migrationApplied) {
+        e = r;
+        toast('Your Energy is now saved to your account ⚡');
+      }
+    }
+    // Once the account holds the truth, the device copies are just clutter.
+    if (e.migrated) LEGACY_ENERGY_KEYS.forEach((k) => localStorage.removeItem(k));
+    state.energy = e;
+    renderEnergy();
+    renderThemeGrid();
+  } catch (err) {
+    console.warn('loadEnergy:', err.message);
+  }
+}
+
+function unlockedGames() { return state.energy?.unlocked?.games || []; }
+function unlockedAvatars() { return state.energy?.unlocked?.avatars || []; }
+function unlockedThemes() { return state.energy?.unlocked?.themes || []; }
 function isGameUnlocked(id) {
   return unlockedGames().includes(id);
 }
-/** Spends Energy on a bonus game. Returns 'ok' | 'short' | 'already'. */
-function unlockGameWithEnergy(id, cost) {
-  if (isGameUnlocked(id)) return 'already';
-  const st = energyState();
-  if (st.energy < cost) return 'short';
-  localStorage.setItem('dltx_energy', String(st.energy - cost));
-  const list = unlockedGames();
-  list.push(id);
-  localStorage.setItem('dltx_games_unlocked', JSON.stringify(list));
-  renderEnergy();
-  return 'ok';
+/** Spends Energy on a bonus game. Server-authoritative. */
+async function unlockGameWithEnergy(id) {
+  if (isGameUnlocked(id)) return { ok: true, already: true };
+  try {
+    const r = await api('POST', '/energy/unlock', { kind: 'game', item: id });
+    state.energy = r;
+    renderEnergy();
+    return { ok: true, already: Boolean(r.alreadyOwned) };
+  } catch (e) {
+    return { ok: false, message: e.message };
+  }
+}
+/** Records a rewarded-ad cosmetic unlock on the account (costs no Energy). */
+async function unlockCosmetic(kind, item) {
+  try {
+    state.energy = await api('POST', '/energy/unlock', { kind, item });
+    return true;
+  } catch (e) {
+    toast(e.message);
+    return false;
+  }
 }
 window.energyBalance = () => energyState().energy;
 window.isGameUnlocked = isGameUnlocked;
@@ -2101,17 +2156,13 @@ async function earnEnergy(btn) {
     const earned = await playRewardedAd();
     if (earned) lastEnergyAdAt = Date.now();
     if (!earned) { toast('Ad not completed — no Energy earned.'); return; }
-    const st = energyState();
-    const today = new Date().toISOString().slice(0, 10);
-    if (st.last !== today) {
-      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-      const streak = st.last === yesterday ? st.streak + 1 : 1;
-      localStorage.setItem('dltx_energy_streak', String(streak));
-      localStorage.setItem('dltx_energy_last', today);
-    }
-    localStorage.setItem('dltx_energy', String(st.energy + 1));
+    // The account is the source of truth — the server credits and returns it.
+    state.energy = await api('POST', '/energy/earn');
     renderEnergy();
     toast('+1 Energy ⚡');
+  } catch (e) {
+    if (e.data) { state.energy = e.data; renderEnergy(); }
+    toast(e.message);
   } finally {
     if (btn) btn.disabled = false;
   }

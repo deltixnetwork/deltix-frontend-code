@@ -195,12 +195,18 @@ function renderGameLock() {
     have >= g.energyUnlock ? `You have ${have} ⚡ — ready to unlock!` : `You have ${have} ⚡ — ${g.energyUnlock - have} more needed`;
   gel('unlockGameBtn').disabled = have < g.energyUnlock;
 }
-gel('unlockGameBtn')?.addEventListener('click', () => {
+gel('unlockGameBtn')?.addEventListener('click', async (ev) => {
   const g = arcadeState.currentGame;
   if (!g || !window.unlockGameWithEnergy) return;
-  const r = window.unlockGameWithEnergy(g.id, g.energyUnlock);
-  if (r === 'short') return toast('Not enough Energy yet — earn more in the Energy tab.');
-  toast(`${g.name} unlocked! 🎉`);
+  const btn = ev.currentTarget;
+  btn.disabled = true;
+  const r = await window.unlockGameWithEnergy(g.id);
+  if (!r.ok) {
+    toast(r.message || 'Could not unlock right now — please try again.');
+    renderGameLock();
+    return;
+  }
+  toast(r.already ? `${g.name} is already yours 🎮` : `${g.name} unlocked! 🎉`);
   renderGameLock();
   loadArcade().catch(() => {});
 });
