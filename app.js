@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.2.6';
+const APP_VERSION = '1.2.7';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -1173,7 +1173,7 @@ function openStakeModal(id, name) {
       ['Validator commission', (v.commission * 100).toFixed(0) + '%'],
       ['Reported uptime', v.uptime + '%'],
       ['Estimated APY (variable)', '~' + apy + '%'],
-      ['Unbonding', 'Applies on unstake'],
+      ['Unstake burn fee', '1% of principal'],
     ];
     $('stakeModalTerms').innerHTML = terms
       .map(([k, val]) => `<div class="supply-row"><span class="k">${k}</span><span class="v">${val}</span></div>`)
@@ -1220,8 +1220,14 @@ async function claim(id) {
 }
 async function unstake(id) {
   try {
+    const stake = (await api('GET', '/staking')).stakes.find((s) => String(s.id) === String(id));
+    if (stake) {
+      const fee = Number(stake.amount) * 0.01;
+      const returned = Number(stake.amount) - fee;
+      if (!window.confirm(`Unstake ${fmt(stake.amount)} $DLTX?\n\nBurn fee: ${fmt(fee)} $DLTX\nYou receive: ${fmt(returned)} $DLTX + ${fmt(stake.pendingRewards)} rewards`)) return;
+    }
     const r = await api('POST', `/staking/${id}/unstake`);
-    toast(`Unstaked ${fmt(r.returnedPrincipal)} + ${fmt(r.rewardsPaid)} rewards`);
+    toast(`Unstaked ${fmt(r.returnedPrincipal)} $DLTX · burned ${fmt(r.feeBurned)} fee`);
     await Promise.all([loadWallet(), loadStakes(), loadValidators(), loadTx(), loadStats()]);
   } catch (e) {
     toast(e.message);
