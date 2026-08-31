@@ -1321,6 +1321,82 @@ body.has-ad-banner .tabbar {
   transform: translateY(-2px) scale(1.08);
 }
 
+/* ---------- Deltix Rewards ---------- */
+.rewards-showcase { background: linear-gradient(135deg, #7c3aed 0%, #ec4899 55%, #f59e0b 100%); }
+.reward-cap-note {
+  margin: 10px 2px 12px; padding: 8px 12px; border-radius: 10px;
+  background: #eef4ff; color: #1d4ed8; font-weight: 700; font-size: 12.5px; text-align: center;
+}
+.reward-card { margin-bottom: 14px; }
+.reward-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.reward-emoji { font-size: 30px; line-height: 1; flex: none; }
+.reward-title { font-size: 16px; font-weight: 800; color: #0b1c3f; }
+.reward-sub { font-size: 12px; color: #5a6b8c; margin-top: 2px; }
+.reward-btn { width: 100%; margin-top: 6px; }
+.reward-actions { display: flex; gap: 8px; margin-top: 6px; }
+.reward-actions .reward-btn { margin-top: 0; }
+.btn.gold { background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; }
+.btn.gold:disabled { opacity: .5; }
+.checkin-streak { font-size: 13px; font-weight: 700; color: #ea580c; margin-bottom: 8px; }
+.box-visual {
+  font-size: 64px; text-align: center; margin: 4px 0 8px; line-height: 1;
+  filter: drop-shadow(0 6px 10px rgba(20,35,70,.18));
+}
+.box-visual.box-shake { animation: boxShake .5s ease-in-out infinite; }
+@keyframes boxShake {
+  0%,100% { transform: rotate(0) scale(1); }
+  25% { transform: rotate(-9deg) scale(1.05); }
+  75% { transform: rotate(9deg) scale(1.05); }
+}
+
+/* Fortune wheel */
+.wheel-wrap { position: relative; width: 300px; max-width: 100%; margin: 6px auto 10px; aspect-ratio: 1; }
+.wheel-wrap canvas { width: 100%; height: 100%; display: block; border-radius: 50%; box-shadow: 0 8px 22px rgba(20,35,70,.22); }
+.wheel-pointer {
+  position: absolute; top: -4px; left: 50%; transform: translateX(-50%);
+  width: 0; height: 0; border-left: 13px solid transparent; border-right: 13px solid transparent;
+  border-top: 22px solid #ef4444; z-index: 3; filter: drop-shadow(0 2px 3px rgba(0,0,0,.3));
+}
+.wheel-hub {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  width: 54px; height: 54px; border-radius: 50%; background: #fff; color: var(--accent);
+  display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 900;
+  box-shadow: 0 2px 8px rgba(20,35,70,.25); z-index: 2; border: 3px solid var(--accent);
+}
+
+/* Daily chest picker */
+.chest-row { display: flex; gap: 8px; justify-content: space-between; margin: 4px 0 10px; }
+.chest-pick {
+  flex: 1 1 0; background: #f4f8ff; border: 2px solid #dce6fb; border-radius: 14px;
+  padding: 8px 4px 6px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  transition: transform .12s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.chest-pick img { width: 100%; max-width: 84px; height: auto; object-fit: contain; }
+.chest-pick span { font-size: 12px; font-weight: 800; color: #34507d; }
+.chest-pick:not(:disabled):active { transform: scale(.96); }
+.chest-pick:not(:disabled):hover { border-color: var(--accent); box-shadow: 0 4px 12px rgba(29,78,216,.15); }
+.chest-pick:disabled { cursor: default; }
+.chest-pick.picked { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(29,78,216,.2); }
+.chest-pick.win { border-color: #16a34a; background: #eafaf0; }
+.chest-pick.win span { color: #15803d; }
+.chest-pick.lose { opacity: .55; }
+.chest-result { text-align: center; font-weight: 800; font-size: 14px; color: #0b1c3f; min-height: 18px; }
+
+/* Global community globe */
+.globe-card { text-align: center; }
+.globe-total { display: flex; flex-direction: column; align-items: center; margin-bottom: 8px; }
+.globe-total b { font-size: 26px; font-weight: 900; color: #0b1c3f; }
+.globe-total span { font-size: 12px; color: #5a6b8c; }
+.globe-wrap { width: 300px; max-width: 100%; margin: 0 auto 12px; aspect-ratio: 1; }
+.globe-wrap canvas { width: 100%; height: 100%; display: block; }
+.globe-countries { display: flex; flex-direction: column; gap: 7px; }
+.globe-country { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.gc-flag { font-size: 18px; flex: none; }
+.gc-name { flex: 1 1 auto; text-align: left; color: #24344f; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gc-bar { flex: 0 0 70px; height: 7px; background: #e6edfa; border-radius: 4px; overflow: hidden; }
+.gc-bar span { display: block; height: 100%; background: linear-gradient(90deg, #6366f1, #ec4899); border-radius: 4px; }
+.gc-count { flex: none; font-weight: 800; color: #1d4ed8; min-width: 40px; text-align: right; }
+
 /* ---------- Deltix Energy ---------- */
 .energy-hero {
   position: relative; overflow: hidden;
@@ -1415,10 +1491,11 @@ body.has-ad-banner .tabbar {
 
 .slot-count { font-size: 12px; color: var(--muted); align-self: center; margin-left: 8px; }
 
-/* 7-item bottom nav — tighten so labels fit */
-.tabbar { padding-left: 2px; padding-right: 2px; }
-.nav-3d-icon { width: 26px; height: 26px; }
-.tabbtn span { font-size: 8.7px; }
+/* 8-item bottom nav — tighten so labels fit */
+.tabbar { padding-left: 1px; padding-right: 1px; }
+.nav-3d-icon { width: 25px; height: 25px; }
+.tabbtn { padding: 4px 1px; gap: 2px; border-radius: 10px; }
+.tabbtn span { font-size: 8.2px; letter-spacing: -.01em; }
 
 #screen-main.active {
   display: flex;
@@ -1442,6 +1519,10 @@ body.has-ad-banner #screen-main.active {
 @media (max-width: 374px) {
   .modal-backdrop { padding: 8px; }
   .modal { padding: 14px; border-radius: 14px; }
+  .nav-3d-icon { width: 22px; height: 22px; }
+  .tabbtn span { font-size: 7.4px; }
+  .wheel-wrap, .globe-wrap { width: 260px; }
+  .chest-pick img { max-width: 70px; }
   .board.ttt .cell { font-size: 24px; }
   .board.chess .cell { font-size: 24px; }
   .ludo-dice2 { width: 46px; height: 46px; font-size: 28px; }
@@ -1661,3 +1742,17 @@ html[data-dark] .showcase-banner,
 html[data-dark] .ambassador-card { color: var(--text); }
 html[data-dark] .hero-logo { color: var(--accent); }
 html[data-dark] .lock-panel { background: #16233f; }
+
+/* Rewards + globe — dark mode */
+html[data-dark] .reward-cap-note { background: #16233f; color: #9db4dc; }
+html[data-dark] .reward-title,
+html[data-dark] .chest-result,
+html[data-dark] .globe-total b { color: var(--text); }
+html[data-dark] .reward-sub,
+html[data-dark] .globe-total span { color: var(--muted); }
+html[data-dark] .chest-pick { background: #101a30; border-color: var(--border); }
+html[data-dark] .chest-pick.win { background: #14532d; border-color: #16a34a; }
+html[data-dark] .chest-pick span { color: #c7d6f0; }
+html[data-dark] .gc-name { color: #c7d6f0; }
+html[data-dark] .gc-bar { background: #16233f; }
+html[data-dark] .wheel-hub { background: #16233f; }

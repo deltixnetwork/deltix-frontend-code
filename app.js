@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.3.3';
+const APP_VERSION = '1.3.4';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -75,10 +75,17 @@ async function api(method, path, body, { retries = method === 'GET' ? 2 : 0 } = 
       throw err426;
     }
     const staleSession = res.status === 401 || (res.status === 404 && /wallet not found/i.test(json.error || ''));
-    if (staleSession && state.token) {
-      clearAccountSession();
-      showScreen('screen-email');
-      toast('Your session has expired — please sign in again.');
+    if (staleSession) {
+      // An open arcade game must never survive a dead session — otherwise every
+      // retry (Play again, finishing the round) just re-fails with a raw
+      // "missing/invalid token" error and the user looks stuck mid-game.
+      const gameModal = $('gameModal');
+      if (gameModal && !gameModal.hidden && typeof window.closeGame === 'function') window.closeGame();
+      if (state.token) {
+        clearAccountSession();
+        showScreen('screen-email');
+        toast('Your session has expired — please sign in again.');
+      }
     }
     const err = new Error(friendlyError(res.status, json));
     err.status = res.status;
@@ -204,7 +211,9 @@ function refreshTabContent(id) {
   } else if (id === 'tab-arcade') {
     if (typeof loadArcade === 'function') loadArcade().catch(() => {});
   } else if (id === 'tab-community') {
-    Promise.allSettled([loadGovernance(), loadReferrals()]);
+    Promise.allSettled([loadGovernance(), loadReferrals(), loadGlobe()]);
+  } else if (id === 'tab-rewards') {
+    loadRewards().catch(() => {});
   } else if (id === 'tab-network') {
     Promise.allSettled([loadChain(), loadStats()]);
   }
@@ -225,13 +234,15 @@ async function refreshCurrentView({ isPull = false, silent = false } = {}) {
   } else if (activeTab === 'tab-stake') {
     tasks.push(loadStakes(), loadValidators());
   } else if (activeTab === 'tab-community') {
-    tasks.push(loadGovernance(), loadReferrals());
+    tasks.push(loadGovernance(), loadReferrals(), loadGlobe());
   } else if (activeTab === 'tab-arcade') {
     if (typeof loadArcade === 'function') tasks.push(loadArcade());
   } else if (activeTab === 'tab-network') {
     tasks.push(loadChain());
   } else if (activeTab === 'tab-energy') {
     tasks.push(loadEnergy());
+  } else if (activeTab === 'tab-rewards') {
+    tasks.push(loadRewards());
   }
 
   try {
@@ -486,6 +497,7 @@ function resetAccountUI() {
   setHtml('statsGrid', '');
   setHtml('arcadeMeta', '');
   renderEnergy();
+  if (typeof resetRewardsUI === 'function') resetRewardsUI();
 }
 
 /** Full sign-out: drops the session as well as the rendered account data. */
@@ -595,6 +607,7 @@ async function enterApp() {
     loadGovernance(),
     loadChain(),
     loadEnergy(),
+    loadRewards(),
     typeof loadArcade === 'function' ? loadArcade() : Promise.resolve(),
   ]);
 }
@@ -939,7 +952,7 @@ async function loadTx() {
       el.innerHTML = '<p class="muted center">No activity yet.</p>';
       return;
     }
-    const negatives = ['stake', 'send', 'treasury_burn'];
+    const negatives = ['stake', 'send', 'treasury_burn', 'paid_spin_wager'];
     el.innerHTML = state.txs
       .map((t, i) => {
         const neg = negatives.includes(t.type);
@@ -1882,7 +1895,7 @@ async function expActivityView(body) {
     body.innerHTML = '<p class="muted center">No activity yet.</p>';
     return;
   }
-  const negatives = ['stake', 'send', 'treasury_burn'];
+  const negatives = ['stake', 'send', 'treasury_burn', 'paid_spin_wager'];
   body.innerHTML = `<div class="tx-list" id="expAct"></div>`;
   document.getElementById('expAct').innerHTML = r.transactions
     .map((t, i) => {
@@ -2214,6 +2227,434 @@ document.querySelectorAll('.energy-feat').forEach((c) =>
     }
   })
 );
+
+// ==================== Deltix Rewards ====================
+// Light, non-gaming daily loops: check-in, mystery box, fortune wheel (free +
+// paid), and a daily chest. Every payout is settled server-side; the client
+// only animates the result. Interstitial ads are shown around actions but are
+// never required to receive a reward.
+const rewardState = { data: null, spinning: false, wheelRot: 0, wheelSegs: [], wheelMode: 'free', readyAt: {} };
+let rewardTimer = null;
+let lastRewardInterstitial = 0;
+const fmtInt = (n) => Number(n || 0).toLocaleString();
+
+/** Frequency-capped interstitial for reward actions (native only). */
+function showRewardInterstitial() {
+  if (window.ADS_ENABLED === false) return;
+  const cap = window.Capacitor;
+  const AdMob = cap && cap.Plugins && cap.Plugins.AdMob;
+  if (!cap || !cap.isNativePlatform || !cap.isNativePlatform() || !AdMob) return;
+  if (Date.now() - lastRewardInterstitial < 40000) return; // stay inside AdMob limits
+  lastRewardInterstitial = Date.now();
+  AdMob.prepareInterstitial({ adId: ADMOB_INTERSTITIAL_ID, isTesting: ADMOB_TESTING })
+    .then(() => AdMob.showInterstitial())
+    .catch(() => {});
+}
+
+async function loadRewards() {
+  if (!state.token) return;
+  try {
+    const r = await api('GET', '/rewards');
+    rewardState.data = r;
+    const now = Date.now();
+    rewardState.readyAt = {
+      checkin: now + (r.checkin.nextInMs || 0),
+      box: now + (r.mysteryBox.nextInMs || 0),
+      spin: now + (r.spin.nextInMs || 0),
+    };
+    renderRewards();
+    startRewardTimer();
+  } catch { /* handled by api() */ }
+}
+
+function fmtCountdown(ms) {
+  if (ms <= 0) return 'ready';
+  const s = Math.ceil(ms / 1000);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${ss}s`;
+  return `${ss}s`;
+}
+
+function setText(id, txt) { const e = $(id); if (e) e.textContent = txt; }
+
+function renderRewards({ redrawWheel = true } = {}) {
+  const d = rewardState.data;
+  if (!d) return;
+  const now = Date.now();
+  const rem = (k) => Math.max(0, (rewardState.readyAt[k] || 0) - now);
+
+  setText('rewardCapNote', `Daily reward allowance: ${fmt(d.earnedToday)} / ${fmt(d.dailyCap)} $DLTX used today`);
+
+  // Check-in
+  const ci = d.checkin;
+  const ciReady = rem('checkin') <= 0;
+  setText('checkinSub', `Earn ${fmt(ci.reward)} $DLTX every day you check in.`);
+  setText('checkinStreak', ci.streak > 0 ? `🔥 ${ci.streak}-day streak` : 'Start your streak today!');
+  const cb = $('checkinBtn');
+  if (cb) {
+    cb.disabled = !ciReady;
+    cb.textContent = ciReady ? `Check in · +${fmt(ci.reward)} $DLTX` : `Checked in ✓ · resets in ${fmtCountdown(rem('checkin'))}`;
+  }
+
+  // Mystery box
+  const mb = d.mysteryBox;
+  const boxReady = rem('box') <= 0;
+  const bb = $('boxBtn');
+  if (bb) { bb.disabled = !boxReady; bb.textContent = boxReady ? 'Open box' : `Next box in ${fmtCountdown(rem('box'))}`; }
+  const beb = $('boxEnergyBtn');
+  if (beb) { beb.textContent = `Extra box · ${mb.energyCostForExtra} ⚡`; beb.disabled = !mb.canUseEnergy; }
+
+  // Spin wheel
+  const sp = d.spin;
+  const spinReady = rem('spin') <= 0;
+  const fsb = $('freeSpinBtn');
+  if (fsb) { fsb.disabled = !spinReady || rewardState.spinning; fsb.textContent = spinReady ? 'Free spin' : `Free spin in ${fmtCountdown(rem('spin'))}`; }
+  const psb = $('paidSpinBtn');
+  if (psb) { psb.disabled = !d.paidSpin.canAfford || rewardState.spinning; psb.textContent = `Spin for ${fmt(d.paidSpin.cost)} $DLTX`; }
+  setText('spinPool', `Community pool: ${fmt(d.pool)} $DLTX · paid-spin prizes are funded by the pool (never burned).`);
+  if (redrawWheel && rewardState.wheelMode !== 'paid' && !rewardState.spinning) {
+    rewardState.wheelSegs = sp.segments;
+    drawWheel();
+  }
+
+  // Daily chest
+  const ch = d.chest;
+  setText('chestSub', ch.ready
+    ? 'Pick one chest — one holds $DLTX, one Energy, one is empty.'
+    : 'You already opened today\u2019s chest. Come back tomorrow!');
+  document.querySelectorAll('.chest-pick').forEach((b) => {
+    b.disabled = !ch.ready;
+    if (ch.ready) {
+      b.classList.remove('picked', 'win', 'lose');
+      const span = b.querySelector('span');
+      if (span) span.textContent = '#' + (Number(b.dataset.pick) + 1);
+    }
+  });
+  if (ch.ready) setText('chestResult', '');
+}
+
+function startRewardTimer() {
+  if (rewardTimer) return;
+  rewardTimer = setInterval(() => {
+    if (!state.token || rewardState.spinning) return;
+    if (!document.getElementById('tab-rewards')?.classList.contains('active')) return;
+    renderRewards({ redrawWheel: false });
+  }, 1000);
+}
+
+function resetRewardsUI() {
+  rewardState.data = null;
+  rewardState.spinning = false;
+  rewardState.wheelMode = 'free';
+  if (rewardTimer) { clearInterval(rewardTimer); rewardTimer = null; }
+  setText('rewardCapNote', 'Daily reward allowance: — / — $DLTX');
+  setText('chestResult', '');
+}
+
+// ---- Fortune wheel canvas ----
+const WHEEL_PALETTE = ['#6366f1', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#0ea5e9'];
+
+function segLabel(s) {
+  if (s.kind === 'energy') return `⚡${s.amount}`;
+  if (s.kind === 'dltx') {
+    if (typeof s.mult === 'number') return s.mult === 0 ? '✕' : `×${s.mult}`;
+    return `${s.amount}Δ`;
+  }
+  return '';
+}
+
+function drawWheel() {
+  const canvas = $('spinWheel');
+  const segs = rewardState.wheelSegs;
+  if (!canvas || !segs || !segs.length) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, cx = W / 2, cy = W / 2, R = W / 2 - 6;
+  const N = segs.length, seg = (Math.PI * 2) / N;
+  ctx.clearRect(0, 0, W, W);
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rewardState.wheelRot);
+  for (let i = 0; i < N; i++) {
+    const a0 = -Math.PI / 2 + i * seg, a1 = a0 + seg;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, R, a0, a1);
+    ctx.closePath();
+    ctx.fillStyle = WHEEL_PALETTE[i % WHEEL_PALETTE.length];
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.55)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.save();
+    ctx.rotate(a0 + seg / 2);
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 14px system-ui, sans-serif';
+    ctx.fillText(segLabel(segs[i]), R - 12, 0);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function spinWheelTo(index) {
+  return new Promise((resolve) => {
+    const segs = rewardState.wheelSegs;
+    const N = segs.length, seg = (Math.PI * 2) / N;
+    const start = rewardState.wheelRot;
+    const TWO_PI = Math.PI * 2;
+    const finalMod = ((-(index + 0.5) * seg) % TWO_PI + TWO_PI) % TWO_PI;
+    const delta = TWO_PI * 6 + ((finalMod - (start % TWO_PI) + TWO_PI) % TWO_PI);
+    const target = start + delta;
+    const dur = 4200, t0 = performance.now();
+    function frame(t) {
+      const p = Math.min(1, (t - t0) / dur);
+      const ease = 1 - Math.pow(1 - p, 3);
+      rewardState.wheelRot = start + delta * ease;
+      drawWheel();
+      if (p < 1) requestAnimationFrame(frame);
+      else { rewardState.wheelRot = target % TWO_PI; drawWheel(); resolve(); }
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
+// ---- Reward action handlers ----
+$('checkinBtn')?.addEventListener('click', async () => {
+  const btn = $('checkinBtn');
+  btn.disabled = true;
+  try {
+    const r = await api('POST', '/rewards/checkin');
+    toast(r.capped
+      ? `Checked in! Daily $DLTX cap reached — ${r.streak}-day streak 🔥`
+      : `Checked in! +${fmt(r.reward)} $DLTX · ${r.streak}-day streak 🔥`);
+    await Promise.allSettled([loadRewards(), loadWallet(), loadTx()]);
+    showRewardInterstitial();
+  } catch (e) {
+    toast(e.message);
+    btn.disabled = false;
+  }
+});
+
+async function openMysteryBox(useEnergy) {
+  const btn = useEnergy ? $('boxEnergyBtn') : $('boxBtn');
+  if (btn) btn.disabled = true;
+  const vis = $('boxVisual');
+  if (vis) vis.classList.add('box-shake');
+  try {
+    const r = await api('POST', '/rewards/mystery-box', { useEnergy: !!useEnergy });
+    if (vis) { vis.classList.remove('box-shake'); vis.textContent = '🎉'; }
+    toast(r.capped
+      ? 'Box opened — daily $DLTX cap reached. Try again tomorrow!'
+      : `📦 You found +${fmt(r.reward)} $DLTX!`);
+    await Promise.allSettled([loadRewards(), loadWallet(), loadEnergy(), loadTx()]);
+    showRewardInterstitial();
+    setTimeout(() => { if (vis) vis.textContent = '📦'; }, 1600);
+  } catch (e) {
+    if (vis) vis.classList.remove('box-shake');
+    toast(e.message);
+    renderRewards();
+  }
+}
+$('boxBtn')?.addEventListener('click', () => openMysteryBox(false));
+$('boxEnergyBtn')?.addEventListener('click', () => openMysteryBox(true));
+
+async function runSpin(paid) {
+  if (rewardState.spinning || !rewardState.data) return;
+  const d = rewardState.data;
+  if (paid && !d.paidSpin.canAfford) { toast('You need transferable $DLTX to spin.'); return; }
+  if (!paid && rewardState.readyAt.spin - Date.now() > 0) return;
+  rewardState.spinning = true;
+  rewardState.wheelMode = paid ? 'paid' : 'free';
+  rewardState.wheelSegs = paid ? d.paidSpin.segments : d.spin.segments;
+  drawWheel();
+  if ($('freeSpinBtn')) $('freeSpinBtn').disabled = true;
+  if ($('paidSpinBtn')) $('paidSpinBtn').disabled = true;
+  try {
+    const r = await api('POST', paid ? '/rewards/paid-spin' : '/rewards/spin');
+    await spinWheelTo(r.index);
+    if (paid) {
+      if (r.segment.kind === 'dltx' && r.wonDltx > 0) toast(`🎉 Won ${fmt(r.wonDltx)} $DLTX (net ${r.net >= 0 ? '+' : ''}${fmt(r.net)})`);
+      else if (r.segment.kind === 'energy') toast(`No $DLTX — but +${r.energyAwarded} ⚡ Energy!`);
+      else toast('No win this spin — the wager went to the community pool.');
+    } else {
+      if (r.segment.kind === 'dltx' && r.reward > 0) toast(`🎉 You won +${fmt(r.reward)} $DLTX!`);
+      else if (r.segment.kind === 'dltx') toast('Daily $DLTX cap reached — spin again tomorrow.');
+      else toast(`⚡ You won +${r.energyAwarded} Energy!`);
+    }
+    await Promise.allSettled([loadRewards(), loadWallet(), loadEnergy(), loadTx()]);
+    showRewardInterstitial();
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    rewardState.spinning = false;
+    rewardState.wheelMode = 'free';
+    renderRewards();
+  }
+}
+$('freeSpinBtn')?.addEventListener('click', () => runSpin(false));
+$('paidSpinBtn')?.addEventListener('click', () => runSpin(true));
+
+document.querySelectorAll('.chest-pick').forEach((b) =>
+  b.addEventListener('click', async () => {
+    if (b.disabled || !rewardState.data) return;
+    const pick = Number(b.dataset.pick);
+    document.querySelectorAll('.chest-pick').forEach((x) => (x.disabled = true));
+    b.classList.add('picked');
+    try {
+      const r = await api('POST', '/rewards/chest', { pick });
+      const labels = {
+        dltx: `+${fmt(rewardState.data.chest.dltx)} $DLTX`,
+        energy: `+${rewardState.data.chest.energy} ⚡`,
+        nothing: 'Empty',
+      };
+      document.querySelectorAll('.chest-pick').forEach((x) => {
+        const outcome = r.outcomes[Number(x.dataset.pick)];
+        x.classList.add(outcome === 'nothing' ? 'lose' : 'win');
+        const span = x.querySelector('span');
+        if (span) span.textContent = labels[outcome];
+      });
+      const msg = r.chosen === 'dltx'
+        ? (r.capped ? 'You picked $DLTX, but the daily cap is reached!' : `🎉 You won +${fmt(r.reward)} $DLTX!`)
+        : r.chosen === 'energy'
+          ? `⚡ You won +${r.energyAwarded} Energy!`
+          : 'Empty chest — try again tomorrow!';
+      setText('chestResult', msg);
+      toast(msg);
+      await Promise.allSettled([loadRewards(), loadWallet(), loadEnergy(), loadTx()]);
+      showRewardInterstitial();
+    } catch (e) {
+      toast(e.message);
+      document.querySelectorAll('.chest-pick').forEach((x) => (x.disabled = false));
+    }
+  })
+);
+
+// ==================== Global community globe ====================
+const globeState = { data: null, rot: 0, raf: null };
+// Approximate country centroids (lat, lon) for the globe markers. Country only.
+const COUNTRY_POS = {
+  US: [38, -97], CA: [56, -106], MX: [23, -102], BR: [-10, -55], AR: [-38, -63], CO: [4, -73], CL: [-35, -71], PE: [-9, -75],
+  GB: [54, -2], IE: [53, -8], FR: [46, 2], ES: [40, -4], PT: [39, -8], DE: [51, 10], IT: [42, 12], NL: [52, 5], BE: [50, 4],
+  CH: [47, 8], AT: [47, 14], SE: [62, 15], NO: [61, 8], FI: [64, 26], DK: [56, 9], PL: [52, 19], UA: [49, 32], RO: [46, 25],
+  GR: [39, 22], TR: [39, 35], RU: [61, 90], NG: [9, 8], GH: [8, -1], KE: [0, 38], ZA: [-29, 24], EG: [26, 30], MA: [32, -6],
+  DZ: [28, 2], ET: [9, 40], TZ: [-6, 35], UG: [1, 32], SA: [24, 45], AE: [24, 54], QA: [25, 51], IL: [31, 35], IR: [32, 53],
+  IQ: [33, 44], PK: [30, 70], IN: [22, 79], BD: [24, 90], LK: [7, 81], NP: [28, 84], CN: [35, 105], JP: [36, 138],
+  KR: [37, 128], TW: [24, 121], HK: [22, 114], PH: [13, 122], VN: [16, 108], TH: [15, 101], MY: [4, 102], SG: [1, 104],
+  ID: [-2, 118], AU: [-25, 134], NZ: [-42, 172],
+};
+const COUNTRY_NAME = {
+  US: 'United States', CA: 'Canada', MX: 'Mexico', BR: 'Brazil', AR: 'Argentina', CO: 'Colombia', CL: 'Chile', PE: 'Peru',
+  GB: 'United Kingdom', IE: 'Ireland', FR: 'France', ES: 'Spain', PT: 'Portugal', DE: 'Germany', IT: 'Italy', NL: 'Netherlands',
+  BE: 'Belgium', CH: 'Switzerland', AT: 'Austria', SE: 'Sweden', NO: 'Norway', FI: 'Finland', DK: 'Denmark', PL: 'Poland',
+  UA: 'Ukraine', RO: 'Romania', GR: 'Greece', TR: 'Türkiye', RU: 'Russia', NG: 'Nigeria', GH: 'Ghana', KE: 'Kenya',
+  ZA: 'South Africa', EG: 'Egypt', MA: 'Morocco', DZ: 'Algeria', ET: 'Ethiopia', TZ: 'Tanzania', UG: 'Uganda', SA: 'Saudi Arabia',
+  AE: 'UAE', QA: 'Qatar', IL: 'Israel', IR: 'Iran', IQ: 'Iraq', PK: 'Pakistan', IN: 'India', BD: 'Bangladesh', LK: 'Sri Lanka',
+  NP: 'Nepal', CN: 'China', JP: 'Japan', KR: 'South Korea', TW: 'Taiwan', HK: 'Hong Kong', PH: 'Philippines', VN: 'Vietnam',
+  TH: 'Thailand', MY: 'Malaysia', SG: 'Singapore', ID: 'Indonesia', AU: 'Australia', NZ: 'New Zealand',
+};
+
+function flagEmoji(cc) {
+  if (!cc || cc.length !== 2) return '🌐';
+  return cc.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
+}
+function hashPos(cc) {
+  let h = 0;
+  for (const ch of String(cc)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return [(h % 130) - 65, ((h >> 3) % 360) - 180];
+}
+
+async function loadGlobe() {
+  if (!state.token) return;
+  try {
+    const r = await api('GET', '/network/globe');
+    globeState.data = r;
+    renderGlobe();
+    startGlobe();
+  } catch { /* handled by api() */ }
+}
+
+function renderGlobe() {
+  const d = globeState.data;
+  if (!d) return;
+  setText('globeTotal', fmtInt(d.totalUsers));
+  const list = (d.countries || []).slice(0, 12);
+  const max = list.length ? list[0].users : 1;
+  const el = $('globeCountries');
+  if (!el) return;
+  el.innerHTML = list.length
+    ? list.map((c) => `
+      <div class="globe-country">
+        <span class="gc-flag">${flagEmoji(c.country)}</span>
+        <span class="gc-name">${COUNTRY_NAME[c.country] || c.country}</span>
+        <span class="gc-bar"><span style="width:${Math.max(6, Math.round((c.users / max) * 100))}%"></span></span>
+        <span class="gc-count">${fmtInt(c.users)}</span>
+      </div>`).join('')
+    : '<p class="muted center">Be one of the first on the map — invite your country!</p>';
+}
+
+function drawGlobe() {
+  const canvas = $('communityGlobe');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, cx = W / 2, cy = W / 2, R = W / 2 - 10;
+  const rot = globeState.rot;
+  const project = (lat, lon) => {
+    const phi = (lat * Math.PI) / 180, lam = (lon * Math.PI) / 180 + rot;
+    return { x: cx + Math.cos(phi) * Math.sin(lam) * R, y: cy - Math.sin(phi) * R, z: Math.cos(phi) * Math.cos(lam) };
+  };
+  ctx.clearRect(0, 0, W, W);
+  const grad = ctx.createRadialGradient(cx - R * 0.3, cy - R * 0.35, R * 0.2, cx, cy, R);
+  grad.addColorStop(0, '#3b82f6');
+  grad.addColorStop(1, '#0f2b6b');
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+  // Graticule dots (front hemisphere only)
+  ctx.fillStyle = 'rgba(255,255,255,.10)';
+  for (let lat = -60; lat <= 60; lat += 20) {
+    for (let lon = -180; lon < 180; lon += 12) {
+      const p = project(lat, lon);
+      if (p.z > 0) { ctx.beginPath(); ctx.arc(p.x, p.y, 1, 0, Math.PI * 2); ctx.fill(); }
+    }
+  }
+  // Country markers
+  const d = globeState.data;
+  if (d && d.countries) {
+    d.countries.forEach((c) => {
+      const pos = COUNTRY_POS[c.country] || hashPos(c.country);
+      const p = project(pos[0], pos[1]);
+      if (p.z <= 0) return;
+      const rr = 3 + Math.min(9, Math.log2(c.users + 1) * 1.6);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, rr, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(251,191,36,.92)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.85)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+  }
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,.35)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+function startGlobe() {
+  if (globeState.raf) return;
+  const loop = () => {
+    if (document.getElementById('tab-community')?.classList.contains('active')) {
+      globeState.rot += 0.004;
+      drawGlobe();
+    }
+    globeState.raf = requestAnimationFrame(loop);
+  };
+  globeState.raf = requestAnimationFrame(loop);
+}
 
 /** Opt-in rewarded ad. Resolves true only on the SDK's own reward callback.
  *  Rewards must stay non-transferable in-app benefits (never $DLTX). */

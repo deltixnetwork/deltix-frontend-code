@@ -237,6 +237,9 @@ function closeGame() {
   if (window.hideGameOverAd) window.hideGameOverAd();
   if (window.updateTabAd) window.updateTabAd();
 }
+// Exposed so app.js can close an open game (back button, or a session that
+// expired mid-game) without both files depending on each other's internals.
+window.closeGame = closeGame;
 
 gel('startGameBtn').addEventListener('click', async () => {
   gel('startGameBtn').disabled = true;
@@ -333,6 +336,10 @@ async function finishGame(won, score) {
       setGameStatus('Game over — no reward this time. Try again!');
     }
   } catch (e) {
+    // A 401/expired session already closed the game modal and sent the user
+    // back to sign-in (see api()'s staleSession handling) — don't paint a raw
+    // server error into a modal that's no longer visible.
+    if (e.status === 401) return;
     setGameStatus(e.message);
   }
   showEndActions();

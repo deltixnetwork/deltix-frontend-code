@@ -300,6 +300,13 @@
           <div class="showcase-title">Deltix Community &amp; DAO</div>
           <div class="showcase-sub">Vote on live DAO proposals, invite unlimited participants, and grow your ambassador tier.</div>
         </div>
+
+        <h3 class="section-title">Global Community 🌍</h3>
+        <div class="card globe-card">
+          <div class="globe-total"><b id="globeTotal">—</b><span>Deltix members worldwide</span></div>
+          <div class="globe-wrap"><canvas id="communityGlobe" width="300" height="300"></canvas></div>
+          <div class="globe-countries" id="globeCountries"><p class="muted center">Loading the world…</p></div>
+        </div>
         <h3 class="section-title">Deltix DAO <span class="pill live" id="daoPill">Live</span></h3>
         <div class="feature-card">
           <div class="name">Community governance, from day one</div>
@@ -446,6 +453,72 @@
 
         <p class="energy-disclaimer">Energy has no monetary value and cannot be exchanged for $DLTX. Play games to earn up to 10 $DLTX daily.</p>
       </div>
+
+      <!-- Deltix Rewards: light daily engagement loops (check-in / box / spin / chest) -->
+      <div class="tab" id="tab-rewards">
+        <div class="showcase-banner rewards-showcase">
+          <div class="showcase-title">Deltix Rewards 🎉</div>
+          <div class="showcase-sub">Check in, open a box, spin the wheel and pick a chest — earn $DLTX and Energy every day. No gaming skill needed.</div>
+        </div>
+        <div class="reward-cap-note" id="rewardCapNote">Daily reward allowance: — / — $DLTX</div>
+
+        <!-- Daily check-in -->
+        <div class="card reward-card">
+          <div class="reward-head"><span class="reward-emoji">📅</span>
+            <div><div class="reward-title">Daily Check-in</div>
+            <div class="reward-sub" id="checkinSub">Check in every day to earn $DLTX.</div></div>
+          </div>
+          <div class="checkin-streak" id="checkinStreak"></div>
+          <button class="btn primary reward-btn" id="checkinBtn">Check in</button>
+        </div>
+
+        <!-- Mystery box -->
+        <div class="card reward-card">
+          <div class="reward-head"><span class="reward-emoji">📦</span>
+            <div><div class="reward-title">Mystery Box</div>
+            <div class="reward-sub" id="boxSub">Open a box every 12 hours for a $DLTX surprise.</div></div>
+          </div>
+          <div class="box-visual" id="boxVisual">📦</div>
+          <div class="reward-actions">
+            <button class="btn primary reward-btn" id="boxBtn">Open box</button>
+            <button class="btn ghost reward-btn" id="boxEnergyBtn">Extra box · 10 ⚡</button>
+          </div>
+        </div>
+
+        <!-- Spin wheel (free + paid) -->
+        <div class="card reward-card">
+          <div class="reward-head"><span class="reward-emoji">🎡</span>
+            <div><div class="reward-title">Deltix Fortune Wheel</div>
+            <div class="reward-sub" id="spinSub">Free spin every 12 hours — win Energy or $DLTX.</div></div>
+          </div>
+          <div class="wheel-wrap">
+            <div class="wheel-pointer"></div>
+            <canvas id="spinWheel" width="300" height="300"></canvas>
+            <div class="wheel-hub">Δ</div>
+          </div>
+          <div class="reward-actions">
+            <button class="btn primary reward-btn" id="freeSpinBtn">Free spin</button>
+            <button class="btn gold reward-btn" id="paidSpinBtn">Spin for 1 $DLTX</button>
+          </div>
+          <div class="muted small-note" id="spinPool"></div>
+        </div>
+
+        <!-- Choose your daily chest -->
+        <div class="card reward-card">
+          <div class="reward-head"><span class="reward-emoji">🎁</span>
+            <div><div class="reward-title">Choose Your Daily Chest</div>
+            <div class="reward-sub" id="chestSub">Pick one chest — one holds $DLTX, one Energy, one nothing.</div></div>
+          </div>
+          <div class="chest-row" id="chestRow">
+            <button class="chest-pick" data-pick="0"><img src="assets/rewards/01_blue_mystery_chest_treasure.png" alt="Chest 1" /><span>#1</span></button>
+            <button class="chest-pick" data-pick="1"><img src="assets/rewards/02_gold_mystery_chest_treasure.png" alt="Chest 2" /><span>#2</span></button>
+            <button class="chest-pick" data-pick="2"><img src="assets/rewards/03_green_mystery_chest_treasure.png" alt="Chest 3" /><span>#3</span></button>
+          </div>
+          <div class="chest-result" id="chestResult"></div>
+        </div>
+
+        <p class="energy-disclaimer">Reward payouts are $DLTX utility credits and non-monetary Energy. Ads shown are never required to receive a reward. Paid-spin wagers recycle through the community rewards pool — they are never burned.</p>
+      </div>
     </main>
 
     <!-- Bottom nav with 3D Icons -->
@@ -461,6 +534,10 @@
       <button class="tabbtn" data-tab="tab-arcade">
         <img src="assets/energy/40_arcade_nav.png" class="nav-3d-icon" alt="Arcade" />
         <span>Arcade</span>
+      </button>
+      <button class="tabbtn" data-tab="tab-rewards">
+        <img src="assets/energy/20_gift.png" class="nav-3d-icon" alt="Rewards" />
+        <span>Rewards</span>
       </button>
       <button class="tabbtn" data-tab="tab-browser">
         <img src="assets/energy/41_browser_nav.png" class="nav-3d-icon" alt="D-Browser" />
