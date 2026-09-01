@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.3.4';
+const APP_VERSION = '1.3.6';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -211,7 +211,7 @@ function refreshTabContent(id) {
   } else if (id === 'tab-arcade') {
     if (typeof loadArcade === 'function') loadArcade().catch(() => {});
   } else if (id === 'tab-community') {
-    Promise.allSettled([loadGovernance(), loadReferrals(), loadGlobe()]);
+    Promise.allSettled([loadGovernance(), loadReferrals(), loadGlobe(), loadLeaderboard(), loadPassport()]);
   } else if (id === 'tab-rewards') {
     loadRewards().catch(() => {});
   } else if (id === 'tab-network') {
@@ -234,7 +234,7 @@ async function refreshCurrentView({ isPull = false, silent = false } = {}) {
   } else if (activeTab === 'tab-stake') {
     tasks.push(loadStakes(), loadValidators());
   } else if (activeTab === 'tab-community') {
-    tasks.push(loadGovernance(), loadReferrals(), loadGlobe());
+    tasks.push(loadGovernance(), loadReferrals(), loadGlobe(), loadLeaderboard(), loadPassport());
   } else if (activeTab === 'tab-arcade') {
     if (typeof loadArcade === 'function') tasks.push(loadArcade());
   } else if (activeTab === 'tab-network') {
@@ -388,6 +388,86 @@ function toast(msg) {
 }
 const fmt = (n) => Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 4 });
 
+// ---------- Reward celebration popup ----------
+// A branded, animated confetti popup used for claims and wins instead of a raw
+// toast. Falls back to toast() automatically when amount is zero/non-positive.
+const CONFETTI_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ec4899', '#14b8a6'];
+let rewardPopTimer;
+function celebrate(opts = {}) {
+  const {
+    amount = 0,
+    unit = '$DLTX',
+    title = 'Reward Claimed!',
+    subtitle = '',
+    icon = '💎',
+    duration = 4200,
+  } = opts;
+
+  // Nothing worth celebrating — keep the plain toast for zero/failed payouts.
+  const value = Number(amount) || 0;
+  if (value <= 0) {
+    if (subtitle || title) toast(subtitle || title);
+    return;
+  }
+
+  try { window.Capacitor?.Plugins?.Haptics?.notification?.({ type: 'Success' }); } catch {}
+  try { navigator.vibrate?.([12, 40, 18]); } catch {}
+  try { window.ArcadeSound?.reward?.(); } catch {}
+
+  document.getElementById('rewardPop')?.remove();
+  clearTimeout(rewardPopTimer);
+
+  const confetti = Array.from({ length: 26 }, (_, i) => {
+    const c = CONFETTI_COLORS[i % CONFETTI_COLORS.length];
+    const left = Math.round(Math.random() * 100);
+    const delay = (Math.random() * 0.35).toFixed(2);
+    const dur = (1.1 + Math.random() * 0.9).toFixed(2);
+    const rot = Math.round(Math.random() * 360);
+    const round = i % 3 === 0 ? 'border-radius:50%;' : '';
+    return `<i style="left:${left}%;background:${c};${round}animation-delay:${delay}s;animation-duration:${dur}s;transform:rotate(${rot}deg)"></i>`;
+  }).join('');
+
+  const pop = document.createElement('div');
+  pop.className = 'reward-pop';
+  pop.id = 'rewardPop';
+  pop.setAttribute('role', 'dialog');
+  pop.setAttribute('aria-live', 'polite');
+  pop.innerHTML = `
+    <div class="rp-confetti">${confetti}</div>
+    <div class="rp-card" role="document">
+      <div class="rp-badge"><span class="rp-icon">${icon}</span></div>
+      <div class="rp-title">${title}</div>
+      <div class="rp-amount"><span class="rp-plus">+</span><span class="rp-num">0</span> <small>${unit}</small></div>
+      <div class="rp-sub"${subtitle ? '' : ' hidden'}>${subtitle}</div>
+      <button class="rp-close" type="button">Awesome</button>
+    </div>`;
+  document.body.appendChild(pop);
+  requestAnimationFrame(() => pop.classList.add('show'));
+
+  // Count-up animation on the amount for a rewarding reveal.
+  const numEl = pop.querySelector('.rp-num');
+  const start = performance.now();
+  const runUp = 700;
+  (function tick(now) {
+    const p = Math.min(1, (now - start) / runUp);
+    const eased = 1 - Math.pow(1 - p, 3);
+    numEl.textContent = fmt(value * eased);
+    if (p < 1) requestAnimationFrame(tick);
+    else numEl.textContent = fmt(value);
+  })(start);
+
+  const close = () => {
+    clearTimeout(rewardPopTimer);
+    pop.classList.remove('show');
+    pop.classList.add('hide');
+    setTimeout(() => pop.remove(), 260);
+  };
+  pop.querySelector('.rp-close').addEventListener('click', close);
+  pop.addEventListener('click', (e) => { if (e.target === pop) close(); });
+  rewardPopTimer = setTimeout(close, duration);
+}
+window.celebrate = celebrate;
+
 // ---------- Auth flow ----------
 // Separate Sign in / Sign up paths: sign-up collects the referral code and the
 // 18+ / terms acceptance, sign-in only needs the email.
@@ -498,6 +578,7 @@ function resetAccountUI() {
   setHtml('arcadeMeta', '');
   renderEnergy();
   if (typeof resetRewardsUI === 'function') resetRewardsUI();
+  if (typeof resetCommunityUI === 'function') resetCommunityUI();
 }
 
 /** Full sign-out: drops the session as well as the rendered account data. */
@@ -1353,7 +1434,12 @@ $('confirmStake').addEventListener('click', async () => {
 async function claim(id) {
   try {
     const r = await api('POST', `/staking/${id}/claim`);
-    toast(`Claimed ${fmt(r.rewardsPaid)} $DLTX`);
+    celebrate({
+      amount: r.rewardsPaid,
+      title: 'Staking Rewards Claimed!',
+      subtitle: 'Added to your wallet balance.',
+      icon: '🏆',
+    });
     await Promise.all([loadWallet(), loadStakes(), loadTx()]);
   } catch (e) {
     toast(e.message);
@@ -2426,9 +2512,8 @@ $('checkinBtn')?.addEventListener('click', async () => {
   btn.disabled = true;
   try {
     const r = await api('POST', '/rewards/checkin');
-    toast(r.capped
-      ? `Checked in! Daily $DLTX cap reached — ${r.streak}-day streak 🔥`
-      : `Checked in! +${fmt(r.reward)} $DLTX · ${r.streak}-day streak 🔥`);
+    if (r.capped) toast(`Checked in! Daily $DLTX cap reached — ${r.streak}-day streak 🔥`);
+    else celebrate({ amount: r.reward, title: 'Daily Check-in Complete!', subtitle: `You're on a ${r.streak}-day streak 🔥`, icon: '📅' });
     await Promise.allSettled([loadRewards(), loadWallet(), loadTx()]);
     showRewardInterstitial();
   } catch (e) {
@@ -2445,9 +2530,8 @@ async function openMysteryBox(useEnergy) {
   try {
     const r = await api('POST', '/rewards/mystery-box', { useEnergy: !!useEnergy });
     if (vis) { vis.classList.remove('box-shake'); vis.textContent = '🎉'; }
-    toast(r.capped
-      ? 'Box opened — daily $DLTX cap reached. Try again tomorrow!'
-      : `📦 You found +${fmt(r.reward)} $DLTX!`);
+    if (r.capped) toast('Box opened — daily $DLTX cap reached. Try again tomorrow!');
+    else celebrate({ amount: r.reward, title: 'Mystery Box Opened!', subtitle: 'You found a $DLTX reward inside.', icon: '📦' });
     await Promise.allSettled([loadRewards(), loadWallet(), loadEnergy(), loadTx()]);
     showRewardInterstitial();
     setTimeout(() => { if (vis) vis.textContent = '📦'; }, 1600);
@@ -2475,13 +2559,13 @@ async function runSpin(paid) {
     const r = await api('POST', paid ? '/rewards/paid-spin' : '/rewards/spin');
     await spinWheelTo(r.index);
     if (paid) {
-      if (r.segment.kind === 'dltx' && r.wonDltx > 0) toast(`🎉 Won ${fmt(r.wonDltx)} $DLTX (net ${r.net >= 0 ? '+' : ''}${fmt(r.net)})`);
-      else if (r.segment.kind === 'energy') toast(`No $DLTX — but +${r.energyAwarded} ⚡ Energy!`);
+      if (r.segment.kind === 'dltx' && r.wonDltx > 0) celebrate({ amount: r.wonDltx, title: 'You Won the Spin!', subtitle: `Net ${r.net >= 0 ? '+' : ''}${fmt(r.net)} $DLTX after wager.`, icon: '🎰' });
+      else if (r.segment.kind === 'energy') celebrate({ amount: r.energyAwarded, unit: '⚡ Energy', title: 'Energy Boost!', subtitle: 'No $DLTX this time — but your Energy grew.', icon: '⚡' });
       else toast('No win this spin — the wager went to the community pool.');
     } else {
-      if (r.segment.kind === 'dltx' && r.reward > 0) toast(`🎉 You won +${fmt(r.reward)} $DLTX!`);
+      if (r.segment.kind === 'dltx' && r.reward > 0) celebrate({ amount: r.reward, title: 'Free Spin Win!', subtitle: 'Straight to your wallet.', icon: '🎉' });
       else if (r.segment.kind === 'dltx') toast('Daily $DLTX cap reached — spin again tomorrow.');
-      else toast(`⚡ You won +${r.energyAwarded} Energy!`);
+      else celebrate({ amount: r.energyAwarded, unit: '⚡ Energy', title: 'Energy Won!', subtitle: 'Use it to unlock bonus games.', icon: '⚡' });
     }
     await Promise.allSettled([loadRewards(), loadWallet(), loadEnergy(), loadTx()]);
     showRewardInterstitial();
@@ -2521,7 +2605,9 @@ document.querySelectorAll('.chest-pick').forEach((b) =>
           ? `⚡ You won +${r.energyAwarded} Energy!`
           : 'Empty chest — try again tomorrow!';
       setText('chestResult', msg);
-      toast(msg);
+      if (r.chosen === 'dltx' && !r.capped && r.reward > 0) celebrate({ amount: r.reward, title: 'Mystery Chest Unlocked!', subtitle: 'A shiny $DLTX reward is yours.', icon: '🎁' });
+      else if (r.chosen === 'energy' && r.energyAwarded > 0) celebrate({ amount: r.energyAwarded, unit: '⚡ Energy', title: 'Mystery Chest Unlocked!', subtitle: 'Energy added to your balance.', icon: '🎁' });
+      else toast(msg);
       await Promise.allSettled([loadRewards(), loadWallet(), loadEnergy(), loadTx()]);
       showRewardInterstitial();
     } catch (e) {
@@ -2559,6 +2645,64 @@ function flagEmoji(cc) {
   if (!cc || cc.length !== 2) return '🌐';
   return cc.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
 }
+
+// Coarse continent outlines ([lat, lon] polygons) so the globe reads as Earth.
+// Rendered as filled land dots (point-in-polygon), which stays clean while the
+// sphere rotates — no polygon-clipping artifacts at the horizon.
+const LAND_POLYS = [
+  // North America (+ Central America tail)
+  [[66,-168],[71,-156],[71,-140],[70,-125],[58,-122],[55,-130],[48,-123],[40,-124],[33,-117],[24,-110],[18,-104],[16,-97],[15,-92],[10,-84],[9,-80],[14,-83],[18,-88],[22,-91],[26,-97],[29,-95],[29,-90],[30,-84],[25,-81],[28,-80],[35,-76],[40,-74],[45,-66],[47,-60],[51,-56],[60,-64],[62,-78],[60,-95],[66,-88],[70,-100],[72,-120],[72,-140],[71,-156],[66,-168]],
+  // Greenland
+  [[60,-45],[60,-25],[66,-18],[72,-20],[78,-30],[82,-45],[82,-58],[73,-55],[66,-48],[60,-45]],
+  // South America
+  [[11,-72],[10,-62],[5,-53],[0,-50],[-5,-38],[-8,-35],[-13,-38],[-20,-40],[-25,-48],[-34,-53],[-40,-62],[-45,-66],[-52,-71],[-54,-72],[-46,-73],[-38,-72],[-30,-71],[-23,-70],[-18,-71],[-14,-76],[-6,-81],[0,-80],[5,-77],[8,-77],[11,-72]],
+  // Africa
+  [[35,-6],[36,0],[37,10],[33,11],[31,19],[31,25],[30,32],[27,35],[16,40],[12,43],[11,48],[5,45],[-2,42],[-10,40],[-18,35],[-26,32],[-34,26],[-35,20],[-29,16],[-23,13],[-17,12],[-9,9],[-1,9],[4,6],[5,-4],[8,-8],[15,-16],[21,-16],[28,-12],[33,-9],[35,-6]],
+  // Europe
+  [[36,-10],[44,-9],[44,-2],[48,2],[51,-5],[52,0],[54,8],[58,10],[60,6],[64,10],[66,16],[70,22],[71,28],[66,30],[60,28],[58,32],[55,33],[50,38],[46,40],[45,30],[45,20],[46,16],[44,13],[40,16],[41,19],[38,16],[37,12],[44,8],[43,3],[43,-2],[40,-9],[36,-10]],
+  // Asia (coarse; longitudes capped below 180)
+  [[38,36],[42,40],[45,50],[42,55],[30,52],[25,57],[25,60],[37,58],[40,62],[38,68],[35,70],[30,66],[26,62],[25,66],[24,68],[22,70],[8,77],[7,80],[13,80],[15,74],[20,72],[22,89],[16,94],[10,98],[8,100],[10,104],[14,109],[18,108],[21,106],[22,113],[30,122],[35,126],[39,127],[43,132],[46,142],[52,141],[60,160],[62,178],[68,178],[73,140],[76,110],[78,75],[70,60],[66,55],[60,48],[52,50],[48,48],[45,40],[42,36],[38,36]],
+  // India peninsula (fill)
+  [[24,68],[26,72],[22,88],[16,80],[8,77],[15,73],[20,70],[24,68]],
+  // Arabia
+  [[30,35],[30,48],[24,60],[13,45],[13,43],[17,42],[22,39],[26,36],[30,35]],
+  // Southeast Asia / Indonesia
+  [[6,95],[7,100],[2,104],[-6,106],[-8,115],[-8,120],[-5,120],[-2,117],[2,110],[5,98],[6,95]],
+  // Australia
+  [[-11,131],[-12,142],[-19,147],[-28,153],[-38,146],[-38,140],[-32,133],[-35,124],[-33,116],[-22,114],[-15,124],[-11,131]],
+  // Japan
+  [[31,131],[35,140],[41,141],[38,138],[34,132],[31,131]],
+  // United Kingdom
+  [[50,-5],[54,-3],[58,-5],[57,-2],[52,1],[50,-5]],
+  // Madagascar
+  [[-12,49],[-16,50],[-25,47],[-22,44],[-15,44],[-12,49]],
+  // New Zealand
+  [[-35,173],[-41,175],[-46,168],[-44,169],[-38,174],[-35,173]],
+];
+
+function pointInPolys(lat, lon) {
+  for (const poly of LAND_POLYS) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const yi = poly[i][0], xi = poly[i][1], yj = poly[j][0], xj = poly[j][1];
+      if (((yi > lat) !== (yj > lat)) && (lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi)) inside = !inside;
+    }
+    if (inside) return true;
+  }
+  return false;
+}
+
+// Precompute land points once (a dotted world map) for the rotating globe.
+const LAND_DOTS = (() => {
+  const dots = [];
+  for (let lat = -56; lat <= 78; lat += 2.5) {
+    for (let lon = -180; lon < 180; lon += 2.5) {
+      if (pointInPolys(lat, lon)) dots.push([lat, lon]);
+    }
+  }
+  return dots;
+})();
+
 function hashPos(cc) {
   let h = 0;
   for (const ch of String(cc)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
@@ -2579,19 +2723,29 @@ function renderGlobe() {
   const d = globeState.data;
   if (!d) return;
   setText('globeTotal', fmtInt(d.totalUsers));
-  const list = (d.countries || []).slice(0, 12);
-  const max = list.length ? list[0].users : 1;
+  // Show the top countries, then roll everyone else (untruncated + not-yet-located)
+  // into a single "Other regions" row so the breakdown always sums to the total.
+  const rows = (d.countries || []).slice(0, 12).map((c) => ({
+    flag: flagEmoji(c.country),
+    name: COUNTRY_NAME[c.country] || c.country,
+    users: Number(c.users) || 0,
+  }));
   const el = $('globeCountries');
   if (!el) return;
-  el.innerHTML = list.length
-    ? list.map((c) => `
+  if (!rows.length) {
+    el.innerHTML = '<p class="muted center">Be one of the first on the map — invite your country!</p>';
+    return;
+  }
+  const other = Math.max(0, Number(d.totalUsers || 0) - rows.reduce((s, r) => s + r.users, 0));
+  if (other > 0) rows.push({ flag: '🌐', name: 'Other regions', users: other });
+  const max = rows.reduce((m, r) => Math.max(m, r.users), 1);
+  el.innerHTML = rows.map((r) => `
       <div class="globe-country">
-        <span class="gc-flag">${flagEmoji(c.country)}</span>
-        <span class="gc-name">${COUNTRY_NAME[c.country] || c.country}</span>
-        <span class="gc-bar"><span style="width:${Math.max(6, Math.round((c.users / max) * 100))}%"></span></span>
-        <span class="gc-count">${fmtInt(c.users)}</span>
-      </div>`).join('')
-    : '<p class="muted center">Be one of the first on the map — invite your country!</p>';
+        <span class="gc-flag">${r.flag}</span>
+        <span class="gc-name">${r.name}</span>
+        <span class="gc-bar"><span style="width:${Math.max(6, Math.round((r.users / max) * 100))}%"></span></span>
+        <span class="gc-count">${fmtInt(r.users)}</span>
+      </div>`).join('');
 }
 
 function drawGlobe() {
@@ -2612,13 +2766,15 @@ function drawGlobe() {
   ctx.arc(cx, cy, R, 0, Math.PI * 2);
   ctx.fillStyle = grad;
   ctx.fill();
-  // Graticule dots (front hemisphere only)
-  ctx.fillStyle = 'rgba(255,255,255,.10)';
-  for (let lat = -60; lat <= 60; lat += 20) {
-    for (let lon = -180; lon < 180; lon += 12) {
-      const p = project(lat, lon);
-      if (p.z > 0) { ctx.beginPath(); ctx.arc(p.x, p.y, 1, 0, Math.PI * 2); ctx.fill(); }
-    }
+  // Land dots (continents) — front hemisphere only, with a subtle depth fade.
+  for (let i = 0; i < LAND_DOTS.length; i++) {
+    const p = project(LAND_DOTS[i][0], LAND_DOTS[i][1]);
+    if (p.z <= 0.02) continue;
+    const a = 0.35 + p.z * 0.5;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(134, 239, 172, ${a.toFixed(3)})`;
+    ctx.fill();
   }
   // Country markers
   const d = globeState.data;
@@ -2654,6 +2810,126 @@ function startGlobe() {
     globeState.raf = requestAnimationFrame(loop);
   };
   globeState.raf = requestAnimationFrame(loop);
+}
+
+// ==================== Country Leaderboard + Deltix Passport ====================
+const communityState = { lbScope: 'country', lbData: null, passport: null };
+const ordinal = (n) => {
+  const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+};
+
+async function loadLeaderboard() {
+  if (!state.token) return;
+  try {
+    const r = await api('GET', `/community/leaderboard?scope=${communityState.lbScope}`);
+    communityState.lbData = r;
+    renderLeaderboard();
+  } catch { /* handled by api() */ }
+}
+
+function renderLeaderboard() {
+  const d = communityState.lbData;
+  document.querySelectorAll('[data-lbscope]').forEach((b) =>
+    b.classList.toggle('active', b.dataset.lbscope === communityState.lbScope));
+  if (!d) return;
+
+  const you = $('lbYou');
+  if (you) {
+    if (d.you && d.you.scopeRank) {
+      const where = communityState.lbScope === 'country'
+        ? (d.country ? `${flagEmoji(d.country)} ${COUNTRY_NAME[d.country] || d.country}` : 'your country')
+        : 'the world';
+      you.innerHTML = `You're <b>${ordinal(d.you.scopeRank)}</b> of ${fmtInt(d.you.scopeSize)} in ${where} · <b>${fmtInt(d.you.xp)}</b> XP`;
+    } else {
+      you.textContent = 'Play games and check in daily to climb the ranks.';
+    }
+  }
+
+  const list = $('lbList');
+  if (list) {
+    if (communityState.lbScope === 'country' && !d.country) {
+      list.innerHTML = '<p class="muted center">Your country isn\u2019t on the map yet — it\u2019s detected on your next sign-in.</p>';
+    } else if (!d.top || !d.top.length) {
+      list.innerHTML = '<p class="muted center">No ranked players yet. Be the first!</p>';
+    } else {
+      list.innerHTML = d.top.map((p) => `
+        <div class="lb-row${p.isYou ? ' me' : ''}">
+          <span class="lb-rank lb-rank-${p.rank <= 3 ? p.rank : 'n'}">${p.rank <= 3 ? ['🥇', '🥈', '🥉'][p.rank - 1] : p.rank}</span>
+          <span class="lb-flag">${p.country ? flagEmoji(p.country) : '🌐'}</span>
+          <span class="lb-name">${p.handle}${p.isYou ? ' <span class="lb-badge-you">You</span>' : ''}</span>
+          <span class="lb-xp">${fmtInt(p.xp)} XP</span>
+        </div>`).join('');
+    }
+  }
+
+  const cel = $('lbCountries');
+  if (cel) {
+    cel.innerHTML = (d.countries || []).slice(0, 10).map((c) => `
+      <div class="lb-country">
+        <span class="lbc-rank">${c.rank}</span>
+        <span class="lb-flag">${flagEmoji(c.country)}</span>
+        <span class="lb-name">${COUNTRY_NAME[c.country] || c.country}</span>
+        <span class="lbc-meta">${fmtInt(c.members)} 👥 · ${fmtInt(c.xp)} XP</span>
+      </div>`).join('') || '<p class="muted center">Countries appear as members join the map.</p>';
+  }
+}
+
+async function loadPassport() {
+  if (!state.token) return;
+  try {
+    const r = await api('GET', '/community/passport');
+    communityState.passport = r;
+    renderPassport();
+  } catch { /* handled by api() */ }
+}
+
+function renderPassport() {
+  const d = communityState.passport;
+  if (!d) return;
+  setText('ppStamps', `${d.stampsEarned}/${d.stampsTotal}`);
+  setText('ppMedals', `${d.medalsEarned}/${d.medalsTotal}`);
+  setText('ppStreak', fmtInt(d.longestStreak || 0));
+
+  const mg = $('ppMedalsGrid');
+  if (mg) {
+    mg.innerHTML = (d.medals || []).map((m) => `
+      <div class="pp-medal${m.earned ? ' earned' : ''}" title="${m.name} — ${m.tagline}">
+        <span class="ppm-icon">${m.earned ? m.icon : '🔒'}</span>
+        <span class="ppm-name">${m.name.replace('Deltix ', '')}</span>
+        <span class="ppm-days">${m.earned ? 'Unlocked' : m.days + 'd'}</span>
+      </div>`).join('');
+  }
+
+  const sg = $('ppStampsGrid');
+  if (sg) {
+    sg.innerHTML = (d.stamps || []).map((s) => `
+      <div class="pp-stamp${s.earned ? ' earned' : ''}" title="${s.name} — ${s.desc}">
+        <span class="pps-icon">${s.earned ? s.icon : '🔒'}</span>
+        <span class="pps-name">${s.name}</span>
+        ${!s.earned && s.target ? `<span class="pps-prog">${fmtInt(s.progress || 0)}/${fmtInt(s.target)}</span>` : `<span class="pps-prog">${s.earned ? 'Earned' : ''}</span>`}
+      </div>`).join('');
+  }
+}
+
+document.querySelectorAll('[data-lbscope]').forEach((b) =>
+  b.addEventListener('click', () => {
+    if (communityState.lbScope === b.dataset.lbscope) return;
+    communityState.lbScope = b.dataset.lbscope;
+    renderLeaderboard();
+    loadLeaderboard();
+  })
+);
+
+function resetCommunityUI() {
+  communityState.lbScope = 'country';
+  communityState.lbData = null;
+  communityState.passport = null;
+  const list = $('lbList'); if (list) list.innerHTML = '<p class="muted center">Loading rankings…</p>';
+  const you = $('lbYou'); if (you) you.textContent = 'Play games and check in daily to climb the ranks.';
+  setText('ppStamps', '0/0'); setText('ppMedals', '0/0'); setText('ppStreak', '0');
+  const mg = $('ppMedalsGrid'); if (mg) mg.innerHTML = '';
+  const sg = $('ppStampsGrid'); if (sg) sg.innerHTML = '';
 }
 
 /** Opt-in rewarded ad. Resolves true only on the SDK's own reward callback.

@@ -71,11 +71,28 @@ const ArcadeSound = (() => {
   let ctx = null;
   let musicTimer = null;
   let musicStep = 0;
+  let unlocked = false;
   const melody = [262, 330, 392, 523, 440, 392, 330, 294];
   function context() {
     if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     return ctx;
+  }
+  // WebView/mobile block audio until a user gesture. Resume the context and
+  // play a silent buffer inside the gesture so later programmatic sounds work.
+  function unlock() {
+    try {
+      const audio = context();
+      if (audio.state === 'suspended') audio.resume().catch(() => {});
+      if (!unlocked) {
+        const buf = audio.createBuffer(1, 1, 22050);
+        const src = audio.createBufferSource();
+        src.buffer = buf;
+        src.connect(audio.destination);
+        src.start(0);
+        unlocked = true;
+      }
+    } catch { /* audio is optional */ }
   }
   function tone(freq, duration, type = 'sine', gain = 0.045, delay = 0) {
     try {
@@ -112,14 +129,29 @@ const ArcadeSound = (() => {
     musicTimer = null;
   }
   return {
+    unlock,
     tap: () => tone(520, 0.055, 'triangle', 0.028),
     start: () => { tone(392, 0.08, 'triangle'); tone(588, 0.1, 'triangle', 0.045, 0.08); },
     win: () => { tone(523, 0.09, 'sine'); tone(659, 0.09, 'sine', 0.045, 0.09); tone(784, 0.16, 'sine', 0.05, 0.18); },
     lose: () => { tone(330, 0.1, 'sawtooth', 0.028); tone(247, 0.16, 'sawtooth', 0.025, 0.1); },
+    // Celebratory rising arpeggio for claims, spins, chests and box wins.
+    reward: () => {
+      tone(659, 0.1, 'sine', 0.05);
+      tone(784, 0.1, 'sine', 0.05, 0.09);
+      tone(988, 0.16, 'sine', 0.055, 0.18);
+      tone(1319, 0.24, 'sine', 0.05, 0.28);
+    },
+    // Quick two-note coin blip for smaller rewards.
+    coin: () => { tone(988, 0.06, 'square', 0.035); tone(1319, 0.12, 'square', 0.035, 0.05); },
     startMusic,
     stopMusic,
   };
 })();
+// Expose for the wallet/rewards flow (app.js) and unlock audio on first gesture.
+window.ArcadeSound = ArcadeSound;
+['pointerdown', 'touchstart', 'click', 'keydown'].forEach((ev) =>
+  document.addEventListener(ev, () => ArcadeSound.unlock(), { passive: true })
+);
 
 // ---------- Arcade tab ----------
 function gameCardHtml(g) {
@@ -243,6 +275,7 @@ window.closeGame = closeGame;
 
 gel('startGameBtn').addEventListener('click', async () => {
   gel('startGameBtn').disabled = true;
+  ArcadeSound.unlock(); // unlock inside the gesture before the awaited session call
   try {
     await startSession();
   } catch (e) {
@@ -328,7 +361,7 @@ async function finishGame(won, score) {
       setGameStatus('You won — but too fast to count. Play a full game to earn.');
     } else if (r.won && r.reward > 0) {
       setGameStatus(`You won! +${fmt(r.reward)} $DLTX earned 🏆`);
-      toast(`+${fmt(r.reward)} $DLTX game reward`);
+      (window.celebrate || toast)({ amount: r.reward, title: 'Victory Reward!', subtitle: 'Game winnings added to your wallet.', icon: '🏆' });
       Promise.all([loadWallet(), loadTx(), loadArcade()]).catch(() => {});
     } else if (r.won && r.capped) {
       setGameStatus('You won — but today\u2019s reward cap is reached. Come back tomorrow!');

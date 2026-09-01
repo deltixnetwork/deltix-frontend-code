@@ -623,6 +623,70 @@ body.has-gameover-ad #gameMount { padding-bottom: 270px; }
   font-size: 14px; z-index: 300; box-shadow: 0 8px 24px rgba(16, 24, 40, .3); max-width: 90%;
 }
 
+/* Reward celebration popup */
+.reward-pop {
+  position: fixed; inset: 0; z-index: 400; display: flex; align-items: center; justify-content: center;
+  background: rgba(8, 15, 34, .55); backdrop-filter: blur(3px); padding: 24px;
+  opacity: 0; transition: opacity .22s ease;
+}
+.reward-pop.show { opacity: 1; }
+.reward-pop.hide { opacity: 0; }
+.rp-card {
+  position: relative; width: 100%; max-width: 320px; text-align: center;
+  background: linear-gradient(180deg, #ffffff 0%, #f4f8ff 100%);
+  border: 1px solid rgba(59, 130, 246, .18); border-radius: 24px;
+  padding: 28px 24px 22px; box-shadow: 0 24px 60px rgba(16, 24, 40, .35);
+  transform: translateY(14px) scale(.92); opacity: 0;
+  transition: transform .32s cubic-bezier(.2, 1.3, .4, 1), opacity .22s ease;
+}
+.reward-pop.show .rp-card { transform: translateY(0) scale(1); opacity: 1; }
+.rp-badge {
+  width: 84px; height: 84px; margin: 0 auto 14px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 30% 25%, #6ea8ff, #2563eb);
+  box-shadow: 0 10px 26px rgba(37, 99, 235, .45), inset 0 0 0 4px rgba(255, 255, 255, .25);
+  animation: rewardBadgePop .5s cubic-bezier(.2, 1.6, .4, 1) both;
+}
+.rp-icon { font-size: 42px; line-height: 1; animation: rewardIconWiggle 1.6s ease-in-out .3s infinite; }
+.rp-title { font-size: 18px; font-weight: 800; color: #0f172a; letter-spacing: -.2px; }
+.rp-amount {
+  margin: 10px 0 4px; font-size: 32px; font-weight: 900; color: #2563eb;
+  letter-spacing: -.5px; line-height: 1.05;
+}
+.rp-amount .rp-plus { color: #22c55e; }
+.rp-amount small { font-size: 15px; font-weight: 700; color: #64748b; }
+.rp-sub { font-size: 13px; color: #64748b; margin: 2px 4px 0; }
+.rp-close {
+  margin-top: 18px; width: 100%; padding: 12px; border: none; border-radius: 14px;
+  background: linear-gradient(90deg, #2563eb, #4f8cff); color: #fff;
+  font-size: 15px; font-weight: 700; cursor: pointer;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, .35); transition: transform .1s ease;
+}
+.rp-close:active { transform: scale(.97); }
+.rp-confetti { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.rp-confetti i {
+  position: absolute; top: -12px; width: 9px; height: 14px; opacity: 0;
+  animation-name: rewardConfetti; animation-timing-function: ease-in; animation-iteration-count: 1; animation-fill-mode: forwards;
+}
+@keyframes rewardBadgePop {
+  0% { transform: scale(0) rotate(-25deg); }
+  70% { transform: scale(1.15) rotate(6deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+@keyframes rewardIconWiggle {
+  0%, 100% { transform: rotate(0) scale(1); }
+  25% { transform: rotate(-8deg) scale(1.06); }
+  75% { transform: rotate(8deg) scale(1.06); }
+}
+@keyframes rewardConfetti {
+  0% { transform: translateY(0) rotate(0); opacity: 1; }
+  100% { transform: translateY(115vh) rotate(540deg); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rp-confetti i { display: none; }
+  .rp-badge, .rp-icon { animation: none; }
+}
+
 /* -- Deltix Arcade ----------------------------------------- */
 .games-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 14px 0; }
 .game-card {
@@ -1397,6 +1461,63 @@ body.has-ad-banner .tabbar {
 .gc-bar span { display: block; height: 100%; background: linear-gradient(90deg, #6366f1, #ec4899); border-radius: 4px; }
 .gc-count { flex: none; font-weight: 800; color: #1d4ed8; min-width: 40px; text-align: right; }
 
+/* ---------- Country Leaderboard ---------- */
+.lb-scope { display: flex; gap: 8px; margin-bottom: 12px; }
+.lb-scope-btn {
+  flex: 1; padding: 9px; border: 1px solid var(--border, #e6eaf2); border-radius: 10px;
+  background: #fff; color: #64748b; font-weight: 700; font-size: 13px; cursor: pointer;
+}
+.lb-scope-btn.active { border-color: var(--accent, #2563eb); color: var(--accent, #2563eb); background: #eef3ff; }
+.lb-you {
+  text-align: center; font-size: 13px; color: #24344f; background: #f2f7ff;
+  border-radius: 10px; padding: 9px 10px; margin-bottom: 12px;
+}
+.lb-list { display: flex; flex-direction: column; gap: 6px; }
+.lb-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: #f8faff; }
+.lb-row.me { background: #e8f0ff; border: 1px solid #bcd0ff; }
+.lb-rank { flex: 0 0 26px; text-align: center; font-weight: 800; color: #64748b; font-size: 14px; }
+.lb-rank-1, .lb-rank-2, .lb-rank-3 { font-size: 17px; }
+.lb-flag { flex: none; font-size: 18px; }
+.lb-name { flex: 1 1 auto; font-weight: 700; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lb-badge-you { font-size: 10px; font-weight: 800; color: #2563eb; background: #dbeafe; padding: 1px 6px; border-radius: 6px; margin-left: 4px; }
+.lb-xp { flex: none; font-weight: 800; color: #1d4ed8; font-size: 13px; }
+.lb-countries-title { margin: 16px 0 8px; font-weight: 800; color: #0b1c3f; font-size: 14px; }
+.lb-countries { display: flex; flex-direction: column; gap: 6px; }
+.lb-country { display: flex; align-items: center; gap: 10px; font-size: 13px; padding: 6px 10px; border-radius: 10px; background: #f8faff; }
+.lbc-rank { flex: 0 0 22px; text-align: center; font-weight: 800; color: #64748b; }
+.lbc-meta { flex: none; font-size: 11px; color: #5a6b8c; font-weight: 700; }
+
+/* ---------- Deltix Passport ---------- */
+.pp-summary { display: flex; justify-content: space-around; margin-bottom: 14px; }
+.pp-stat { display: flex; flex-direction: column; align-items: center; }
+.pp-stat b { font-size: 20px; font-weight: 900; color: #0b1c3f; }
+.pp-stat span { font-size: 11px; color: #5a6b8c; }
+.pp-section-label { font-weight: 800; color: #0b1c3f; font-size: 13px; margin: 6px 0 10px; }
+.pp-hint { font-weight: 600; font-size: 11px; color: #8a99b5; }
+.pp-medals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+.pp-medal {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 4px;
+  border-radius: 12px; background: #f4f6fb; border: 1px solid #e6eaf2; opacity: .55;
+}
+.pp-medal.earned {
+  opacity: 1; background: linear-gradient(180deg, #fff8e6, #fff);
+  border-color: #f4d47a; box-shadow: 0 4px 12px rgba(234, 179, 8, .22);
+}
+.ppm-icon { font-size: 24px; line-height: 1; }
+.ppm-name { font-size: 10px; font-weight: 800; color: #24344f; text-align: center; }
+.ppm-days { font-size: 9px; color: #8a99b5; font-weight: 700; }
+.pp-stamps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pp-stamp {
+  display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 12px 6px;
+  border-radius: 12px; background: #f4f6fb; border: 1px solid #e6eaf2; opacity: .6; text-align: center;
+}
+.pp-stamp.earned { opacity: 1; background: linear-gradient(180deg, #eaf3ff, #fff); border-color: #bcd0ff; }
+.pps-icon { font-size: 22px; line-height: 1; }
+.pps-name { font-size: 10.5px; font-weight: 800; color: #24344f; line-height: 1.15; }
+.pps-prog { font-size: 9.5px; color: #8a99b5; font-weight: 700; }
+.pp-stamp.earned .pps-prog { color: #16a34a; }
+.pp-note { font-size: 10.5px; color: #8a99b5; text-align: center; margin: 14px 4px 2px; }
+
 /* ---------- Deltix Energy ---------- */
 .energy-hero {
   position: relative; overflow: hidden;
@@ -1684,6 +1805,11 @@ html[data-dark] .vote-actions .mini-btn.against { background: #3a1417; color: #f
 html[data-dark] .votebar,
 html[data-dark] .progress-row .bar { background: #1d2a49; }
 html[data-dark] .toast { background: #1e293b; }
+html[data-dark] .rp-card { background: linear-gradient(180deg, #1e293b 0%, #172033 100%); border-color: rgba(96, 165, 250, .25); }
+html[data-dark] .rp-title { color: #f1f5f9; }
+html[data-dark] .rp-amount { color: #93c5fd; }
+html[data-dark] .rp-amount small,
+html[data-dark] .rp-sub { color: #94a3b8; }
 html[data-dark] .exp-body,
 html[data-dark] .db-frame-wrap,
 html[data-dark] .db-loading { background: var(--bg); }
@@ -1756,3 +1882,15 @@ html[data-dark] .chest-pick span { color: #c7d6f0; }
 html[data-dark] .gc-name { color: #c7d6f0; }
 html[data-dark] .gc-bar { background: #16233f; }
 html[data-dark] .wheel-hub { background: #16233f; }
+/* Leaderboard + Passport (dark) */
+html[data-dark] .lb-scope-btn { background: #101a30; border-color: var(--border); color: var(--muted); }
+html[data-dark] .lb-scope-btn.active { background: #16233f; color: #cfe0ff; border-color: #3b5aa6; }
+html[data-dark] .lb-you { background: #101a30; color: #c7d6f0; }
+html[data-dark] .lb-row, html[data-dark] .lb-country { background: #101a30; }
+html[data-dark] .lb-row.me { background: #16233f; border-color: #3b5aa6; }
+html[data-dark] .lb-name { color: #dbe6fb; }
+html[data-dark] .lb-countries-title, html[data-dark] .pp-section-label, html[data-dark] .pp-stat b { color: var(--text); }
+html[data-dark] .pp-medal, html[data-dark] .pp-stamp { background: #101a30; border-color: var(--border); }
+html[data-dark] .pp-medal.earned { background: linear-gradient(180deg, #2a2410, #16233f); border-color: #7a6320; }
+html[data-dark] .pp-stamp.earned { background: linear-gradient(180deg, #0f2038, #16233f); border-color: #3b5aa6; }
+html[data-dark] .ppm-name, html[data-dark] .pps-name { color: #cfdcf3; }
