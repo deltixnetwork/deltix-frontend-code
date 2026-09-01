@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.3.6';
+const APP_VERSION = '1.3.8';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -159,6 +159,7 @@ function onAppResumed() {
   checkAppVersion();
   if (state.token && $('screen-main')?.classList.contains('active')) {
     refreshCurrentView({ silent: true });
+    if (typeof checkMysteryHour === 'function') checkMysteryHour();
   }
 }
 document.addEventListener('visibilitychange', () => {
@@ -691,6 +692,7 @@ async function enterApp() {
     loadRewards(),
     typeof loadArcade === 'function' ? loadArcade() : Promise.resolve(),
   ]);
+  if (typeof checkMysteryHour === 'function') checkMysteryHour();
 }
 
 /** Extracts the email claim from the JWT payload (no verification needed). */
@@ -2560,12 +2562,12 @@ async function runSpin(paid) {
     await spinWheelTo(r.index);
     if (paid) {
       if (r.segment.kind === 'dltx' && r.wonDltx > 0) celebrate({ amount: r.wonDltx, title: 'You Won the Spin!', subtitle: `Net ${r.net >= 0 ? '+' : ''}${fmt(r.net)} $DLTX after wager.`, icon: '🎰' });
-      else if (r.segment.kind === 'energy') celebrate({ amount: r.energyAwarded, unit: '⚡ Energy', title: 'Energy Boost!', subtitle: 'No $DLTX this time — but your Energy grew.', icon: '⚡' });
+      else if (r.segment.kind === 'energy') celebrate({ amount: r.energyAwarded, unit: '⚡ Energy', title: 'Energy Boost!', subtitle: `You now have ${fmt(r.energy)} ⚡ total.`, icon: '⚡' });
       else toast('No win this spin — the wager went to the community pool.');
     } else {
       if (r.segment.kind === 'dltx' && r.reward > 0) celebrate({ amount: r.reward, title: 'Free Spin Win!', subtitle: 'Straight to your wallet.', icon: '🎉' });
       else if (r.segment.kind === 'dltx') toast('Daily $DLTX cap reached — spin again tomorrow.');
-      else celebrate({ amount: r.energyAwarded, unit: '⚡ Energy', title: 'Energy Won!', subtitle: 'Use it to unlock bonus games.', icon: '⚡' });
+      else celebrate({ amount: r.energyAwarded, unit: '⚡ Energy', title: 'Energy Won!', subtitle: `You now have ${fmt(r.energy)} ⚡ total.`, icon: '⚡' });
     }
     await Promise.allSettled([loadRewards(), loadWallet(), loadEnergy(), loadTx()]);
     showRewardInterstitial();
@@ -2606,7 +2608,7 @@ document.querySelectorAll('.chest-pick').forEach((b) =>
           : 'Empty chest — try again tomorrow!';
       setText('chestResult', msg);
       if (r.chosen === 'dltx' && !r.capped && r.reward > 0) celebrate({ amount: r.reward, title: 'Mystery Chest Unlocked!', subtitle: 'A shiny $DLTX reward is yours.', icon: '🎁' });
-      else if (r.chosen === 'energy' && r.energyAwarded > 0) celebrate({ amount: r.energyAwarded, unit: '⚡ Energy', title: 'Mystery Chest Unlocked!', subtitle: 'Energy added to your balance.', icon: '🎁' });
+      else if (r.chosen === 'energy' && r.energyAwarded > 0) celebrate({ amount: r.energyAwarded, unit: '⚡ Energy', title: 'Mystery Chest Unlocked!', subtitle: `You now have ${fmt(r.energy)} ⚡ total.`, icon: '🎁' });
       else toast(msg);
       await Promise.allSettled([loadRewards(), loadWallet(), loadEnergy(), loadTx()]);
       showRewardInterstitial();

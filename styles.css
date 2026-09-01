@@ -688,6 +688,32 @@ body.has-gameover-ad #gameMount { padding-bottom: 270px; }
 }
 
 /* -- Deltix Arcade ----------------------------------------- */
+.mystery-hour {
+  display: flex; align-items: center; gap: 12px; margin: 10px 0 4px;
+  padding: 12px 14px; border-radius: 14px; color: #fff;
+  background: linear-gradient(100deg, #7c3aed, #db2777 60%, #f59e0b);
+  background-size: 200% 100%; box-shadow: 0 8px 22px rgba(124, 58, 237, .35);
+  animation: mhShimmer 3s linear infinite, mhPulse 1.8s ease-in-out infinite;
+}
+.mh-icon { font-size: 26px; line-height: 1; animation: mhSpin 2.4s ease-in-out infinite; }
+.mh-text { display: flex; flex-direction: column; line-height: 1.25; }
+.mh-text b { font-size: 15px; font-weight: 900; letter-spacing: .3px; }
+.mh-text span { font-size: 12px; opacity: .95; }
+@keyframes mhShimmer { 0% { background-position: 0% 0; } 100% { background-position: 200% 0; } }
+@keyframes mhPulse { 0%, 100% { box-shadow: 0 8px 22px rgba(124, 58, 237, .35); } 50% { box-shadow: 0 8px 30px rgba(219, 39, 119, .55); } }
+@keyframes mhSpin { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
+@media (prefers-reduced-motion: reduce) { .mystery-hour, .mh-icon { animation: none; } }
+/* Idle teaser — subtle, always visible so the feature is discoverable. */
+.mystery-hour.idle {
+  background: linear-gradient(100deg, #eef2ff, #faf5ff); background-size: auto;
+  color: #4c1d95; box-shadow: none; border: 1px solid #e4d9fb; animation: none;
+}
+.mystery-hour.idle .mh-icon { animation: none; opacity: .8; }
+.mystery-hour.idle .mh-text b { font-weight: 800; }
+.mystery-hour.idle .mh-text span { color: #7c6ba8; }
+html[data-dark] .mystery-hour.idle { background: #14182b; border-color: #2a2350; color: #c9bbf0; }
+html[data-dark] .mystery-hour.idle .mh-text span { color: #9a8fc4; }
+
 .games-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 14px 0; }
 .game-card {
   display: flex; flex-direction: column; align-items: flex-start; gap: 4px;

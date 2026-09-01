@@ -153,6 +153,50 @@ window.ArcadeSound = ArcadeSound;
   document.addEventListener(ev, () => ArcadeSound.unlock(), { passive: true })
 );
 
+// ---------- Deltix Hour (Mystery Hour) ----------
+// One unpredictable 60-minute window per day when arcade wins pay a multiplier.
+let mhAnnouncedFor = null;
+let mhTimer = null;
+function updateMhCountdown(endsAt) {
+  const sub = gel('mysteryHourSub');
+  if (!sub || !endsAt) return;
+  const ms = new Date(endsAt).getTime() - Date.now();
+  if (ms <= 0) { applyMysteryHour({ active: false }); return; }
+  const m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000);
+  sub.textContent = `2× game rewards · ends in ${m}:${String(s).padStart(2, '0')}`;
+}
+function applyMysteryHour(mh) {
+  const banner = gel('mysteryHourBanner');
+  const title = gel('mysteryHourTitle');
+  const sub = gel('mysteryHourSub');
+  if (!banner) return;
+  if (!mh || !mh.active) {
+    // Idle teaser — always visible so the feature is discoverable.
+    banner.classList.add('idle');
+    if (title) title.textContent = 'Deltix Hour';
+    if (sub) sub.textContent = '2× rewards strike at a surprise time each day';
+    if (mhTimer) { clearInterval(mhTimer); mhTimer = null; }
+    mhAnnouncedFor = null;
+    return;
+  }
+  banner.classList.remove('idle');
+  if (title) title.textContent = 'DELTIX HOUR IS LIVE';
+  updateMhCountdown(mh.endsAt);
+  if (mhTimer) clearInterval(mhTimer);
+  mhTimer = setInterval(() => updateMhCountdown(mh.endsAt), 1000);
+  // Announce once per live window.
+  if (mhAnnouncedFor !== mh.endsAt) {
+    mhAnnouncedFor = mh.endsAt;
+    try { window.ArcadeSound?.reward?.(); } catch {}
+    toast(`⏳ DELTIX HOUR IS LIVE — ${mh.multiplier}× game rewards for the next hour!`);
+  }
+}
+async function checkMysteryHour() {
+  if (typeof state === 'undefined' || !state.token) return;
+  try { applyMysteryHour(await api('GET', '/arcade/mystery-hour')); } catch {}
+}
+window.checkMysteryHour = checkMysteryHour;
+
 // ---------- Arcade tab ----------
 function gameCardHtml(g) {
   const locked = g.energyUnlock && !(window.isGameUnlocked && window.isGameUnlocked(g.id));
@@ -170,6 +214,7 @@ async function loadArcade() {
   try {
     const a = await api('GET', '/arcade');
     arcadeState.games = a.games;
+    applyMysteryHour(a.mysteryHour);
     gel('arcadeMeta').innerHTML = [
       ['🏆 Reward per win', `${a.arcade.rewardEasyWin} (easy) / ${a.arcade.rewardHardWin} (hard) $DLTX`],
       ['💰 Earned today', `${fmt(a.earnedToday)} $DLTX`],
@@ -360,8 +405,14 @@ async function finishGame(won, score) {
     if (r.won && r.tooFast) {
       setGameStatus('You won — but too fast to count. Play a full game to earn.');
     } else if (r.won && r.reward > 0) {
+      const boosted = r.mysteryHour && r.mysteryHour.active;
       setGameStatus(`You won! +${fmt(r.reward)} $DLTX earned 🏆`);
-      (window.celebrate || toast)({ amount: r.reward, title: 'Victory Reward!', subtitle: 'Game winnings added to your wallet.', icon: '🏆' });
+      (window.celebrate || toast)({
+        amount: r.reward,
+        title: boosted ? 'Double Reward! ⏳' : 'Victory Reward!',
+        subtitle: boosted ? 'Deltix Hour 2× applied — added to your wallet!' : 'Game winnings added to your wallet.',
+        icon: '🏆',
+      });
       Promise.all([loadWallet(), loadTx(), loadArcade()]).catch(() => {});
     } else if (r.won && r.capped) {
       setGameStatus('You won — but today\u2019s reward cap is reached. Come back tomorrow!');
