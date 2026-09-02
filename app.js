@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.4.1';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
