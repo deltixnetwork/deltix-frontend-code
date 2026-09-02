@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.3.8';
+const APP_VERSION = '1.4.0';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -199,6 +199,9 @@ function showTab(id, { refresh = true } = {}) {
   if (id === 'tab-energy') {
     renderEnergy();
     if (state.token) loadEnergy();
+  } else if (id === 'tab-missions') {
+    renderMissions();
+    if (state.token) loadMissions();
   } else if (refresh && state.token) {
     refreshTabContent(id);
   }
@@ -244,6 +247,8 @@ async function refreshCurrentView({ isPull = false, silent = false } = {}) {
     tasks.push(loadEnergy());
   } else if (activeTab === 'tab-rewards') {
     tasks.push(loadRewards());
+  } else if (activeTab === 'tab-missions') {
+    tasks.push(loadMissions());
   }
 
   try {
@@ -580,6 +585,8 @@ function resetAccountUI() {
   renderEnergy();
   if (typeof resetRewardsUI === 'function') resetRewardsUI();
   if (typeof resetCommunityUI === 'function') resetCommunityUI();
+  if (typeof resetMissionsUI === 'function') resetMissionsUI();
+  if (typeof resetVaultUI === 'function') resetVaultUI();
 }
 
 /** Full sign-out: drops the session as well as the rendered account data. */
@@ -690,6 +697,7 @@ async function enterApp() {
     loadChain(),
     loadEnergy(),
     loadRewards(),
+    loadMissions(),
     typeof loadArcade === 'function' ? loadArcade() : Promise.resolve(),
   ]);
   if (typeof checkMysteryHour === 'function') checkMysteryHour();
@@ -2368,6 +2376,7 @@ async function loadRewards() {
     renderRewards();
     startRewardTimer();
   } catch { /* handled by api() */ }
+  loadVault().catch(() => {});
 }
 
 function fmtCountdown(ms) {
@@ -2633,6 +2642,323 @@ document.querySelectorAll('.chest-pick').forEach((b) =>
     }
   })
 );
+
+// ==================== Deltix Missions ====================
+// A daily 6-step journey (City → Work → Build → Explore → Fly → Moon). A new
+// mission unlocks every 4 hours (server-authoritative); each is completed after
+// an opt-in rewarded ad and the full 6/6 unlocks one randomized daily reward.
+const missionState = { data: null, busy: false };
+let missionTimer = null;
+
+async function loadMissions() {
+  if (!state.token) return;
+  try {
+    missionState.data = await api('GET', '/missions');
+    renderMissions();
+    startMissionTimer();
+  } catch { /* handled by api() */ }
+}
+
+function renderMissions() {
+  const d = missionState.data;
+  if (!d) return;
+  const path = $('missionPath');
+  if (path) {
+    path.innerHTML = d.missions.map((m) => `
+      <div class="mstep ${m.status}">
+        <div class="mstep-emoji">${m.status === 'done' ? '✅' : (m.status === 'locked' ? '🔒' : m.emoji)}</div>
+        <div class="mstep-name">${m.name.replace(' Mission', '').replace(' Landing', '')}</div>
+      </div>`).join('<div class="mstep-link"></div>');
+  }
+
+  const cur = d.missions.find((m) => m.status === 'available')
+    || d.missions[Math.min(d.completed, d.missions.length - 1)];
+  setText('missionEmoji', d.allComplete ? '🌕' : (cur ? cur.emoji : '🏙️'));
+  setText('missionTitle', d.allComplete ? 'Journey Complete!' : (cur ? cur.name : 'Missions'));
+  setText('missionTagline', d.allComplete
+    ? 'You reached the Moon. Claim your daily reward!'
+    : (cur ? cur.tagline : ''));
+  const fill = $('missionProgressFill');
+  if (fill) fill.style.width = `${Math.round((d.completed / d.count) * 100)}%`;
+  setText('missionProgressTxt', `${d.completed} / ${d.count} missions`);
+
+  const actBtn = $('missionActionBtn');
+  const claimBtn = $('missionClaimBtn');
+  if (d.allComplete) {
+    if (actBtn) actBtn.hidden = true;
+    if (claimBtn) {
+      claimBtn.hidden = false;
+      claimBtn.disabled = !d.claimable || missionState.busy;
+      claimBtn.textContent = d.claimedToday ? 'Reward claimed ✓ — back tomorrow' : 'Claim daily reward 🎁';
+    }
+  } else {
+    if (claimBtn) claimBtn.hidden = true;
+    if (actBtn) {
+      actBtn.hidden = false;
+      if (d.nextAvailable) {
+        actBtn.disabled = missionState.busy;
+        actBtn.textContent = `Start ${cur ? cur.name.replace(' Mission', '').replace(' Landing', '') : 'mission'} ▶`;
+      } else {
+        actBtn.disabled = true;
+        actBtn.textContent = `Next mission in ${fmtCountdown(d.nextUnlockInMs)}`;
+      }
+    }
+  }
+}
+
+function startMissionTimer() {
+  if (missionTimer) return;
+  missionTimer = setInterval(() => {
+    if (!state.token || missionState.busy) return;
+    if (!document.getElementById('tab-missions')?.classList.contains('active')) return;
+    const d = missionState.data;
+    if (!d) return;
+    if (!d.allComplete && !d.nextAvailable && d.nextUnlockInMs > 0) {
+      d.nextUnlockInMs = Math.max(0, d.nextUnlockInMs - 1000);
+      if (d.nextUnlockInMs === 0) { loadMissions(); return; }
+    }
+    renderMissions();
+  }, 1000);
+}
+
+async function completeMission() {
+  const d = missionState.data;
+  if (!d || missionState.busy || !d.nextAvailable) return;
+  missionState.busy = true;
+  const btn = $('missionActionBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const earned = await playRewardedAd();
+    if (!earned) { toast('Ad not completed — mission not finished.'); return; }
+    const r = await api('POST', '/missions/complete');
+    missionState.data = r;
+    renderMissions();
+    if (r.allComplete) toast('🌕 Moon landing! All 6 missions complete — claim your reward!');
+    else toast(`${r.completedMission?.name || 'Mission'} complete — ${r.progress} ✅`);
+  } catch (e) {
+    if (e.data) { missionState.data = e.data; renderMissions(); }
+    toast(e.message);
+  } finally {
+    missionState.busy = false;
+    renderMissions();
+  }
+}
+
+async function claimMissionReward() {
+  const d = missionState.data;
+  if (!d || missionState.busy || !d.claimable) return;
+  missionState.busy = true;
+  const btn = $('missionClaimBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const earned = await playRewardedAd();
+    if (!earned) { toast('Ad not completed — no reward claimed.'); return; }
+    const r = await api('POST', '/missions/claim');
+    missionState.data = r;
+    const rw = r.reward || {};
+    if (rw.kind === 'dltx' && rw.reward > 0) celebrate({ amount: rw.reward, title: 'Mission Reward!', subtitle: 'Straight to your wallet.', icon: '💎' });
+    else if (rw.kind === 'energy' && rw.energyAwarded > 0) celebrate({ amount: rw.energyAwarded, unit: '⚡ Energy', title: 'Mission Reward!', subtitle: 'Non-monetary Energy added.', icon: '⚡' });
+    else toast('Daily $DLTX cap reached — try again tomorrow.');
+    await Promise.allSettled([loadWallet(), loadEnergy(), loadTx(), loadRewards()]);
+    showRewardInterstitial();
+    renderMissions();
+  } catch (e) {
+    if (e.data) { missionState.data = e.data; renderMissions(); }
+    toast(e.message);
+  } finally {
+    missionState.busy = false;
+    renderMissions();
+  }
+}
+
+function resetMissionsUI() {
+  missionState.data = null;
+  missionState.busy = false;
+  if (missionTimer) { clearInterval(missionTimer); missionTimer = null; }
+}
+
+$('missionActionBtn')?.addEventListener('click', completeMission);
+$('missionClaimBtn')?.addEventListener('click', claimMissionReward);
+
+// ==================== Deltix Vault (14 keys · 7 days) ====================
+// A new key becomes available every 12 hours with a 1-hour collection window.
+// Missed keys can be recovered (up to 2/cycle) with an extra rewarded ad.
+// Collecting all 14 opens the Vault for one randomized mystery reward.
+const vaultState = { data: null, busy: false };
+let vaultTimer = null;
+const VAULT_KEY_IMG = {
+  collected: 'assets/vault/05_key_collected_gold.png',
+  recovered: 'assets/vault/05_key_collected_gold.png',
+  available: 'assets/vault/06_key_available_blue.png',
+  locked: 'assets/vault/07_key_locked_dark.png',
+  missed: 'assets/vault/08_key_missed_broken.png',
+};
+
+async function loadVault() {
+  if (!state.token) return;
+  try {
+    vaultState.data = await api('GET', '/vault');
+    renderVault();
+    startVaultTimer();
+  } catch { /* handled by api() */ }
+}
+
+function renderVault() {
+  const d = vaultState.data;
+  if (!d) return;
+  const img = $('vaultImg');
+  if (img && !img.classList.contains('vault-shake')) {
+    img.src = (d.canOpen || d.opened) ? 'assets/vault/03_vault_open.png' : 'assets/vault/02_vault_closed.png';
+  }
+  setText('vaultProgress', `${d.collected} / ${d.totalKeys} keys`);
+
+  const grid = $('vaultKeys');
+  if (grid) {
+    grid.innerHTML = d.keys.map((k) => `
+      <div class="vkey ${k.status}" title="Day ${k.day} · ${k.status}" data-index="${k.index}">
+        <img src="${VAULT_KEY_IMG[k.status] || VAULT_KEY_IMG.locked}" alt="${k.status} key" />
+      </div>`).join('');
+  }
+
+  const collectBtn = $('vaultCollectBtn');
+  const openBtn = $('vaultOpenBtn');
+  const rec = $('vaultRecovery');
+
+  if (d.canOpen) {
+    if (collectBtn) collectBtn.hidden = true;
+    if (openBtn) { openBtn.hidden = false; openBtn.disabled = vaultState.busy; }
+    setText('vaultStatus', 'All 14 keys collected — open the Vault! 🔓');
+  } else if (d.opened) {
+    if (collectBtn) collectBtn.hidden = true;
+    if (openBtn) openBtn.hidden = true;
+    setText('vaultStatus', 'Vault opened! A fresh 7-day cycle has begun.');
+  } else {
+    if (openBtn) openBtn.hidden = true;
+    if (collectBtn) {
+      collectBtn.hidden = false;
+      if (d.activeSlot >= 0) {
+        collectBtn.disabled = vaultState.busy;
+        collectBtn.textContent = 'Collect key 🔑';
+        setText('vaultStatus', 'Your key is ready — collect it before the 1-hour window closes!');
+      } else {
+        collectBtn.disabled = true;
+        collectBtn.textContent = `Next key in ${fmtCountdown(d.nextKeyInMs)}`;
+        setText('vaultStatus', `${d.collected}/${d.totalKeys} collected · a new key every 12 hours.`);
+      }
+    }
+  }
+
+  if (rec) {
+    if (d.canRecover) {
+      rec.hidden = false;
+      const missedKey = d.keys.find((k) => k.status === 'missed');
+      rec.innerHTML = `You missed ${d.missed} key${d.missed > 1 ? 's' : ''}. <a href="#" id="vaultRecoverLink">Recover one</a> · ${d.recoveriesLeft} left this cycle.`;
+      const link = $('vaultRecoverLink');
+      if (link && missedKey) link.onclick = (e) => { e.preventDefault(); recoverKey(missedKey.index); };
+    } else {
+      rec.hidden = true;
+    }
+  }
+}
+
+function startVaultTimer() {
+  if (vaultTimer) return;
+  vaultTimer = setInterval(() => {
+    if (!state.token || vaultState.busy) return;
+    if (!document.getElementById('tab-rewards')?.classList.contains('active')) return;
+    const d = vaultState.data;
+    if (!d) return;
+    if (d.activeSlot < 0 && !d.canOpen && !d.opened && d.nextKeyInMs > 0) {
+      d.nextKeyInMs = Math.max(0, d.nextKeyInMs - 1000);
+      if (d.nextKeyInMs === 0) { loadVault(); return; }
+    }
+    renderVault();
+  }, 1000);
+}
+
+async function collectKey() {
+  const d = vaultState.data;
+  if (!d || vaultState.busy || d.activeSlot < 0) return;
+  vaultState.busy = true;
+  const btn = $('vaultCollectBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const earned = await playRewardedAd();
+    if (!earned) { toast('Ad not completed — key not collected.'); return; }
+    const r = await api('POST', '/vault/collect');
+    vaultState.data = r;
+    renderVault();
+    try { window.ArcadeSound?.reward?.(); } catch {}
+    if (r.canOpen) toast('🔓 14/14 keys collected — open the Vault!');
+    else toast(`Key collected! ${r.collected}/${r.totalKeys} 🔑`);
+  } catch (e) {
+    if (e.data) { vaultState.data = e.data; renderVault(); }
+    toast(e.message);
+  } finally {
+    vaultState.busy = false;
+    renderVault();
+  }
+}
+
+async function recoverKey(index) {
+  const d = vaultState.data;
+  if (!d || vaultState.busy || !d.canRecover) return;
+  vaultState.busy = true;
+  try {
+    const earned = await playRewardedAd();
+    if (!earned) { toast('Ad not completed — key not recovered.'); return; }
+    const r = await api('POST', '/vault/recover', { index });
+    vaultState.data = r;
+    renderVault();
+    toast(`Key recovered! ${r.collected}/${r.totalKeys} 🔑`);
+  } catch (e) {
+    if (e.data) { vaultState.data = e.data; renderVault(); }
+    toast(e.message);
+  } finally {
+    vaultState.busy = false;
+    renderVault();
+  }
+}
+
+async function openVault() {
+  const d = vaultState.data;
+  if (!d || vaultState.busy || !d.canOpen) return;
+  vaultState.busy = true;
+  const btn = $('vaultOpenBtn');
+  if (btn) btn.disabled = true;
+  const img = $('vaultImg');
+  if (img) img.classList.add('vault-shake');
+  try {
+    const earned = await playRewardedAd();
+    if (!earned) { toast('Ad not completed — Vault not opened.'); if (img) img.classList.remove('vault-shake'); return; }
+    const r = await api('POST', '/vault/open');
+    vaultState.data = r;
+    if (img) { img.classList.remove('vault-shake'); img.src = 'assets/vault/03_vault_open.png'; }
+    const rw = r.reward || {};
+    if (rw.kind === 'dltx' && rw.reward > 0) celebrate({ amount: rw.reward, title: 'Vault Opened! 🔓', subtitle: 'A $DLTX reward is yours.', icon: '💎' });
+    else if (rw.kind === 'energy' && rw.energyAwarded > 0) celebrate({ amount: rw.energyAwarded, unit: '⚡ Energy', title: 'Vault Opened! 🔓', subtitle: 'Non-monetary Energy added.', icon: '⚡' });
+    else toast('Vault opened — daily $DLTX cap reached, try the next cycle!');
+    await Promise.allSettled([loadWallet(), loadEnergy(), loadTx()]);
+    showRewardInterstitial();
+    renderVault();
+  } catch (e) {
+    if (img) img.classList.remove('vault-shake');
+    if (e.data) { vaultState.data = e.data; renderVault(); }
+    toast(e.message);
+  } finally {
+    vaultState.busy = false;
+    renderVault();
+  }
+}
+
+function resetVaultUI() {
+  vaultState.data = null;
+  vaultState.busy = false;
+  if (vaultTimer) { clearInterval(vaultTimer); vaultTimer = null; }
+}
+
+$('vaultCollectBtn')?.addEventListener('click', collectKey);
+$('vaultOpenBtn')?.addEventListener('click', openVault);
 
 // ==================== Global community globe ====================
 const globeState = { data: null, rot: 0, raf: null };

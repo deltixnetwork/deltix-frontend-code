@@ -1920,3 +1920,71 @@ html[data-dark] .pp-medal, html[data-dark] .pp-stamp { background: #101a30; bord
 html[data-dark] .pp-medal.earned { background: linear-gradient(180deg, #2a2410, #16233f); border-color: #7a6320; }
 html[data-dark] .pp-stamp.earned { background: linear-gradient(180deg, #0f2038, #16233f); border-color: #3b5aa6; }
 html[data-dark] .ppm-name, html[data-dark] .pps-name { color: #cfdcf3; }
+
+/* ---------- Nav emoji icon (Missions) ---------- */
+.nav-emoji {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 22px; line-height: 1;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,.15));
+}
+
+/* ---------- Deltix Missions ---------- */
+.missions-showcase { background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 55%, #7c3aed 100%); color: #fff; }
+.missions-showcase .showcase-title, .missions-showcase .showcase-sub { color: #fff; }
+
+.mission-path {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 2px; padding: 14px 8px; margin-bottom: 14px;
+  background: linear-gradient(135deg, #eef4ff 0%, #f5edff 100%);
+  border: 1.5px solid #d8e3fb; border-radius: 18px; overflow-x: auto;
+}
+.mstep { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: none; min-width: 46px; }
+.mstep-emoji {
+  width: 42px; height: 42px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-size: 22px;
+  background: #fff; border: 2px solid #d8e3fb; box-shadow: 0 3px 8px rgba(30,64,175,.10);
+  transition: transform .15s ease;
+}
+.mstep.done .mstep-emoji { background: linear-gradient(135deg, #16a34a, #22c55e); border-color: #16a34a; }
+.mstep.available .mstep-emoji { background: linear-gradient(135deg, #f59e0b, #fbbf24); border-color: #f59e0b; transform: scale(1.12); animation: mPulse 1.6s ease-in-out infinite; }
+.mstep.locked .mstep-emoji { opacity: .55; filter: grayscale(.5); }
+.mstep-name { font-size: 9.5px; font-weight: 700; color: #3b4f78; text-align: center; white-space: nowrap; }
+.mstep-link { flex: 1 1 auto; height: 3px; min-width: 8px; border-radius: 3px; background: #d8e3fb; }
+@keyframes mPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(245,158,11,.45); } 50% { box-shadow: 0 0 0 7px rgba(245,158,11,0); } }
+
+.mission-progress-bar { height: 10px; border-radius: 6px; background: #e6eaf2; overflow: hidden; margin: 6px 0 6px; }
+.mission-progress-bar span { display: block; height: 100%; width: 0; border-radius: 6px; background: linear-gradient(90deg, #6366f1, #f59e0b); transition: width .5s ease; }
+.mission-progress-txt { font-size: 12.5px; font-weight: 700; color: #5a6b8c; text-align: center; margin-bottom: 8px; }
+
+/* ---------- Deltix Vault ---------- */
+.vault-card { margin-bottom: 14px; }
+.vault-logo { width: 44px; height: 44px; object-fit: contain; flex: none; filter: drop-shadow(0 3px 6px rgba(20,35,70,.2)); }
+.vault-stage { position: relative; text-align: center; margin: 6px 0 10px; }
+.vault-img { width: 150px; max-width: 60%; object-fit: contain; filter: drop-shadow(0 8px 16px rgba(20,35,70,.22)); }
+.vault-img.vault-shake { animation: vaultShake .5s ease-in-out infinite; }
+@keyframes vaultShake { 0%,100% { transform: translateX(0) rotate(0); } 25% { transform: translateX(-4px) rotate(-1.5deg); } 75% { transform: translateX(4px) rotate(1.5deg); } }
+.vault-progress {
+  display: inline-block; margin-top: 4px; padding: 5px 14px; border-radius: 999px;
+  background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; font-weight: 800; font-size: 13px;
+}
+.vault-keys {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;
+  margin: 10px 0; padding: 10px; background: #f5f7fb; border-radius: 14px; border: 1px solid #e6eaf2;
+}
+.vkey { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; }
+.vkey img { width: 100%; height: 100%; object-fit: contain; transition: transform .15s ease; }
+.vkey.available img { animation: mPulse 1.6s ease-in-out infinite; border-radius: 50%; }
+.vkey.locked img { opacity: .5; filter: grayscale(.6); }
+.vkey.missed img { opacity: .8; }
+.vault-status { font-size: 13px; font-weight: 700; color: #5a6b8c; text-align: center; margin: 4px 0 8px; }
+.vault-recovery { text-align: center; margin-top: 6px; }
+.vault-recovery a { color: #d97706; font-weight: 800; text-decoration: none; }
+
+/* Missions + Vault — dark mode */
+html[data-dark] .mission-path { background: #101a30; border-color: var(--border); }
+html[data-dark] .mstep-emoji { background: #16233f; border-color: #3b5aa6; }
+html[data-dark] .mstep-name { color: #9db4dc; }
+html[data-dark] .mstep-link { background: #22304f; }
+html[data-dark] .mission-progress-bar { background: #16233f; }
+html[data-dark] .mission-progress-txt, html[data-dark] .vault-status { color: #9db4dc; }
+html[data-dark] .vault-keys { background: #101a30; border-color: var(--border); }

@@ -547,7 +547,56 @@
           <div class="chest-result" id="chestResult"></div>
         </div>
 
+        <!-- Deltix Vault — 14 keys, 7 days -->
+        <div class="card vault-card" id="vaultCard">
+          <div class="reward-head">
+            <img class="vault-logo" src="assets/vault/01_deltix_vault_logo.png" alt="Deltix Vault" />
+            <div>
+              <div class="reward-title">Deltix Vault</div>
+              <div class="reward-sub">14 keys · 7 days · a new key every 12 hours. Collect all 14 to open the Vault.</div>
+            </div>
+          </div>
+
+          <div class="vault-stage">
+            <img class="vault-img" id="vaultImg" src="assets/vault/02_vault_closed.png" alt="Deltix Vault" />
+            <div class="vault-progress" id="vaultProgress">0 / 14 keys</div>
+          </div>
+
+          <div class="vault-keys" id="vaultKeys"></div>
+
+          <div class="vault-status" id="vaultStatus">Your first key is ready.</div>
+          <div class="reward-actions vault-actions" id="vaultActions">
+            <button class="btn primary reward-btn" id="vaultCollectBtn">Collect key 🔑</button>
+            <button class="btn gold reward-btn" id="vaultOpenBtn" hidden>Open the Vault 🔓</button>
+          </div>
+          <div class="vault-recovery muted small-note" id="vaultRecovery" hidden></div>
+        </div>
+
         <p class="energy-disclaimer">Reward payouts are $DLTX utility credits and non-monetary Energy. Ads shown are never required to receive a reward. Paid-spin wagers recycle through the community rewards pool — they are never burned.</p>
+      </div>
+
+      <div class="tab" id="tab-missions">
+        <div class="showcase-banner missions-showcase">
+          <div class="showcase-title">Deltix Missions 🚀</div>
+          <div class="showcase-sub">A new mission unlocks every 4 hours. Journey from the city to the Moon — complete all six for a daily reward.</div>
+        </div>
+
+        <div class="mission-path" id="missionPath"></div>
+
+        <div class="card mission-active" id="missionActiveCard">
+          <div class="reward-head"><span class="reward-emoji" id="missionEmoji">🏙️</span>
+            <div>
+              <div class="reward-title" id="missionTitle">City Mission</div>
+              <div class="reward-sub" id="missionTagline">Explore Deltix City.</div>
+            </div>
+          </div>
+          <div class="mission-progress-bar"><span id="missionProgressFill"></span></div>
+          <div class="mission-progress-txt" id="missionProgressTxt">0 / 6 missions</div>
+          <button class="btn primary reward-btn" id="missionActionBtn">Start mission</button>
+          <button class="btn gold reward-btn" id="missionClaimBtn" hidden>Claim daily reward 🎁</button>
+        </div>
+
+        <p class="energy-disclaimer">Missions are a daily engagement journey. Ads shown are opt-in and never required to receive a reward. $DLTX payouts count toward the shared daily allowance.</p>
       </div>
     </main>
 
@@ -568,6 +617,10 @@
       <button class="tabbtn" data-tab="tab-rewards">
         <img src="assets/energy/20_gift.png" class="nav-3d-icon" alt="Rewards" />
         <span>Rewards</span>
+      </button>
+      <button class="tabbtn" data-tab="tab-missions">
+        <span class="nav-3d-icon nav-emoji">🚀</span>
+        <span>Missions</span>
       </button>
       <button class="tabbtn" data-tab="tab-browser">
         <img src="assets/energy/41_browser_nav.png" class="nav-3d-icon" alt="D-Browser" />
