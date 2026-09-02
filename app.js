@@ -179,7 +179,7 @@ function showScreen(id) {
   $(id).classList.add('active');
   const authed = id === 'screen-main';
   $('topbar').hidden = !authed;
-  $('tabbar').hidden = !authed;
+  closeSidenav();
   if (!authed) {
     document.body.classList.remove('has-ad-banner');
     const cap = window.Capacitor;
@@ -192,7 +192,7 @@ function showScreen(id) {
 function showTab(id, { refresh = true } = {}) {
   document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
   $(id).classList.add('active');
-  document.querySelectorAll('.tabbtn').forEach((b) =>
+  document.querySelectorAll('.tabbtn, .sidenav-item').forEach((b) =>
     b.classList.toggle('active', b.dataset.tab === id)
   );
   updateTabAd(id);
@@ -668,10 +668,52 @@ $('confirmDelete').addEventListener('click', async () => {
   }
 });
 
-// ---------- Tabs ----------
-document.querySelectorAll('.tabbtn').forEach((b) =>
-  b.addEventListener('click', () => showTab(b.dataset.tab))
+// ---------- Tabs / side navigation ----------
+// The tabs live in a slide-out sidebar (☰). Opening it shows a backdrop;
+// tapping a tab, the backdrop, the ✕, Escape, or swiping left closes it.
+function openSidenav() {
+  const nav = $('sidenav'); const bd = $('sidenavBackdrop');
+  if (!nav || !bd) return;
+  bd.hidden = false;
+  requestAnimationFrame(() => { nav.classList.add('open'); bd.classList.add('show'); });
+  nav.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('nav-open');
+}
+function closeSidenav() {
+  const nav = $('sidenav'); const bd = $('sidenavBackdrop');
+  if (!nav || !bd) return;
+  nav.classList.remove('open');
+  bd.classList.remove('show');
+  nav.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('nav-open');
+  // Hide the backdrop after the fade-out so it can't block taps.
+  setTimeout(() => { if (!nav.classList.contains('open')) bd.hidden = true; }, 260);
+}
+function toggleSidenav() {
+  $('sidenav')?.classList.contains('open') ? closeSidenav() : openSidenav();
+}
+
+$('menuBtn')?.addEventListener('click', toggleSidenav);
+$('sidenavClose')?.addEventListener('click', closeSidenav);
+$('sidenavBackdrop')?.addEventListener('click', closeSidenav);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSidenav(); });
+
+document.querySelectorAll('.sidenav-item').forEach((b) =>
+  b.addEventListener('click', () => { showTab(b.dataset.tab); closeSidenav(); })
 );
+
+// Swipe-left on the open drawer to dismiss it.
+(() => {
+  const nav = $('sidenav');
+  if (!nav) return;
+  let x0 = null;
+  nav.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+  nav.addEventListener('touchmove', (e) => {
+    if (x0 === null) return;
+    if (x0 - e.touches[0].clientX > 55) { closeSidenav(); x0 = null; }
+  }, { passive: true });
+  nav.addEventListener('touchend', () => { x0 = null; });
+})();
 
 // ---------- Data loading ----------
 async function enterApp() {
