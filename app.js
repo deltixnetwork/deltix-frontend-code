@@ -2189,25 +2189,40 @@ function legacyEnergyPayload() {
   return hasSomething ? payload : null;
 }
 
+// loadEnergy is triggered from several places (app entry, opening the Energy
+// tab, pull-to-refresh) which can overlap. Sharing one in-flight request stops
+// concurrent calls from double-running the one-time migration, which would
+// otherwise double-credit or clobber the account's Energy on first login.
+let _energyLoad = null;
 async function loadEnergy() {
-  try {
-    let e = await api('GET', '/energy');
-    const legacy = legacyEnergyPayload();
-    if (!e.migrated && legacy) {
-      const r = await api('POST', '/energy/migrate', legacy).catch(() => null);
-      if (r?.migrationApplied) {
-        e = r;
-        toast('Your Energy is now saved to your account ⚡');
+  if (_energyLoad) return _energyLoad;
+  _energyLoad = (async () => {
+    try {
+      let e = await api('GET', '/energy');
+      const legacy = legacyEnergyPayload();
+      if (!e.migrated && legacy) {
+        const r = await api('POST', '/energy/migrate', legacy).catch(() => null);
+        // The server is authoritative: adopt its state whether it applied the
+        // migration now or reported it was already migrated on another device.
+        if (r && (r.migrationApplied || r.migrated)) {
+          e = r;
+          if (r.migrationApplied) toast('Your Energy is now saved to your account ⚡');
+        }
       }
+      // Once the account holds the truth, the device copies are just clutter.
+      if (e.migrated) LEGACY_ENERGY_KEYS.forEach((k) => localStorage.removeItem(k));
+      state.energy = e;
+      renderEnergy();
+      renderThemeGrid();
+    } catch (err) {
+      // Never let a transient failure blank out a known balance — keeping the
+      // last good value stops Energy from briefly reading 0 after a reinstall.
+      console.warn('loadEnergy:', err.message);
+    } finally {
+      _energyLoad = null;
     }
-    // Once the account holds the truth, the device copies are just clutter.
-    if (e.migrated) LEGACY_ENERGY_KEYS.forEach((k) => localStorage.removeItem(k));
-    state.energy = e;
-    renderEnergy();
-    renderThemeGrid();
-  } catch (err) {
-    console.warn('loadEnergy:', err.message);
-  }
+  })();
+  return _energyLoad;
 }
 
 function unlockedGames() { return state.energy?.unlocked?.games || []; }
