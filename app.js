@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.5.5';
+const APP_VERSION = '1.5.6';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -85,6 +85,8 @@ async function api(method, path, body, { retries = method === 'GET' ? 2 : 0 } = 
       if (instantModal && !instantModal.hidden && typeof window.closeInstantGame === 'function') window.closeInstantGame();
       const shopModal = $('shopModal');
       if (shopModal && !shopModal.hidden && typeof window.closeShop === 'function') window.closeShop();
+      const puzzleModal = $('puzzleModal');
+      if (puzzleModal && !puzzleModal.hidden && typeof window.closePuzzle === 'function') window.closePuzzle();
       if (state.token) {
         clearAccountSession();
         showScreen('screen-email');
@@ -222,6 +224,7 @@ function refreshTabContent(id) {
     Promise.allSettled([loadGovernance(), loadReferrals(), loadGlobe(), loadLeaderboard(), loadPassport()]);
   } else if (id === 'tab-rewards') {
     loadRewards().catch(() => {});
+    loadPuzzle().catch(() => {});
   } else if (id === 'tab-network') {
     Promise.allSettled([loadChain(), loadStats()]);
   }
@@ -285,7 +288,7 @@ function initPullToRefresh() {
     if (!isMain || !state.token || isRefreshing) return false;
 
     // Must not have any modal/overlay open
-    const overlays = ['gameModal', 'instantModal', 'shopModal', 'dbrowser', 'explorer', 'dappPage', 'stakeModal', 'sendModal', 'deleteModal', 'swapModal', 'dappModal'];
+    const overlays = ['gameModal', 'instantModal', 'shopModal', 'puzzleModal', 'dbrowser', 'explorer', 'dappPage', 'stakeModal', 'sendModal', 'deleteModal', 'swapModal', 'dappModal'];
     for (const id of overlays) {
       const el = $(id);
       if (el && !el.hidden) return false;
@@ -2500,6 +2503,112 @@ async function buyShopItem(id, btn) {
     if (btn) btn.disabled = false;
   }
 }
+
+// ---------- Deltix Daily Puzzle (crack the code) ----------
+let puzzleState = null;
+let puzzleGuess = [];
+
+async function openPuzzle() {
+  const m = $('puzzleModal');
+  if (!m) return;
+  m.hidden = false;
+  puzzleGuess = [];
+  $('puzzleStatus').textContent = '';
+  $('puzzleBoard').innerHTML = '<p class="muted center">Loading…</p>';
+  await loadPuzzle();
+}
+function closePuzzle() { const m = $('puzzleModal'); if (m) m.hidden = true; }
+window.closePuzzle = closePuzzle;
+$('openPuzzleBtn')?.addEventListener('click', openPuzzle);
+$('puzzleClose')?.addEventListener('click', closePuzzle);
+
+async function loadPuzzle() {
+  try {
+    puzzleState = await api('GET', '/puzzle');
+    renderPuzzle();
+  } catch (e) {
+    if ($('puzzleBoard')) $('puzzleBoard').innerHTML = `<p class="muted center">${e.message}</p>`;
+  }
+}
+
+function pzRow(g, len) {
+  const digits = g.guess.map((d) => `<span class="pz-peg">${d}</span>`).join('');
+  const marks = '🟢'.repeat(g.exact) + '🟡'.repeat(g.partial) + '⚪'.repeat(Math.max(0, len - g.exact - g.partial));
+  return `<div class="pz-row"><div class="pz-digits">${digits}</div><div class="pz-marks">${marks}</div></div>`;
+}
+
+function renderPuzzle() {
+  const s = puzzleState;
+  const board = $('puzzleBoard');
+  if (!board) return;
+  if (!s || !s.enabled) {
+    board.innerHTML = '<p class="muted center">The daily puzzle is not available right now.</p>';
+    if ($('puzzleInput')) $('puzzleInput').innerHTML = '';
+    return;
+  }
+  // Card subtitle reflects today's status.
+  const sub = $('puzzleSub');
+  if (sub) sub.textContent = s.done ? (s.solved ? 'Solved today ✓ — back tomorrow' : 'Come back tomorrow for a new code') : `Attempt ${s.attempts}/${s.maxAttempts} — solve to earn!`;
+
+  board.innerHTML = s.guesses.length
+    ? s.guesses.map((g) => pzRow(g, s.length)).join('')
+    : '<p class="muted center small-note">No guesses yet — crack the code!</p>';
+
+  const input = $('puzzleInput');
+  if (s.done) {
+    if (input) input.innerHTML = '';
+    $('puzzleStatus').innerHTML = s.solved
+      ? `Solved in ${s.attempts} ${s.attempts === 1 ? 'try' : 'tries'}! 🎉`
+      : `Out of tries. The code was <b>${(s.secret || []).join(' ')}</b>.`;
+    return;
+  }
+  const slots = Array.from({ length: s.length }, (_, i) => `<span class="pz-slot${puzzleGuess[i] ? ' filled' : ''}">${puzzleGuess[i] || ''}</span>`).join('');
+  const digitBtns = Array.from({ length: s.digits }, (_, i) => `<button class="pz-digit" data-d="${i + 1}">${i + 1}</button>`).join('');
+  input.innerHTML = `
+    <div class="pz-current">${slots}</div>
+    <div class="pz-pad">${digitBtns}</div>
+    <div class="pz-actions">
+      <button class="btn ghost" id="pzBack" type="button">⌫</button>
+      <button class="btn primary" id="pzSubmit" type="button" ${puzzleGuess.length === s.length ? '' : 'disabled'}>Guess ▸</button>
+    </div>
+    <div class="pz-legend">Attempt ${s.attempts + 1} of ${s.maxAttempts}</div>`;
+  input.querySelectorAll('.pz-digit').forEach((b) => b.addEventListener('click', () => {
+    if (puzzleGuess.length < s.length) { puzzleGuess.push(Number(b.dataset.d)); renderPuzzle(); }
+  }));
+  $('pzBack')?.addEventListener('click', () => { puzzleGuess.pop(); renderPuzzle(); });
+  $('pzSubmit')?.addEventListener('click', submitPuzzleGuess);
+}
+
+async function submitPuzzleGuess() {
+  const s = puzzleState;
+  if (!s || puzzleGuess.length !== s.length) return;
+  const btn = $('pzSubmit');
+  if (btn) btn.disabled = true;
+  try {
+    const r = await api('POST', '/puzzle/guess', { guess: puzzleGuess.slice(), ...await getIntegrityPayload() });
+    puzzleState = r;
+    puzzleGuess = [];
+    renderPuzzle();
+    if (r.justSolved) {
+      const rw = r.reward || {};
+      if (rw.dltx > 0) {
+        (window.celebrate || toast)({ amount: rw.dltx, title: 'Puzzle Solved! 🧩', subtitle: `Cracked the code in ${r.attempts}!`, icon: '🧩' });
+      } else {
+        try { window.ArcadeSound?.reward?.(); } catch {}
+        toast(`Solved! +${rw.energy || 0} ⚡ Energy 🎉`);
+      }
+      Promise.allSettled([loadWallet(), loadEnergy(), loadRewards()]);
+    } else if (r.justFailed) {
+      try { window.ArcadeSound?.lose?.(); } catch {}
+      toast('Out of tries — the code is revealed. Back tomorrow!');
+    } else {
+      toast(`${r.feedback.exact} in place · ${r.feedback.partial} misplaced`);
+    }
+  } catch (e) {
+    if (e.status !== 401) toast(e.message);
+    if (btn) btn.disabled = false;
+  }
+}
 $('energyWatchBtn')?.addEventListener('click', (e) => earnEnergy(e.currentTarget));
 document.querySelectorAll('.energy-feat').forEach((c) =>
   c.addEventListener('click', () => {
@@ -3498,6 +3607,8 @@ function closeTopOverlay() {
   if (instant && !instant.hidden) { window.closeInstantGame?.(); return true; }
   const shop = document.getElementById('shopModal');
   if (shop && !shop.hidden) { window.closeShop?.(); return true; }
+  const puzzle = document.getElementById('puzzleModal');
+  if (puzzle && !puzzle.hidden) { window.closePuzzle?.(); return true; }
   if (!$('dappPage').hidden) { closeDappPage(); return true; }
   if (!$('explorer').hidden) {
     if (exp.stack.length > 1) { exp.stack.pop(); expRender(); } else closeExplorer();

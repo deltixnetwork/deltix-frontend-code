@@ -507,6 +507,14 @@
         </div>
         <div class="reward-cap-note" id="rewardCapNote">Daily reward allowance: — / — $DLTX</div>
 
+        <!-- Daily puzzle -->
+        <button class="card reward-card puzzle-card" id="openPuzzleBtn" type="button">
+          <div class="reward-head"><span class="reward-emoji">🧩</span>
+            <div><div class="reward-title">Daily Puzzle — Crack the Code</div>
+            <div class="reward-sub" id="puzzleSub">Solve today's secret code to earn a reward.</div></div>
+          </div>
+        </button>
+
         <!-- Daily check-in -->
         <div class="card reward-card">
           <div class="reward-head"><span class="reward-emoji">📅</span>
@@ -881,6 +889,20 @@
       </div>
       <div id="shopGrid" class="shop-grid"></div>
       <div class="game-status" id="shopStatus"></div>
+    </div>
+  </div>
+
+  <!-- Deltix Daily Puzzle -->
+  <div class="modal-backdrop" id="puzzleModal" hidden>
+    <div class="modal game-modal puzzle-modal">
+      <div class="game-head">
+        <h3>🧩 Daily Puzzle</h3>
+        <button class="btn ghost small" id="puzzleClose">✕ Close</button>
+      </div>
+      <p class="muted small-note">Crack today's secret code — digits 1–6. 🟢 right digit &amp; spot · 🟡 right digit, wrong spot.</p>
+      <div id="puzzleBoard" class="puzzle-board"></div>
+      <div id="puzzleInput" class="puzzle-input"></div>
+      <div class="game-status" id="puzzleStatus"></div>
     </div>
   </div>
 

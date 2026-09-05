@@ -1959,6 +1959,26 @@ html[data-dark] .pick-item { background: linear-gradient(160deg, var(--panel) 0%
 html[data-dark] .shop-card { background: linear-gradient(160deg, var(--panel) 0%, #16233f 100%); border-color: var(--border); }
 html[data-dark] .shop-name { color: var(--text); }
 
+/* ═══════════ Deltix Daily Puzzle (crack the code) ═══════════ */
+.puzzle-card { display: block; width: 100%; text-align: left; cursor: pointer; }
+.puzzle-modal { max-height: 92dvh; overflow-y: auto; }
+.puzzle-board { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.pz-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pz-digits { display: flex; gap: 6px; }
+.pz-peg { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; font-weight: 800; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); }
+.pz-marks { letter-spacing: 1px; font-size: 13px; }
+.pz-current { display: flex; gap: 8px; justify-content: center; margin: 10px 0; }
+.pz-slot { width: 40px; height: 44px; border-radius: 10px; display: grid; place-items: center; font-size: 20px; font-weight: 900; color: var(--accent); background: var(--panel-2); border: 2px dashed var(--border); }
+.pz-slot.filled { border-style: solid; border-color: var(--accent); }
+.pz-pad { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin: 8px 0; }
+.pz-digit { padding: 12px 0; border-radius: 10px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 17px; font-weight: 800; cursor: pointer; }
+.pz-digit:active { transform: scale(.94); background: var(--panel-2); }
+.pz-actions { display: flex; gap: 10px; margin-top: 4px; }
+.pz-actions #pzBack { flex: 0 0 64px; }
+.pz-actions #pzSubmit { flex: 1; }
+.pz-legend { text-align: center; font-size: 12px; color: var(--muted); margin-top: 8px; }
+html[data-dark] .pz-peg, html[data-dark] .pz-slot, html[data-dark] .pz-digit { background: #16233f; border-color: var(--border); color: var(--text); }
+
 /* ═══════════ Dark themes (Midnight / Carbon / Cyber / Aurora) ═══════════ */
 html[data-dark] {
   color-scheme: dark;
