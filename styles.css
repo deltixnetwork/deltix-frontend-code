@@ -1909,6 +1909,13 @@ html[data-dark] .ig-win { color: #7dd3fc; }
   box-shadow: 0 6px 18px rgba(239, 68, 68, .35), inset 0 0 0 3px rgba(0, 0, 0, .1);
 }
 .dart-mark { position: absolute; font-size: 24px; transform: translate(-50%, -50%); animation: igPop .25s ease both; pointer-events: none; }
+
+/* Deltix Dice */
+.dice-stage { gap: 18px; }
+.die { font-size: 76px; line-height: 1; color: var(--text); }
+.die.rolling { animation: dieShake .3s linear infinite; }
+@keyframes dieShake { 0%,100% { transform: translateY(0) rotate(-12deg); } 50% { transform: translateY(-8px) rotate(12deg); } }
+html[data-dark] .die { color: #e2e8f0; }
 html[data-dark] .pick-item { background: linear-gradient(160deg, var(--panel) 0%, #16233f 100%); border-color: var(--border); }
 
 /* ═══════════ Dark themes (Midnight / Carbon / Cyber / Aurora) ═══════════ */

@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.5.2';
+const APP_VERSION = '1.5.3';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -2341,6 +2341,43 @@ function renderEnergy() {
   set('efStreakSub', st.streak > 0 ? `${st.streak}-day streak 🔥` : 'Build streaks, earn bonus Energy');
   const opened = unlockedGames().length;
   set('efGamesSub', opened >= 5 ? 'All 5 bonus games unlocked ✅' : `${opened}/5 unlocked · spend Energy in the Arcade`);
+  applyEnergyHour(state.energy?.happyHour);
+}
+
+// ---- Energy Happy Hour — one 2× Energy window per day (mirrors Deltix Hour) ----
+let ehTimer = null;
+let ehAnnouncedFor = null;
+function updateEhCountdown(endsAt) {
+  const sub = $('energyHourSub');
+  if (!sub || !endsAt) return;
+  const ms = new Date(endsAt).getTime() - Date.now();
+  if (ms <= 0) { applyEnergyHour({ active: false }); loadEnergy().catch(() => {}); return; }
+  const m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000);
+  sub.textContent = `2× Energy on every ad · ends in ${m}:${String(s).padStart(2, '0')}`;
+}
+function applyEnergyHour(hh) {
+  const banner = $('energyHourBanner');
+  if (!banner) return;
+  const title = $('energyHourTitle');
+  if (!hh || !hh.active) {
+    banner.classList.add('idle');
+    if (title) title.textContent = 'Energy Happy Hour';
+    const sub = $('energyHourSub');
+    if (sub) sub.textContent = '2× Energy earning strikes at a surprise time each day';
+    if (ehTimer) { clearInterval(ehTimer); ehTimer = null; }
+    ehAnnouncedFor = null;
+    return;
+  }
+  banner.classList.remove('idle');
+  if (title) title.textContent = `⚡ ENERGY HAPPY HOUR — ${hh.multiplier}× LIVE`;
+  updateEhCountdown(hh.endsAt);
+  if (ehTimer) clearInterval(ehTimer);
+  ehTimer = setInterval(() => updateEhCountdown(hh.endsAt), 1000);
+  if (ehAnnouncedFor !== hh.endsAt) {
+    ehAnnouncedFor = hh.endsAt;
+    try { window.ArcadeSound?.reward?.(); } catch {}
+    toast(`⚡ ENERGY HAPPY HOUR is live — ${hh.multiplier}× Energy for the next hour!`);
+  }
 }
 // Rewarded ads may not be requested back-to-back — enforce a 30s gap between views.
 const ENERGY_AD_COOLDOWN_MS = 30000;
@@ -2355,9 +2392,11 @@ async function earnEnergy(btn) {
     if (earned) lastEnergyAdAt = Date.now();
     if (!earned) { toast('Ad not completed — no Energy earned.'); return; }
     // The account is the source of truth — the server credits and returns it.
-    state.energy = await api('POST', '/energy/earn');
+    const r = await api('POST', '/energy/earn');
+    state.energy = r;
     renderEnergy();
-    toast('+1 Energy ⚡');
+    const gained = Number(r.earned) || 1;
+    toast(r.happyHour?.active ? `+${gained} Energy ⚡ (Happy Hour ${r.happyHour.multiplier}×!)` : `+${gained} Energy ⚡`);
   } catch (e) {
     if (e.data) { state.energy = e.data; renderEnergy(); }
     toast(e.message);

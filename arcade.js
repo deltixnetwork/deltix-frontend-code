@@ -3734,6 +3734,14 @@ const INSTANT_GAMES = {
     accent: '#10b981',
     render: renderTarget,
   },
+  dice: {
+    name: 'Deltix Dice',
+    emoji: '🎲',
+    cost: 50,
+    tagline: 'Roll the dice — match a pair for a prize.',
+    accent: '#8b5cf6',
+    render: renderDice,
+  },
 };
 
 let instantBusy = false;
@@ -4133,4 +4141,61 @@ function renderTarget(mount, g) {
       return 520;
     },
   });
+}
+
+// ---- Game 8: Deltix Dice ----
+function renderDice(mount, g) {
+  const FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+  const wrap = document.createElement('div');
+  wrap.className = 'instant-play';
+  wrap.innerHTML = `
+    <div class="ig-stage dice-stage">
+      <span class="die" id="die1">⚀</span><span class="die" id="die2">⚅</span>
+      <div class="ig-reward" hidden></div>
+    </div>
+    <button class="btn primary ig-action" id="diceBtn">🎲 Roll — ⚡ ${g.cost}</button>`;
+  mount.appendChild(wrap);
+  const stage = wrap.querySelector('.dice-stage');
+  const d1 = wrap.querySelector('#die1');
+  const d2 = wrap.querySelector('#die2');
+  const rewardEl = wrap.querySelector('.ig-reward');
+  const btn = wrap.querySelector('#diceBtn');
+  let tumble = null;
+
+  async function roll() {
+    if (instantBusy) return;
+    instantBusy = true;
+    btn.disabled = true;
+    rewardEl.hidden = true;
+    d1.classList.add('rolling');
+    d2.classList.add('rolling');
+    tumble = setInterval(() => {
+      d1.textContent = FACES[Math.floor(Math.random() * 6)];
+      d2.textContent = FACES[Math.floor(Math.random() * 6)];
+    }, 80);
+    try { ArcadeSound.tap(); } catch {}
+    const r = await playInstant('dice', g);
+    clearInterval(tumble);
+    d1.classList.remove('rolling');
+    d2.classList.remove('rolling');
+    if (!r) { instantBusy = false; btn.disabled = false; return; }
+    const win = r.reward > 0 || r.energyAwarded > 0;
+    if (win) {
+      const f = FACES[3 + Math.floor(Math.random() * 3)];
+      d1.textContent = f; d2.textContent = f; // matching pair on a win
+    } else {
+      d1.textContent = FACES[Math.floor(Math.random() * 3)];
+      d2.textContent = FACES[3 + Math.floor(Math.random() * 3)]; // mismatched
+    }
+    setTimeout(() => {
+      rewardEl.innerHTML = instantRewardLabel(r);
+      rewardEl.hidden = false;
+      if (win) burstShards(stage, g.accent, 14);
+      announceInstant(r);
+      btn.textContent = `↻ Roll again — ⚡ ${g.cost}`;
+      btn.disabled = false;
+      instantBusy = false;
+    }, 460);
+  }
+  btn.addEventListener('click', roll);
 }
