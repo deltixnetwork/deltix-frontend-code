@@ -236,6 +236,7 @@ async function loadArcade() {
     document.querySelectorAll('#gamesGrid .game-card, #bonusGamesGrid .game-card').forEach((c) =>
       c.addEventListener('click', () => openGame(c.dataset.game))
     );
+    renderInstantGames();
   } catch (e) {
     if (gel('arcadeMeta')) gel('arcadeMeta').innerHTML = `<div class="supply-row"><span>${e.message}</span></div>`;
   }
@@ -1915,6 +1916,8 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
     ['R','N','B','Q','K','B','N','R'],
   ];
   let sel = null, over = false, human = 'w', myTurn = true, lastMove = null, aiTimer = null; // uppercase = white = human
+  // Castling rights (revoked when the king or a rook leaves home, or a home rook is captured).
+  let castling = { wK: true, wQ: true, bK: true, bQ: true };
   const grid = makeGrid(mount, 8, 'chess');
   const cells = [];
   for (let i = 0; i < 64; i++) {
@@ -1975,8 +1978,15 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
   }
   function apply(b, m) {
     const nb = b.map((row) => row.slice());
-    nb[m.to[0]][m.to[1]] = nb[m.from[0]][m.from[1]];
+    const piece = nb[m.from[0]][m.from[1]];
+    nb[m.to[0]][m.to[1]] = piece;
     nb[m.from[0]][m.from[1]] = null;
+    // Castling: the king moves two files — bring its rook to the other side.
+    if (piece && piece.toUpperCase() === 'K' && Math.abs(m.to[1] - m.from[1]) === 2) {
+      const row = m.from[0];
+      if (m.to[1] === 6) { nb[row][5] = nb[row][7]; nb[row][7] = null; }      // kingside O-O
+      else if (m.to[1] === 2) { nb[row][3] = nb[row][0]; nb[row][0] = null; } // queenside O-O-O
+    }
     // auto-queen promotion
     if (nb[m.to[0]][m.to[1]] === 'P' && m.to[0] === 0) nb[m.to[0]][m.to[1]] = 'Q';
     if (nb[m.to[0]][m.to[1]] === 'p' && m.to[0] === 7) nb[m.to[0]][m.to[1]] = 'q';
@@ -2052,7 +2062,65 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
   }
   function legalMovesFrom(r, c, b = board) {
     const white = isWhite(b[r][c]);
-    return pseudoMoves(r, c, b).filter(([nr, nc]) => !inCheck(apply(b, { from: [r, c], to: [nr, nc] }), white));
+    const moves = pseudoMoves(r, c, b).filter(([nr, nc]) => !inCheck(apply(b, { from: [r, c], to: [nr, nc] }), white));
+    if (b[r][c] && b[r][c].toUpperCase() === 'K') moves.push(...castleMoves(white, b));
+    return moves;
+  }
+  /** True if square (r,c) is attacked by `byWhite`'s pieces (pawns handled correctly on empty squares). */
+  function isAttacked(b, r, c, byWhite) {
+    const opp = byWhite ? isWhite : isBlack;
+    // Pawns attack diagonally forward — an attacker pawn sits one rank toward its own side.
+    const pr = byWhite ? r + 1 : r - 1;
+    const pawnCh = byWhite ? 'P' : 'p';
+    if (b[pr] && (b[pr][c - 1] === pawnCh || b[pr][c + 1] === pawnCh)) return true;
+    for (const [dr, dc] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]) {
+      const nr = r + dr, nc = c + dc;
+      if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && b[nr][nc] && b[nr][nc].toUpperCase() === 'N' && opp(b[nr][nc])) return true;
+    }
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      if (!dr && !dc) continue;
+      const nr = r + dr, nc = c + dc;
+      if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && b[nr][nc] && b[nr][nc].toUpperCase() === 'K' && opp(b[nr][nc])) return true;
+    }
+    const scan = (dirs, types) => {
+      for (const [dr, dc] of dirs) {
+        let nr = r + dr, nc = c + dc;
+        while (nr >= 0 && nr < 8 && nc >= 0 && nc < 8) {
+          const p = b[nr][nc];
+          if (p) { if (opp(p) && types.includes(p.toUpperCase())) return true; break; }
+          nr += dr; nc += dc;
+        }
+      }
+      return false;
+    };
+    if (scan([[1,0],[-1,0],[0,1],[0,-1]], ['R', 'Q'])) return true;
+    if (scan([[1,1],[1,-1],[-1,1],[-1,-1]], ['B', 'Q'])) return true;
+    return false;
+  }
+  /** Legal castling king-destinations for `white` on board `b`, given current rights. */
+  function castleMoves(white, b = board) {
+    const out = [];
+    const row = white ? 7 : 0;
+    const king = white ? 'K' : 'k';
+    const rook = white ? 'R' : 'r';
+    if (b[row][4] !== king) return out;
+    if (isAttacked(b, row, 4, !white)) return out; // may not castle out of check
+    const kSide = white ? castling.wK : castling.bK;
+    const qSide = white ? castling.wQ : castling.bQ;
+    if (kSide && b[row][7] === rook && !b[row][5] && !b[row][6]
+        && !isAttacked(b, row, 5, !white) && !isAttacked(b, row, 6, !white)) out.push([row, 6]);
+    if (qSide && b[row][0] === rook && !b[row][1] && !b[row][2] && !b[row][3]
+        && !isAttacked(b, row, 3, !white) && !isAttacked(b, row, 2, !white)) out.push([row, 2]);
+    return out;
+  }
+  /** Revoke castling rights whenever a king/rook leaves home or a home rook is captured. */
+  function updateRights(b, m) {
+    const p = b[m.from[0]][m.from[1]];
+    if (p === 'K') { castling.wK = false; castling.wQ = false; }
+    if (p === 'k') { castling.bK = false; castling.bQ = false; }
+    for (const [rr, cc, side] of [[7,0,'wQ'],[7,7,'wK'],[0,0,'bQ'],[0,7,'bK']]) {
+      if ((m.from[0] === rr && m.from[1] === cc) || (m.to[0] === rr && m.to[1] === cc)) castling[side] = false;
+    }
   }
   function render(hints, changed) {
     const hs = hints || [];
@@ -2089,7 +2157,8 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
   }
   function aiMove() {
     if (over) return;
-    const moves = legalMoves(false);
+    const castle = castleMoves(false, board).map((to) => ({ from: kingPos(board, false), to }));
+    const moves = legalMoves(false).concat(castle);
     if (!moves.length) {
       over = true;
       const end = gameEndFor(false);
@@ -2122,6 +2191,7 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
       }
     }
     lastMove = { from: pick.from.slice(), to: pick.to.slice() };
+    updateRights(board, pick);
     board = apply(board, pick);
     render(null, pick.to);
     const winner = kingCaptured(board);
@@ -2142,6 +2212,7 @@ GAME_IMPL.chess = (mount, diff, finish, status) => {
       const legal = legalMovesFrom(sel[0], sel[1]).some(([nr, nc]) => nr === r && nc === c);
       if (legal) {
         lastMove = { from: sel.slice(), to: [r, c] };
+        updateRights(board, lastMove);
         board = apply(board, lastMove);
         sel = null;
         myTurn = false;
@@ -3597,3 +3668,469 @@ GAME_IMPL.flyer = (mount, diff, finish, status) => {
     document.removeEventListener('keydown', onKey);
   };
 };
+
+// ═════════════════════ INSTANT ENERGY GAMES (tap → reveal) ═════════════════════
+// Spend Energy for a one-tap reveal. The SERVER (POST /rewards/energy-game)
+// decides and pays the outcome; the client only animates it. Energy is
+// non-monetary, and any $DLTX is clamped to the shared daily reward cap — so
+// these can never inflate supply and no ad ever gates a payout.
+// Each game is a self-contained render(mount, cfg) function; add more by
+// registering them in INSTANT_GAMES with a matching backend config entry.
+
+const INSTANT_GAMES = {
+  smash: {
+    name: 'Smash the Diamond',
+    emoji: '💎',
+    cost: 100,
+    tagline: 'One tap cracks the diamond — grab what flies out.',
+    accent: '#38bdf8',
+    render: renderSmash,
+  },
+  scratch: {
+    name: 'Energy Scratch Card',
+    emoji: '🎟️',
+    cost: 50,
+    tagline: 'Scratch the foil — instantly reveal your prize.',
+    accent: '#f59e0b',
+    render: renderScratch,
+  },
+  box: {
+    name: 'Pick a Box',
+    emoji: '🎁',
+    cost: 100,
+    tagline: 'Three boxes, one pick — what did you choose?',
+    accent: '#a855f7',
+    render: renderBox,
+  },
+  balloon: {
+    name: 'Pop the Balloon',
+    emoji: '🎈',
+    cost: 50,
+    tagline: 'Five balloons — pick one and pop it for a prize.',
+    accent: '#ef4444',
+    render: renderBalloon,
+  },
+  coin: {
+    name: 'Flip the Coin',
+    emoji: '🪙',
+    cost: 30,
+    tagline: 'Call it — win bonus Energy. No cash on this one.',
+    accent: '#eab308',
+    render: renderCoin,
+  },
+  rocket: {
+    name: 'Rocket Launch',
+    emoji: '🚀',
+    cost: 80,
+    tagline: 'Launch — how far you fly sets your reward.',
+    accent: '#6366f1',
+    render: renderRocket,
+  },
+  target: {
+    name: 'Energy Target',
+    emoji: '🎯',
+    cost: 50,
+    tagline: 'Take the shot — where it lands is your prize.',
+    accent: '#10b981',
+    render: renderTarget,
+  },
+};
+
+let instantBusy = false;
+
+function instantEnergy() {
+  return window.energyBalance ? window.energyBalance() : 0;
+}
+
+function renderInstantGames() {
+  const grid = gel('instantGamesGrid');
+  if (!grid) return;
+  const have = instantEnergy();
+  grid.innerHTML = Object.entries(INSTANT_GAMES)
+    .map(([id, g]) => {
+      const afford = have >= g.cost;
+      return `<button class="instant-card${afford ? '' : ' short'}" data-instant="${id}" style="--ig-accent:${g.accent}">
+        <span class="ig-emoji">${g.emoji}</span>
+        <span class="ig-name">${g.name}</span>
+        <span class="ig-tag">${g.tagline}</span>
+        <span class="ig-cost">⚡ ${g.cost} Energy</span>
+      </button>`;
+    })
+    .join('');
+  grid.querySelectorAll('.instant-card').forEach((c) =>
+    c.addEventListener('click', () => openInstantGame(c.dataset.instant))
+  );
+}
+
+function openInstantGame(id) {
+  const g = INSTANT_GAMES[id];
+  if (!g) return;
+  instantBusy = false;
+  gel('instantTitle').textContent = `${g.emoji} ${g.name}`;
+  gel('instantTagline').textContent = g.tagline;
+  gel('instantCost').textContent = `Cost: ⚡ ${g.cost} per play`;
+  gel('instantStatus').textContent = '';
+  updateInstantBal();
+  const mount = gel('instantMount');
+  mount.innerHTML = '';
+  ArcadeSound.unlock();
+  g.render(mount, g);
+  gel('instantModal').hidden = false;
+}
+
+function closeInstantGame() {
+  gel('instantModal').hidden = true;
+  gel('instantMount').innerHTML = '';
+  instantBusy = false;
+  renderInstantGames();
+}
+gel('instantClose')?.addEventListener('click', closeInstantGame);
+// Exposed so app.js (back button / expired session) can close it too.
+window.closeInstantGame = closeInstantGame;
+
+function updateInstantBal() {
+  const bal = gel('instantBal');
+  if (bal) bal.textContent = `⚡ ${instantEnergy()} Energy`;
+}
+
+/** Shared play call. Returns the server result, or null on error (toasted). */
+async function playInstant(id, g) {
+  const have = instantEnergy();
+  if (have < g.cost) {
+    toast(`Not enough Energy — ${g.cost - have} more needed. Earn Energy in the Energy tab.`);
+    return null;
+  }
+  try {
+    const r = await api('POST', '/rewards/energy-game', { game: id });
+    // Sync the account's Energy immediately so the balance never lags.
+    if (typeof state !== 'undefined' && state.energy) state.energy.energy = r.energy;
+    updateInstantBal();
+    if (window.renderEnergy) window.renderEnergy();
+    return r;
+  } catch (e) {
+    if (e.status === 401) return null; // session expired — app.js handles it
+    toast(e.message || 'Could not play right now — please try again.');
+    return null;
+  }
+}
+
+/** Human-readable prize label for the reveal panel. */
+function instantRewardLabel(r) {
+  if (r.reward > 0) {
+    return `<span class="ig-win">+${fmt(r.reward)} $DLTX</span>` +
+      (r.energyAwarded > 0 ? `<span class="ig-win ig-win-sm">+${r.energyAwarded} ⚡</span>` : '');
+  }
+  if (r.energyAwarded > 0) return `<span class="ig-win">+${r.energyAwarded} ⚡ Energy</span>`;
+  return `<span class="ig-miss">Try again!</span>`;
+}
+
+/** Shared celebration + status + wallet/energy refresh after a reveal. */
+function announceInstant(r) {
+  const prefix = r.freeSpin ? '🎡 Free Spin! ' : '';
+  if (r.reward > 0) {
+    (window.celebrate || toast)({
+      amount: r.reward,
+      title: prefix + 'You won $DLTX!',
+      subtitle: r.energyAwarded > 0 ? `Plus ${r.energyAwarded} ⚡ Energy — added to your wallet.` : 'Added to your wallet.',
+      icon: '💎',
+    });
+    Promise.all([window.loadWallet?.(), window.loadTx?.()]).catch(() => {});
+  } else if (r.energyAwarded > 0) {
+    try { ArcadeSound.coin(); } catch {}
+    toast(`${prefix}+${r.energyAwarded} ⚡ Energy! You now have ${r.energy} ⚡.`);
+  } else if (r.capped) {
+    toast('You cracked a $DLTX prize — but today\u2019s reward cap is reached. Come back tomorrow!');
+  } else {
+    try { ArcadeSound.lose(); } catch {}
+    toast('Try again! Better luck on the next tap.');
+  }
+  const status = gel('instantStatus');
+  if (status) {
+    const parts = [];
+    if (r.reward > 0) parts.push(`+${fmt(r.reward)} $DLTX`);
+    if (r.energyAwarded > 0) parts.push(`+${r.energyAwarded} ⚡`);
+    status.textContent = parts.length ? `Result: ${parts.join(' · ')}` : 'No prize this time — try again!';
+  }
+  if (window.loadEnergy) window.loadEnergy().catch(() => {});
+}
+
+/** A shimmering blue Deltix diamond, drawn inline (no image dependency). */
+function diamondSVG() {
+  return `<svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true">
+    <defs>
+      <linearGradient id="dgTop" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#e0f2fe"/><stop offset="1" stop-color="#38bdf8"/>
+      </linearGradient>
+      <linearGradient id="dgBot" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#0ea5e9"/><stop offset="1" stop-color="#0369a1"/>
+      </linearGradient>
+    </defs>
+    <polygon points="50,6 88,36 50,36" fill="url(#dgTop)"/>
+    <polygon points="12,36 50,6 50,36" fill="#7dd3fc"/>
+    <polygon points="12,36 88,36 50,94" fill="url(#dgBot)"/>
+    <polygon points="12,36 50,36 50,94" fill="#0284c7"/>
+    <polygon points="50,36 88,36 50,94" fill="#0ea5e9"/>
+    <line x1="50" y1="6" x2="50" y2="94" stroke="#e0f2fe" stroke-width="0.6" opacity="0.5"/>
+  </svg>`;
+}
+
+/** Reusable shard/particle burst for a winning reveal. */
+function burstShards(stage, color = '#38bdf8', count = 16) {
+  if (!stage) return;
+  for (let i = 0; i < count; i++) {
+    const s = document.createElement('i');
+    s.className = 'ig-shard';
+    const ang = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+    const dist = 60 + Math.random() * 70;
+    s.style.setProperty('--tx', `${Math.cos(ang) * dist}px`);
+    s.style.setProperty('--ty', `${Math.sin(ang) * dist}px`);
+    s.style.background = i % 3 === 0 ? '#fbbf24' : color;
+    s.style.animationDelay = `${Math.random() * 0.08}s`;
+    stage.appendChild(s);
+    setTimeout(() => s.remove(), 900);
+  }
+}
+
+// ---- Game 1: Smash the Diamond ----
+function renderSmash(mount, g) {
+  const wrap = document.createElement('div');
+  wrap.className = 'instant-play smash-wrap';
+  wrap.innerHTML = `
+    <div class="smash-stage">
+      <div class="smash-diamond" id="smashDiamond">${diamondSVG()}</div>
+      <div class="ig-reward" id="smashReward" hidden></div>
+    </div>
+    <button class="btn primary ig-action" id="smashBtn">💥 SMASH — ⚡ ${g.cost}</button>`;
+  mount.appendChild(wrap);
+  const stage = wrap.querySelector('.smash-stage');
+  const diamond = wrap.querySelector('#smashDiamond');
+  const rewardEl = wrap.querySelector('#smashReward');
+  const btn = wrap.querySelector('#smashBtn');
+
+  async function smash() {
+    if (instantBusy) return;
+    instantBusy = true;
+    btn.disabled = true;
+    diamond.classList.remove('cracked');
+    rewardEl.hidden = true;
+    diamond.classList.add('shake');
+    try { ArcadeSound.tap(); } catch {}
+    const r = await playInstant('smash', g);
+    diamond.classList.remove('shake');
+    if (!r) { instantBusy = false; btn.disabled = false; return; }
+    diamond.classList.add('cracked');
+    try { ArcadeSound.tap(); } catch {}
+    burstShards(stage, g.accent);
+    setTimeout(() => {
+      rewardEl.innerHTML = instantRewardLabel(r);
+      rewardEl.hidden = false;
+      announceInstant(r);
+      btn.textContent = `↻ Smash again — ⚡ ${g.cost}`;
+      btn.disabled = false;
+      instantBusy = false;
+    }, 620);
+  }
+  btn.addEventListener('click', smash);
+}
+
+// ---- Shared engine for single-button instant games (scratch / rocket / target) ----
+// hooks: { actionLabel, againLabel, buildStage(), windUp(stage), reveal(stage, r) -> delayMs }
+function instantButtonGame(mount, id, g, hooks) {
+  const wrap = document.createElement('div');
+  wrap.className = 'instant-play';
+  wrap.innerHTML = `
+    <div class="ig-stage">${hooks.buildStage()}<div class="ig-reward" hidden></div></div>
+    <button class="btn primary ig-action">${hooks.actionLabel} — ⚡ ${g.cost}</button>`;
+  mount.appendChild(wrap);
+  const stage = wrap.querySelector('.ig-stage');
+  const rewardEl = wrap.querySelector('.ig-reward');
+  const btn = wrap.querySelector('.ig-action');
+
+  async function play() {
+    if (instantBusy) return;
+    instantBusy = true;
+    btn.disabled = true;
+    rewardEl.hidden = true;
+    if (hooks.windUp) hooks.windUp(stage);
+    try { ArcadeSound.tap(); } catch {}
+    const r = await playInstant(id, g);
+    if (!r) { instantBusy = false; btn.disabled = false; return; }
+    const delay = (hooks.reveal && hooks.reveal(stage, r)) || 500;
+    setTimeout(() => {
+      rewardEl.innerHTML = instantRewardLabel(r);
+      rewardEl.hidden = false;
+      if (r.reward > 0 || r.energyAwarded > 0) burstShards(stage, g.accent, 14);
+      announceInstant(r);
+      btn.textContent = `↻ ${hooks.againLabel} — ⚡ ${g.cost}`;
+      btn.disabled = false;
+      instantBusy = false;
+    }, delay);
+  }
+  btn.addEventListener('click', play);
+}
+
+// ---- Shared engine for "pick one of N" instant games (box / balloon) ----
+function instantPickGame(mount, id, g, { count, emoji, itemClass, instruction, againText }) {
+  const wrap = document.createElement('div');
+  wrap.className = 'instant-play';
+  wrap.innerHTML = `
+    <div class="pick-instruction">${instruction}</div>
+    <div class="ig-stage pick-row">${Array.from({ length: count }, (_, i) =>
+      `<button class="pick-item ${itemClass}" data-i="${i}"><span class="pick-emoji">${emoji}</span></button>`).join('')}</div>
+    <div class="pick-reward" hidden></div>`;
+  mount.appendChild(wrap);
+  const items = [...wrap.querySelectorAll('.pick-item')];
+  const row = wrap.querySelector('.pick-row');
+  const rewardEl = wrap.querySelector('.pick-reward');
+  const instr = wrap.querySelector('.pick-instruction');
+
+  async function pick(item) {
+    if (instantBusy) return;
+    const have = instantEnergy();
+    if (have < g.cost) {
+      toast(`Not enough Energy — ${g.cost - have} more needed. Earn Energy in the Energy tab.`);
+      return;
+    }
+    rewardEl.hidden = true;
+    items.forEach((b) => b.classList.remove('chosen', 'dim', 'pop'));
+    instantBusy = true;
+    items.forEach((b) => (b.disabled = true));
+    try { ArcadeSound.tap(); } catch {}
+    const r = await playInstant(id, g);
+    if (!r) { instantBusy = false; items.forEach((b) => (b.disabled = false)); return; }
+    item.classList.add('chosen', 'pop');
+    items.filter((b) => b !== item).forEach((b) => b.classList.add('dim'));
+    setTimeout(() => {
+      rewardEl.innerHTML = instantRewardLabel(r);
+      rewardEl.hidden = false;
+      if (r.reward > 0 || r.energyAwarded > 0) burstShards(row, g.accent, 14);
+      announceInstant(r);
+      instr.textContent = againText;
+      items.forEach((b) => (b.disabled = false));
+      instantBusy = false;
+    }, 520);
+  }
+  items.forEach((b) => b.addEventListener('click', () => pick(b)));
+}
+
+// ---- Game 2: Energy Scratch Card ----
+function renderScratch(mount, g) {
+  instantButtonGame(mount, 'scratch', g, {
+    actionLabel: '✋ Scratch',
+    againLabel: 'Scratch again',
+    buildStage: () => `<div class="scratch-foil"><span>SCRATCH<br>HERE</span></div>`,
+    windUp: (stage) => stage.querySelector('.scratch-foil')?.classList.remove('gone'),
+    reveal: (stage) => { stage.querySelector('.scratch-foil')?.classList.add('gone'); return 520; },
+  });
+}
+
+// ---- Game 3: Pick a Box ----
+function renderBox(mount, g) {
+  instantPickGame(mount, 'box', g, {
+    count: 3, emoji: '🎁', itemClass: 'box-item',
+    instruction: 'Pick a box to open', againText: 'Tap a box to play again',
+  });
+}
+
+// ---- Game 4: Pop the Balloon ----
+function renderBalloon(mount, g) {
+  instantPickGame(mount, 'balloon', g, {
+    count: 5, emoji: '🎈', itemClass: 'balloon-item',
+    instruction: 'Pick a balloon to pop', againText: 'Pop another to play again',
+  });
+}
+
+// ---- Game 5: Flip the Coin (Energy / bonus only — never $DLTX) ----
+function renderCoin(mount, g) {
+  const wrap = document.createElement('div');
+  wrap.className = 'instant-play coin-wrap';
+  wrap.innerHTML = `
+    <div class="ig-stage coin-stage"><div class="coin"><span class="coin-face">Δ</span></div></div>
+    <div class="pick-reward" hidden></div>
+    <div class="pick-instruction">Call it — bonus Energy only</div>
+    <div class="coin-choice">
+      <button class="btn ghost" data-side="heads">👑 Heads</button>
+      <button class="btn ghost" data-side="tails">Δ Tails</button>
+    </div>`;
+  mount.appendChild(wrap);
+  const coin = wrap.querySelector('.coin');
+  const face = wrap.querySelector('.coin-face');
+  const stage = wrap.querySelector('.coin-stage');
+  const rewardEl = wrap.querySelector('.pick-reward');
+  const btns = [...wrap.querySelectorAll('.coin-choice button')];
+
+  async function flip(side) {
+    if (instantBusy) return;
+    const have = instantEnergy();
+    if (have < g.cost) {
+      toast(`Not enough Energy — ${g.cost - have} more needed. Earn Energy in the Energy tab.`);
+      return;
+    }
+    rewardEl.hidden = true;
+    instantBusy = true;
+    btns.forEach((b) => (b.disabled = true));
+    coin.classList.remove('flipping');
+    void coin.offsetWidth; // restart the animation
+    coin.classList.add('flipping');
+    try { ArcadeSound.tap(); } catch {}
+    const r = await playInstant('coin', g);
+    if (!r) { instantBusy = false; btns.forEach((b) => (b.disabled = false)); return; }
+    setTimeout(() => {
+      coin.classList.remove('flipping');
+      // Land on the called side when you win, the other side when you don't.
+      const won = r.energyAwarded > 0;
+      face.textContent = (won === (side === 'heads')) ? '👑' : 'Δ';
+      rewardEl.innerHTML = instantRewardLabel(r);
+      rewardEl.hidden = false;
+      if (won) burstShards(stage, g.accent, 12);
+      announceInstant(r);
+      btns.forEach((b) => (b.disabled = false));
+      instantBusy = false;
+    }, 950);
+  }
+  btns.forEach((b) => b.addEventListener('click', () => flip(b.dataset.side)));
+}
+
+// ---- Game 6: Rocket Launch ----
+function renderRocket(mount, g) {
+  const DESTS = ['🌙 Reached the Moon', '♂️ Landed on Mars', '🪐 Passed Jupiter', '☄️ Into deep space'];
+  instantButtonGame(mount, 'rocket', g, {
+    actionLabel: '🚀 Launch',
+    againLabel: 'Launch again',
+    buildStage: () => `<div class="rocket-track"><div class="rocket-ship">🚀</div></div><div class="rocket-dest"></div>`,
+    windUp: (stage) => {
+      stage.querySelector('.rocket-ship')?.classList.remove('launched');
+      const d = stage.querySelector('.rocket-dest'); if (d) d.textContent = '';
+    },
+    reveal: (stage, r) => {
+      stage.querySelector('.rocket-ship')?.classList.add('launched');
+      const d = stage.querySelector('.rocket-dest');
+      // Reach farther when you win — pure flavour, the server sets the reward.
+      const pool = (r.reward > 0 || r.energyAwarded > 0) ? DESTS.slice(1) : DESTS.slice(0, 2);
+      setTimeout(() => { if (d) d.textContent = pool[Math.floor(Math.random() * pool.length)]; }, 520);
+      return 900;
+    },
+  });
+}
+
+// ---- Game 7: Energy Target ----
+function renderTarget(mount, g) {
+  instantButtonGame(mount, 'target', g, {
+    actionLabel: '🎯 Shoot',
+    againLabel: 'Shoot again',
+    buildStage: () => `<div class="target-face"></div><span class="dart-mark" hidden>❌</span>`,
+    windUp: (stage) => { const d = stage.querySelector('.dart-mark'); if (d) d.hidden = true; },
+    reveal: (stage, r) => {
+      const d = stage.querySelector('.dart-mark');
+      const win = r.reward > 0 || r.energyAwarded > 0;
+      const rad = win ? 6 + Math.random() * 20 : 44 + Math.random() * 28;
+      const ang = Math.random() * Math.PI * 2;
+      if (d) {
+        d.style.left = `calc(50% + ${Math.cos(ang) * rad}px)`;
+        d.style.top = `calc(50% + ${Math.sin(ang) * rad}px)`;
+        d.hidden = false;
+      }
+      return 520;
+    },
+  });
+}

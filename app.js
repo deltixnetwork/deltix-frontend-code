@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.4.1';
+const APP_VERSION = '1.5.0';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -81,6 +81,8 @@ async function api(method, path, body, { retries = method === 'GET' ? 2 : 0 } = 
       // "missing/invalid token" error and the user looks stuck mid-game.
       const gameModal = $('gameModal');
       if (gameModal && !gameModal.hidden && typeof window.closeGame === 'function') window.closeGame();
+      const instantModal = $('instantModal');
+      if (instantModal && !instantModal.hidden && typeof window.closeInstantGame === 'function') window.closeInstantGame();
       if (state.token) {
         clearAccountSession();
         showScreen('screen-email');
@@ -281,7 +283,7 @@ function initPullToRefresh() {
     if (!isMain || !state.token || isRefreshing) return false;
 
     // Must not have any modal/overlay open
-    const overlays = ['gameModal', 'dbrowser', 'explorer', 'dappPage', 'stakeModal', 'sendModal', 'deleteModal', 'swapModal', 'dappModal'];
+    const overlays = ['gameModal', 'instantModal', 'dbrowser', 'explorer', 'dappPage', 'stakeModal', 'sendModal', 'deleteModal', 'swapModal', 'dappModal'];
     for (const id of overlays) {
       const el = $(id);
       if (el && !el.hidden) return false;
@@ -728,19 +730,16 @@ async function enterApp() {
     if (state.email) localStorage.setItem('dltx_email', state.email);
   }
   renderProfile();
+  // Load only what the home (Wallet) screen and profile actually show. Every
+  // other tab loads its own data when first opened (see refreshTabContent), so
+  // there's no need to fire a dozen database-backed requests at once on launch —
+  // that burst was a big part of the slow first load and server strain.
   await Promise.allSettled([
     loadWallet(),
     loadStats(),
-    loadValidators(),
-    loadStakes(),
     loadTx(),
     loadReferrals(),
-    loadGovernance(),
-    loadChain(),
     loadEnergy(),
-    loadRewards(),
-    loadMissions(),
-    typeof loadArcade === 'function' ? loadArcade() : Promise.resolve(),
   ]);
   if (typeof checkMysteryHour === 'function') checkMysteryHour();
 }
@@ -3360,6 +3359,8 @@ function closeTopOverlay() {
   }
   const game = document.getElementById('gameModal');
   if (game && !game.hidden) { window.closeGame?.(); return true; }
+  const instant = document.getElementById('instantModal');
+  if (instant && !instant.hidden) { window.closeInstantGame?.(); return true; }
   if (!$('dappPage').hidden) { closeDappPage(); return true; }
   if (!$('explorer').hidden) {
     if (exp.stack.length > 1) { exp.stack.pop(); expRender(); } else closeExplorer();

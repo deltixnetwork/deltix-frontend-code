@@ -225,6 +225,10 @@
         <h3 class="section-title">All games 🎮</h3>
         <div class="games-grid" id="gamesGrid"></div>
 
+        <h3 class="section-title">Instant Energy games ⚡💎</h3>
+        <p class="muted small-note">Spend <b>Energy</b> for a one-tap reveal — win Energy, a little $DLTX, a free spin, or try again. No skill, no waiting.</p>
+        <div class="instant-grid" id="instantGamesGrid"></div>
+
         <h3 class="section-title">Energy bonus games ⚡</h3>
         <p class="muted small-note">Unlock these with Deltix Energy from the <b>Energy</b> tab — once opened they stay yours.</p>
         <div class="games-grid" id="bonusGamesGrid"></div>
@@ -835,6 +839,23 @@
         <div class="game-status" id="gameStatus"></div>
         <div id="gameMount"></div>
       </div>
+    </div>
+  </div>
+
+  <!-- Instant Energy games (tap → reveal) -->
+  <div class="modal-backdrop" id="instantModal" hidden>
+    <div class="modal game-modal">
+      <div class="game-head">
+        <h3 id="instantTitle">Instant Game</h3>
+        <button class="btn ghost small" id="instantClose">✕ Close</button>
+      </div>
+      <p class="muted small-note" id="instantTagline"></p>
+      <div class="instant-bal-row">
+        <span class="instant-bal" id="instantBal">⚡ 0</span>
+        <span class="instant-cost" id="instantCost"></span>
+      </div>
+      <div id="instantMount"></div>
+      <div class="game-status" id="instantStatus"></div>
     </div>
   </div>
 
