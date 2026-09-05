@@ -305,6 +305,7 @@ gel('getEnergyBtn')?.addEventListener('click', () => {
 });
 function updateRewardHint() {
   const g = arcadeState.currentGame;
+  if (!g) return;
   const r = arcadeState.difficulty === 'hard' ? g.rewardHard : g.rewardEasy;
   gel('gameRewardHint').textContent = `Win to earn ${r} $DLTX (daily cap applies).`;
 }
@@ -344,6 +345,7 @@ gel('startGameBtn').addEventListener('click', async () => {
 
 async function startSession() {
   const g = arcadeState.currentGame;
+  if (!g) return; // modal was never opened for a game (defensive)
   const r = await api('POST', '/arcade/session/start', { game: g.id, difficulty: arcadeState.difficulty });
   arcadeState.sessionId = r.sessionId;
   gel('gameSetup').hidden = true;

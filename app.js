@@ -2295,9 +2295,14 @@ function legacyEnergyPayload() {
 // concurrent calls from double-running the one-time migration, which would
 // otherwise double-credit or clobber the account's Energy on first login.
 let _energyLoad = null;
-async function loadEnergy(prefetched) {
-  if (_energyLoad) return _energyLoad;
-  _energyLoad = (async () => {
+async function loadEnergy(prefetched, { force = false } = {}) {
+  if (_energyLoad) {
+    if (!force) return _energyLoad;
+    // A reward just landed — wait out the in-flight read, then re-read so the
+    // UI never settles on a pre-mutation balance (stale-read race fix).
+    try { await _energyLoad; } catch {}
+  }
+  const p = (async () => {
     try {
       let e = prefetched || await api('GET', '/energy');
       const legacy = legacyEnergyPayload();
@@ -2319,11 +2324,13 @@ async function loadEnergy(prefetched) {
       // Never let a transient failure blank out a known balance — keeping the
       // last good value stops Energy from briefly reading 0 after a reinstall.
       console.warn('loadEnergy:', err.message);
-    } finally {
-      _energyLoad = null;
     }
   })();
-  return _energyLoad;
+  _energyLoad = p;
+  // Identity-guarded clear — a newer load must never be nulled by an older one.
+  const clear = () => { if (_energyLoad === p) _energyLoad = null; };
+  p.then(clear, clear);
+  return p;
 }
 
 function unlockedGames() { return state.energy?.unlocked?.games || []; }
@@ -2536,7 +2543,7 @@ async function buyShopItem(id, btn) {
   try {
     const payload = { item: id, ...(it.currency === 'dltx' ? await getIntegrityPayload() : {}) };
     const r = await api('POST', '/shop/buy', payload);
-    await Promise.allSettled([loadShop(), loadEnergy(), loadWallet()]);
+    await Promise.allSettled([loadShop(), loadEnergy(undefined, { force: true }), loadWallet()]);
     const msg = it.category === 'energy' ? `+${r.energyAwarded} ⚡ Energy added!`
       : it.category === 'boost' ? 'Arcade cap boosted for today! 🏆'
       : `${it.name} unlocked! 🎉`;
@@ -2642,7 +2649,7 @@ async function submitPuzzleGuess() {
         try { window.ArcadeSound?.reward?.(); } catch {}
         toast(`Solved! +${rw.energy || 0} ⚡ Energy 🎉`);
       }
-      Promise.allSettled([loadWallet(), loadEnergy(), loadRewards()]);
+      Promise.allSettled([loadWallet(), loadEnergy(undefined, { force: true }), loadRewards()]);
     } else if (r.justFailed) {
       try { window.ArcadeSound?.lose?.(); } catch {}
       toast('Out of tries — the code is revealed. Back tomorrow!');
@@ -2889,7 +2896,7 @@ async function openMysteryBox(useEnergy) {
     if (vis) { vis.classList.remove('box-shake'); vis.classList.add('opened'); }
     if (r.capped) toast('Box opened — daily $DLTX cap reached. Try again tomorrow!');
     else celebrate({ amount: r.reward, title: 'Mystery Box Opened!', subtitle: 'You found a $DLTX reward inside.', icon: '📦' });
-    await Promise.allSettled([loadRewards(), loadWallet(), loadEnergy(), loadTx()]);
+    await Promise.allSettled([loadRewards(), loadWallet(), loadEnergy(undefined, { force: true }), loadTx()]);
     showRewardInterstitial();
     setTimeout(() => { if (vis) vis.classList.remove('opened'); }, 1800);
   } catch (e) {
@@ -2925,7 +2932,7 @@ async function runSpin(paid) {
       else if (r.segment.kind === 'dltx') toast('Daily $DLTX cap reached — spin again tomorrow.');
       else celebrate({ amount: r.energyAwarded, unit: '⚡ Energy', title: 'Energy Won!', subtitle: `You now have ${fmt(r.energy)} ⚡ total.`, icon: '⚡' });
     }
-    await Promise.allSettled([loadRewards(), loadWallet(), loadEnergy(), loadTx()]);
+    await Promise.allSettled([loadRewards(), loadWallet(), loadEnergy(undefined, { force: true }), loadTx()]);
     showRewardInterstitial();
   } catch (e) {
     toast(e.message);
@@ -2967,7 +2974,7 @@ document.querySelectorAll('.chest-pick').forEach((b) =>
       if (r.chosen === 'dltx' && !r.capped && r.reward > 0) celebrate({ amount: r.reward, title: 'Mystery Chest Unlocked!', subtitle: 'A shiny $DLTX reward is yours.', icon: '🎁' });
       else if (r.chosen === 'energy' && r.energyAwarded > 0) celebrate({ amount: r.energyAwarded, unit: '⚡ Energy', title: 'Mystery Chest Unlocked!', subtitle: `You now have ${fmt(r.energy)} ⚡ total.`, icon: '🎁' });
       else toast(msg);
-      await Promise.allSettled([loadRewards(), loadWallet(), loadEnergy(), loadTx()]);
+      await Promise.allSettled([loadRewards(), loadWallet(), loadEnergy(undefined, { force: true }), loadTx()]);
       showRewardInterstitial();
     } catch (e) {
       toast(e.message);
@@ -3089,7 +3096,7 @@ async function claimMissionReward() {
     if (rw.kind === 'dltx' && rw.reward > 0) celebrate({ amount: rw.reward, title: 'Mission Reward!', subtitle: 'Straight to your wallet.', icon: '💎' });
     else if (rw.kind === 'energy' && rw.energyAwarded > 0) celebrate({ amount: rw.energyAwarded, unit: '⚡ Energy', title: 'Mission Reward!', subtitle: 'Non-monetary Energy added.', icon: '⚡' });
     else toast('Daily $DLTX cap reached — try again tomorrow.');
-    await Promise.allSettled([loadWallet(), loadEnergy(), loadTx(), loadRewards()]);
+    await Promise.allSettled([loadWallet(), loadEnergy(undefined, { force: true }), loadTx(), loadRewards()]);
     showRewardInterstitial();
     renderMissions();
   } catch (e) {
@@ -3268,7 +3275,7 @@ async function openVault() {
     if (rw.kind === 'dltx' && rw.reward > 0) celebrate({ amount: rw.reward, title: 'Vault Opened! 🔓', subtitle: 'A $DLTX reward is yours.', icon: '💎' });
     else if (rw.kind === 'energy' && rw.energyAwarded > 0) celebrate({ amount: rw.energyAwarded, unit: '⚡ Energy', title: 'Vault Opened! 🔓', subtitle: 'Non-monetary Energy added.', icon: '⚡' });
     else toast('Vault opened — daily $DLTX cap reached, try the next cycle!');
-    await Promise.allSettled([loadWallet(), loadEnergy(), loadTx()]);
+    await Promise.allSettled([loadWallet(), loadEnergy(undefined, { force: true }), loadTx()]);
     showRewardInterstitial();
     renderVault();
   } catch (e) {
