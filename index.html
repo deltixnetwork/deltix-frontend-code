@@ -226,10 +226,6 @@
         <h3 class="section-title">All games 🎮</h3>
         <div class="games-grid" id="gamesGrid"></div>
 
-        <h3 class="section-title">Instant Energy games ⚡💎</h3>
-        <p class="muted small-note">Spend <b>Energy</b> for a one-tap reveal — win Energy, a little $DLTX, a free spin, or try again. No skill, no waiting.</p>
-        <div class="instant-grid" id="instantGamesGrid"></div>
-
         <h3 class="section-title">Energy bonus games ⚡</h3>
         <p class="muted small-note">Unlock these with Deltix Energy from the <b>Energy</b> tab — once opened they stay yours.</p>
         <div class="games-grid" id="bonusGamesGrid"></div>
@@ -621,7 +617,43 @@
 
         <p class="energy-disclaimer">Missions are a daily engagement journey. Ads shown are opt-in and never required to receive a reward. $DLTX payouts count toward the shared daily allowance.</p>
       </div>
+
+      <!-- Energy Arcade — instant one-tap Energy games -->
+      <div class="tab" id="tab-energygames">
+        <div class="showcase-banner"><div class="showcase-title">Energy Arcade ⚡</div><div class="showcase-sub">Spend Energy for instant one-tap rewards — no skill, no waiting.</div></div>
+        <h3 class="section-title">Instant Energy games ⚡💎</h3>
+        <p class="muted small-note">Spend <b>Energy</b> for a one-tap reveal — win Energy, a little $DLTX, a free spin, or try again.</p>
+        <div class="instant-grid" id="instantGamesGrid"></div>
+        <ul class="disclosure"><li>Energy is a non-monetary status point. $DLTX prizes are capped by the daily allowance.</li></ul>
+      </div>
+
+      <!-- Deltix Shop -->
+      <div class="tab" id="tab-shop">
+        <div class="showcase-banner"><div class="showcase-title">Deltix Shop 🛒</div><div class="showcase-sub">Spend Energy or $DLTX on avatars, themes, Energy packs and boosts.</div></div>
+        <div class="shop-bal-row">
+          <span class="shop-bal" id="shopEnergyBal">⚡ 0 Energy</span>
+          <span class="shop-bal" id="shopDltxBal">0 $DLTX</span>
+        </div>
+        <div id="shopGrid" class="shop-grid"></div>
+        <div class="game-status" id="shopStatus"></div>
+        <ul class="disclosure"><li>$DLTX spent recycles into the community rewards pool — never burned or minted.</li></ul>
+      </div>
     </main>
+
+    <!-- Bottom navigation (wraps to two rows) -->
+    <nav class="tabbar" id="tabbar" aria-label="Primary navigation">
+      <button class="tabbtn active" data-tab="tab-wallet"><img src="assets/energy/38_wallet_nav.png" class="nav-3d-icon" alt="" /><span>Wallet</span></button>
+      <button class="tabbtn" data-tab="tab-stake"><img src="assets/energy/39_stake_nav.png" class="nav-3d-icon" alt="" /><span>Stake</span></button>
+      <button class="tabbtn" data-tab="tab-arcade"><img src="assets/energy/40_arcade_nav.png" class="nav-3d-icon" alt="" /><span>Arcade</span></button>
+      <button class="tabbtn" data-tab="tab-energygames"><span class="nav-3d-icon nav-emoji">⚡</span><span>Energy</span></button>
+      <button class="tabbtn" data-tab="tab-rewards"><img src="assets/energy/20_gift.png" class="nav-3d-icon" alt="" /><span>Rewards</span></button>
+      <button class="tabbtn" data-tab="tab-shop"><span class="nav-3d-icon nav-emoji">🛒</span><span>Shop</span></button>
+      <button class="tabbtn" data-tab="tab-missions"><span class="nav-3d-icon nav-emoji">🚀</span><span>Missions</span></button>
+      <button class="tabbtn" data-tab="tab-energy"><img src="assets/energy/44_energy_nav.png" class="nav-3d-icon" alt="" /><span>Rank</span></button>
+      <button class="tabbtn" data-tab="tab-community"><img src="assets/energy/42_community_nav.png" class="nav-3d-icon" alt="" /><span>Community</span></button>
+      <button class="tabbtn" data-tab="tab-network"><img src="assets/energy/43_network_nav.png" class="nav-3d-icon" alt="" /><span>Network</span></button>
+      <button class="tabbtn" data-tab="tab-browser"><img src="assets/energy/41_browser_nav.png" class="nav-3d-icon" alt="" /><span>Browser</span></button>
+    </nav>
 
     <!-- Slide-out side navigation (opened by the ☰ button in the top bar) -->
     <div class="sidenav-backdrop" id="sidenavBackdrop" hidden></div>
@@ -640,8 +672,14 @@
         <button class="sidenav-item" data-tab="tab-arcade">
           <img src="assets/energy/40_arcade_nav.png" class="nav-3d-icon" alt="" /><span>Arcade</span>
         </button>
+        <button class="sidenav-item" data-tab="tab-energygames">
+          <span class="nav-3d-icon nav-emoji">⚡</span><span>Energy Games</span>
+        </button>
         <button class="sidenav-item" data-tab="tab-rewards">
           <img src="assets/energy/20_gift.png" class="nav-3d-icon" alt="" /><span>Rewards</span>
+        </button>
+        <button class="sidenav-item" data-tab="tab-shop">
+          <span class="nav-3d-icon nav-emoji">🛒</span><span>Shop</span>
         </button>
         <button class="sidenav-item" data-tab="tab-missions">
           <span class="nav-3d-icon nav-emoji">🚀</span><span>Missions</span>
@@ -872,23 +910,6 @@
       </div>
       <div id="instantMount"></div>
       <div class="game-status" id="instantStatus"></div>
-    </div>
-  </div>
-
-  <!-- Deltix Shop -->
-  <div class="modal-backdrop" id="shopModal" hidden>
-    <div class="modal game-modal shop-modal">
-      <div class="game-head">
-        <h3>🛒 Deltix Shop</h3>
-        <button class="btn ghost small" id="shopClose">✕ Close</button>
-      </div>
-      <p class="muted small-note">Spend Energy or $DLTX on avatars, themes, Energy packs and boosts. $DLTX spent recycles into the community rewards pool.</p>
-      <div class="shop-bal-row">
-        <span class="shop-bal" id="shopEnergyBal">⚡ 0 Energy</span>
-        <span class="shop-bal" id="shopDltxBal">0 $DLTX</span>
-      </div>
-      <div id="shopGrid" class="shop-grid"></div>
-      <div class="game-status" id="shopStatus"></div>
     </div>
   </div>
 

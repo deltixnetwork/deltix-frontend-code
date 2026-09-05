@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.5.6';
+const APP_VERSION = '1.5.7';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -227,6 +227,11 @@ function refreshTabContent(id) {
     loadPuzzle().catch(() => {});
   } else if (id === 'tab-network') {
     Promise.allSettled([loadChain(), loadStats()]);
+  } else if (id === 'tab-energygames') {
+    if (typeof renderInstantGames === 'function') renderInstantGames();
+    loadEnergy().then(() => { if (typeof renderInstantGames === 'function') renderInstantGames(); }).catch(() => {});
+  } else if (id === 'tab-shop') {
+    loadShop().catch(() => {});
   }
 }
 
@@ -726,6 +731,11 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSiden
 
 document.querySelectorAll('.sidenav-item').forEach((b) =>
   b.addEventListener('click', () => { showTab(b.dataset.tab); closeSidenav(); })
+);
+
+// Bottom navigation bar (two-row tab bar).
+document.querySelectorAll('.tabbtn').forEach((b) =>
+  b.addEventListener('click', () => showTab(b.dataset.tab))
 );
 
 // Swipe-left on the open drawer to dismiss it.
@@ -2436,17 +2446,11 @@ const SHOP_CAT_ORDER = ['avatar', 'theme', 'energy', 'boost'];
 let shopState = { items: [], energy: 0, sendableDltx: 0 };
 
 async function openShop() {
-  const m = $('shopModal');
-  if (!m) return;
-  m.hidden = false;
-  $('shopStatus').textContent = '';
-  $('shopGrid').innerHTML = '<p class="muted center">Loading…</p>';
-  await loadShop();
+  showTab('tab-shop');
 }
 function closeShop() { const m = $('shopModal'); if (m) m.hidden = true; }
 window.closeShop = closeShop;
 $('openShopBtn')?.addEventListener('click', openShop);
-$('shopClose')?.addEventListener('click', closeShop);
 
 async function loadShop() {
   try {

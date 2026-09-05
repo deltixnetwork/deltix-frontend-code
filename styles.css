@@ -1374,11 +1374,11 @@ button.pcard { position: relative; transition: transform .15s ease, box-shadow .
 /* Bottom Tabbar with 3D Icons */
 .tabbar {
   position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
-  width: 100%; max-width: 440px; display: flex; justify-content: space-around;
+  width: 100%; max-width: 440px; display: flex; flex-wrap: wrap; justify-content: center; row-gap: 2px;
   background: rgba(255,255,255,.96); backdrop-filter: blur(12px);
   border-top: 1px solid #dce4f3;
   box-shadow: 0 -6px 18px rgba(20, 35, 70, .08);
-  padding: 8px 0 calc(10px + env(safe-area-inset-bottom, 0px));
+  padding: 7px 0 calc(9px + env(safe-area-inset-bottom, 0px));
   z-index: 100;
   transition: bottom .2s ease;
 }
@@ -1406,8 +1406,9 @@ body.has-ad-banner .tabbar {
   border: none;
   cursor: pointer;
   padding: 4px 2px;
-  flex: 1 1 0;
-  min-width: 0;
+  flex: 1 1 16.4%;
+  min-width: 16%;
+  max-width: 18%;
   border-radius: 14px;
   transition: background .15s ease, color .15s ease;
 }
@@ -1667,11 +1668,11 @@ body.has-ad-banner .tabbar {
 
 #screen-main.active {
   display: flex;
-  padding-bottom: 28px;
+  padding-bottom: 134px;
 }
 body.has-ad-banner #screen-main.active {
-  /* Leave room so content scrolls clear of the bottom ad banner. */
-  padding-bottom: 96px;
+  /* Leave room so content scrolls clear of the two-row nav plus the bottom ad banner. */
+  padding-bottom: 188px;
 }
 
 @media (min-width: 520px) {
