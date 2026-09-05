@@ -3855,7 +3855,14 @@ function announceInstant(r) {
     });
     Promise.all([window.loadWallet?.(), window.loadTx?.()]).catch(() => {});
   } else if (r.energyAwarded > 0) {
-    try { ArcadeSound.coin(); } catch {}
+    (window.celebrate || toast)({
+      amount: r.energyAwarded,
+      unit: '⚡ Energy',
+      title: prefix + 'You won Energy!',
+      subtitle: `You now have ${r.energy} ⚡ total.`,
+      icon: '⚡',
+      duration: 2400,
+    });
   } else if (r.capped) {
     toast('You cracked a $DLTX prize — but today\u2019s reward cap is reached. Come back tomorrow!');
   } else {

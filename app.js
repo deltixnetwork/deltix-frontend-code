@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.6.1';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -3035,13 +3035,12 @@ async function completeMission() {
   const btn = $('missionActionBtn');
   if (btn) btn.disabled = true;
   try {
-    const earned = await playRewardedAd();
-    if (!earned) { toast('Ad not completed — mission not finished.'); return; }
     const r = await api('POST', '/missions/complete');
     missionState.data = r;
     renderMissions();
-    if (r.allComplete) toast('🌕 Moon landing! All 6 missions complete — claim your reward!');
+    if (r.allComplete) celebrate({ amount: 0, title: '🌕 Moon Landing!', subtitle: 'All 6 missions complete — claim your daily reward!' });
     else toast(`${r.completedMission?.name || 'Mission'} complete — ${r.progress} ✅`);
+    showRewardInterstitial();
   } catch (e) {
     if (e.data) { missionState.data = e.data; renderMissions(); }
     toast(e.message);
@@ -3058,8 +3057,6 @@ async function claimMissionReward() {
   const btn = $('missionClaimBtn');
   if (btn) btn.disabled = true;
   try {
-    const earned = await playRewardedAd();
-    if (!earned) { toast('Ad not completed — no reward claimed.'); return; }
     const r = await api('POST', '/missions/claim');
     missionState.data = r;
     const rw = r.reward || {};
