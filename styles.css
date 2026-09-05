@@ -1939,6 +1939,26 @@ html[data-dark] .ig-win { color: #7dd3fc; }
 html[data-dark] .die { color: #e2e8f0; }
 html[data-dark] .pick-item { background: linear-gradient(160deg, var(--panel) 0%, #16233f 100%); border-color: var(--border); }
 
+/* ═══════════ Deltix Shop ═══════════ */
+.shop-open-btn { width: 100%; margin: 4px 0 10px; font-weight: 800; }
+.shop-modal { max-height: 92dvh; overflow-y: auto; }
+.shop-bal-row { display: flex; justify-content: space-between; gap: 10px; margin: 8px 0 12px; }
+.shop-bal { font-weight: 800; font-size: 14px; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); padding: 5px 12px; border-radius: 999px; }
+.shop-cat { font-size: 13px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin: 14px 0 8px; }
+.shop-cat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.shop-card {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center;
+  padding: 14px 10px; border-radius: 16px; border: 1px solid var(--border);
+  background: linear-gradient(160deg, var(--panel) 0%, var(--panel-2) 100%); box-shadow: 0 2px 8px rgba(0, 0, 0, .05);
+}
+.shop-card.owned { opacity: .78; }
+.shop-emoji { font-size: 34px; line-height: 1; }
+.shop-name { font-weight: 800; font-size: 13px; color: var(--text); }
+.shop-sub { font-size: 11px; color: var(--muted); min-height: 15px; }
+.shop-buy { margin-top: 6px; width: 100%; padding: 8px; font-size: 12px; font-weight: 800; }
+html[data-dark] .shop-card { background: linear-gradient(160deg, var(--panel) 0%, #16233f 100%); border-color: var(--border); }
+html[data-dark] .shop-name { color: var(--text); }
+
 /* ═══════════ Dark themes (Midnight / Carbon / Cyber / Aurora) ═══════════ */
 html[data-dark] {
   color-scheme: dark;

@@ -446,6 +446,8 @@
           <div class="mh-text"><b id="energyHourTitle">Energy Happy Hour</b><span id="energyHourSub">2× Energy earning strikes at a surprise time each day</span></div>
         </div>
 
+        <button class="btn primary shop-open-btn" id="openShopBtn">🛒 Open Deltix Shop</button>
+
         <div class="energy-rank-card">
           <img src="assets/energy/09_soldier_shield.png" class="erc-shield-img" id="ercShield" alt="Current Energy rank" />
           <div class="erc-main">
@@ -862,6 +864,23 @@
       </div>
       <div id="instantMount"></div>
       <div class="game-status" id="instantStatus"></div>
+    </div>
+  </div>
+
+  <!-- Deltix Shop -->
+  <div class="modal-backdrop" id="shopModal" hidden>
+    <div class="modal game-modal shop-modal">
+      <div class="game-head">
+        <h3>🛒 Deltix Shop</h3>
+        <button class="btn ghost small" id="shopClose">✕ Close</button>
+      </div>
+      <p class="muted small-note">Spend Energy or $DLTX on avatars, themes, Energy packs and boosts. $DLTX spent recycles into the community rewards pool.</p>
+      <div class="shop-bal-row">
+        <span class="shop-bal" id="shopEnergyBal">⚡ 0 Energy</span>
+        <span class="shop-bal" id="shopDltxBal">0 $DLTX</span>
+      </div>
+      <div id="shopGrid" class="shop-grid"></div>
+      <div class="game-status" id="shopStatus"></div>
     </div>
   </div>
 

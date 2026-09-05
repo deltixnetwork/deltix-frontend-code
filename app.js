@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.5.4';
+const APP_VERSION = '1.5.5';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -83,6 +83,8 @@ async function api(method, path, body, { retries = method === 'GET' ? 2 : 0 } = 
       if (gameModal && !gameModal.hidden && typeof window.closeGame === 'function') window.closeGame();
       const instantModal = $('instantModal');
       if (instantModal && !instantModal.hidden && typeof window.closeInstantGame === 'function') window.closeInstantGame();
+      const shopModal = $('shopModal');
+      if (shopModal && !shopModal.hidden && typeof window.closeShop === 'function') window.closeShop();
       if (state.token) {
         clearAccountSession();
         showScreen('screen-email');
@@ -283,7 +285,7 @@ function initPullToRefresh() {
     if (!isMain || !state.token || isRefreshing) return false;
 
     // Must not have any modal/overlay open
-    const overlays = ['gameModal', 'instantModal', 'dbrowser', 'explorer', 'dappPage', 'stakeModal', 'sendModal', 'deleteModal', 'swapModal', 'dappModal'];
+    const overlays = ['gameModal', 'instantModal', 'shopModal', 'dbrowser', 'explorer', 'dappPage', 'stakeModal', 'sendModal', 'deleteModal', 'swapModal', 'dappModal'];
     for (const id of overlays) {
       const el = $(id);
       if (el && !el.hidden) return false;
@@ -1104,7 +1106,7 @@ async function loadTx(prefetched) {
       el.innerHTML = '<p class="muted center">No activity yet.</p>';
       return;
     }
-    const negatives = ['stake', 'send', 'treasury_burn', 'paid_spin_wager'];
+    const negatives = ['stake', 'send', 'treasury_burn', 'paid_spin_wager', 'shop_purchase'];
     el.innerHTML = state.txs
       .map((t, i) => {
         const neg = negatives.includes(t.type);
@@ -2424,6 +2426,80 @@ async function earnEnergy(btn) {
   }
 }
 $('energyEarnBtn')?.addEventListener('click', (e) => earnEnergy(e.currentTarget));
+
+// ---------- Deltix Shop ----------
+const SHOP_CAT_LABELS = { avatar: 'Avatars', theme: 'Themes', energy: 'Energy Packs', boost: 'Arcade Boosts' };
+const SHOP_CAT_ORDER = ['avatar', 'theme', 'energy', 'boost'];
+let shopState = { items: [], energy: 0, sendableDltx: 0 };
+
+async function openShop() {
+  const m = $('shopModal');
+  if (!m) return;
+  m.hidden = false;
+  $('shopStatus').textContent = '';
+  $('shopGrid').innerHTML = '<p class="muted center">Loading…</p>';
+  await loadShop();
+}
+function closeShop() { const m = $('shopModal'); if (m) m.hidden = true; }
+window.closeShop = closeShop;
+$('openShopBtn')?.addEventListener('click', openShop);
+$('shopClose')?.addEventListener('click', closeShop);
+
+async function loadShop() {
+  try {
+    shopState = await api('GET', '/shop');
+    renderShop();
+  } catch (e) {
+    if ($('shopGrid')) $('shopGrid').innerHTML = `<p class="muted center">${e.message}</p>`;
+  }
+}
+
+function shopPriceLabel(it) {
+  return it.currency === 'energy' ? `⚡ ${it.price}` : `${fmt(it.price)} $DLTX`;
+}
+function renderShop() {
+  $('shopEnergyBal').textContent = `⚡ ${fmt(shopState.energy)} Energy`;
+  $('shopDltxBal').textContent = `${fmt(shopState.sendableDltx)} $DLTX`;
+  const byCat = {};
+  (shopState.items || []).forEach((it) => { (byCat[it.category] = byCat[it.category] || []).push(it); });
+  $('shopGrid').innerHTML = SHOP_CAT_ORDER.filter((c) => byCat[c]).map((cat) => {
+    const cards = byCat[cat].map((it) => {
+      const disabled = it.owned || !it.affordable;
+      const label = it.owned ? 'Owned ✓' : `Buy · ${shopPriceLabel(it)}`;
+      const sub = it.category === 'energy' ? `+${it.grantEnergy} ⚡` : it.category === 'boost' ? `+${it.capBonus} cap today` : shopPriceLabel(it);
+      return `<div class="shop-card${it.owned ? ' owned' : ''}">
+        <span class="shop-emoji">${it.emoji}</span>
+        <span class="shop-name">${it.name}</span>
+        <span class="shop-sub">${sub}</span>
+        <button class="btn ${disabled ? 'ghost' : 'primary'} shop-buy" data-item="${it.id}" ${disabled ? 'disabled' : ''}>${label}</button>
+      </div>`;
+    }).join('');
+    return `<h4 class="shop-cat">${SHOP_CAT_LABELS[cat]}</h4><div class="shop-cat-grid">${cards}</div>`;
+  }).join('');
+  $('shopGrid').querySelectorAll('.shop-buy').forEach((b) =>
+    b.addEventListener('click', () => buyShopItem(b.dataset.item, b))
+  );
+}
+
+async function buyShopItem(id, btn) {
+  const it = (shopState.items || []).find((x) => x.id === id);
+  if (!it) return;
+  if (btn) btn.disabled = true;
+  try {
+    const payload = { item: id, ...(it.currency === 'dltx' ? await getIntegrityPayload() : {}) };
+    const r = await api('POST', '/shop/buy', payload);
+    await Promise.allSettled([loadShop(), loadEnergy(), loadWallet()]);
+    const msg = it.category === 'energy' ? `+${r.energyAwarded} ⚡ Energy added!`
+      : it.category === 'boost' ? 'Arcade cap boosted for today! 🏆'
+      : `${it.name} unlocked! 🎉`;
+    try { window.ArcadeSound?.reward?.(); } catch {}
+    $('shopStatus').textContent = msg;
+    toast(msg);
+  } catch (e) {
+    if (e.status !== 401) toast(e.message);
+    if (btn) btn.disabled = false;
+  }
+}
 $('energyWatchBtn')?.addEventListener('click', (e) => earnEnergy(e.currentTarget));
 document.querySelectorAll('.energy-feat').forEach((c) =>
   c.addEventListener('click', () => {
@@ -3420,6 +3496,8 @@ function closeTopOverlay() {
   if (game && !game.hidden) { window.closeGame?.(); return true; }
   const instant = document.getElementById('instantModal');
   if (instant && !instant.hidden) { window.closeInstantGame?.(); return true; }
+  const shop = document.getElementById('shopModal');
+  if (shop && !shop.hidden) { window.closeShop?.(); return true; }
   if (!$('dappPage').hidden) { closeDappPage(); return true; }
   if (!$('explorer').hidden) {
     if (exp.stack.length > 1) { exp.stack.pop(); expRender(); } else closeExplorer();
