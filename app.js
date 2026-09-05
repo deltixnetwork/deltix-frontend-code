@@ -2836,6 +2836,7 @@ $('checkinBtn')?.addEventListener('click', async () => {
 async function openMysteryBox(useEnergy) {
   const btn = useEnergy ? $('boxEnergyBtn') : $('boxBtn');
   if (btn) btn.disabled = true;
+  try { window.ArcadeSound?.unlock?.(); window.ArcadeSound?.coin?.(); } catch {}
   const vis = $('boxVisual');
   if (vis) vis.classList.add('box-shake');
   try {
@@ -2863,6 +2864,7 @@ async function runSpin(paid) {
   rewardState.spinning = true;
   rewardState.wheelMode = paid ? 'paid' : 'free';
   rewardState.wheelSegs = paid ? d.paidSpin.segments : d.spin.segments;
+  try { window.ArcadeSound?.unlock?.(); window.ArcadeSound?.tap?.(); } catch {}
   drawWheel();
   if ($('freeSpinBtn')) $('freeSpinBtn').disabled = true;
   if ($('paidSpinBtn')) $('paidSpinBtn').disabled = true;
@@ -2895,6 +2897,7 @@ document.querySelectorAll('.chest-pick').forEach((b) =>
   b.addEventListener('click', async () => {
     if (b.disabled || !rewardState.data) return;
     const pick = Number(b.dataset.pick);
+    try { window.ArcadeSound?.unlock?.(); window.ArcadeSound?.coin?.(); } catch {}
     document.querySelectorAll('.chest-pick').forEach((x) => (x.disabled = true));
     b.classList.add('picked');
     try {
