@@ -316,31 +316,18 @@
           <div class="globe-countries" id="globeCountries"><p class="muted center">Loading the world…</p></div>
         </div>
 
-        <h3 class="section-title">Country Leaderboard 🏆</h3>
-        <div class="card lb-card">
-          <div class="lb-scope">
-            <button class="lb-scope-btn active" data-lbscope="country">My country</button>
-            <button class="lb-scope-btn" data-lbscope="global">Global</button>
-          </div>
-          <div class="lb-you" id="lbYou">Play games and check in daily to climb the ranks.</div>
-          <div class="lb-list" id="lbList"><p class="muted center">Loading rankings…</p></div>
-          <div class="lb-countries-title">Countries competing 🌍</div>
-          <div class="lb-countries" id="lbCountries"></div>
-        </div>
+        <h3 class="section-title">Compete &amp; collect 🏆</h3>
+        <button class="nav-card" type="button" onclick="showTab('tab-leaderboard')">
+          <span class="nav-card-ic">🏆</span>
+          <span class="nav-card-txt"><b>Country Leaderboard</b><small>See how you rank in your country and worldwide.</small></span>
+          <span class="nav-card-arrow">›</span>
+        </button>
+        <button class="nav-card" type="button" onclick="showTab('tab-ranking')">
+          <span class="nav-card-ic">🛂</span>
+          <span class="nav-card-txt"><b>Deltix Passport</b><small>Collect loyalty medals and achievement stamps.</small></span>
+          <span class="nav-card-arrow">›</span>
+        </button>
 
-        <h3 class="section-title">Deltix Passport 🛂</h3>
-        <div class="card passport-card">
-          <div class="pp-summary">
-            <div class="pp-stat"><b id="ppStamps">0/0</b><span>Stamps</span></div>
-            <div class="pp-stat"><b id="ppMedals">0/0</b><span>Medals</span></div>
-            <div class="pp-stat"><b id="ppStreak">0</b><span>Best streak</span></div>
-          </div>
-          <div class="pp-section-label">Loyalty medals ⚡ <span class="pp-hint">Keep a daily streak to unlock</span></div>
-          <div class="pp-medals" id="ppMedalsGrid"></div>
-          <div class="pp-section-label">Achievement stamps</div>
-          <div class="pp-stamps" id="ppStampsGrid"></div>
-          <p class="pp-note">Medals &amp; stamps are non-transferable recognitions — they carry no monetary value.</p>
-        </div>
         <h3 class="section-title">Deltix DAO <span class="pill live" id="daoPill">Live</span></h3>
         <div class="feature-card">
           <div class="name">Community governance, from day one</div>
@@ -638,6 +625,38 @@
         <div class="game-status" id="shopStatus"></div>
         <ul class="disclosure"><li>$DLTX spent recycles into the community rewards pool — never burned or minted.</li></ul>
       </div>
+
+      <!-- Country Leaderboard -->
+      <div class="tab" id="tab-leaderboard">
+        <div class="showcase-banner"><div class="showcase-title">Leaderboard 🏆</div><div class="showcase-sub">Climb your country and global rankings by playing and checking in daily.</div></div>
+        <div class="card lb-card">
+          <div class="lb-scope">
+            <button class="lb-scope-btn active" data-lbscope="country">My country</button>
+            <button class="lb-scope-btn" data-lbscope="global">Global</button>
+          </div>
+          <div class="lb-you" id="lbYou">Play games and check in daily to climb the ranks.</div>
+          <div class="lb-list" id="lbList"><p class="muted center">Loading rankings…</p></div>
+          <div class="lb-countries-title">Countries competing 🌍</div>
+          <div class="lb-countries" id="lbCountries"></div>
+        </div>
+      </div>
+
+      <!-- Deltix Passport / Ranking -->
+      <div class="tab" id="tab-ranking">
+        <div class="showcase-banner"><div class="showcase-title">Deltix Passport 🛂</div><div class="showcase-sub">Earn non-transferable medals and stamps for your loyalty and achievements.</div></div>
+        <div class="card passport-card">
+          <div class="pp-summary">
+            <div class="pp-stat"><b id="ppStamps">0/0</b><span>Stamps</span></div>
+            <div class="pp-stat"><b id="ppMedals">0/0</b><span>Medals</span></div>
+            <div class="pp-stat"><b id="ppStreak">0</b><span>Best streak</span></div>
+          </div>
+          <div class="pp-section-label">Loyalty medals ⚡ <span class="pp-hint">Keep a daily streak to unlock</span></div>
+          <div class="pp-medals" id="ppMedalsGrid"></div>
+          <div class="pp-section-label">Achievement stamps</div>
+          <div class="pp-stamps" id="ppStampsGrid"></div>
+          <p class="pp-note">Medals &amp; stamps are non-transferable recognitions — they carry no monetary value.</p>
+        </div>
+      </div>
     </main>
 
     <!-- Bottom navigation (wraps to two rows) -->
@@ -689,6 +708,12 @@
         </button>
         <button class="sidenav-item" data-tab="tab-community">
           <img src="assets/energy/42_community_nav.png" class="nav-3d-icon" alt="" /><span>Community</span>
+        </button>
+        <button class="sidenav-item" data-tab="tab-leaderboard">
+          <span class="nav-3d-icon nav-emoji">🏆</span><span>Leaderboard</span>
+        </button>
+        <button class="sidenav-item" data-tab="tab-ranking">
+          <span class="nav-3d-icon nav-emoji">🛂</span><span>Passport</span>
         </button>
         <button class="sidenav-item" data-tab="tab-network">
           <img src="assets/energy/43_network_nav.png" class="nav-3d-icon" alt="" /><span>Network</span>

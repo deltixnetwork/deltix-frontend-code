@@ -1509,6 +1509,22 @@ body.has-ad-banner .tabbar {
 .gc-bar span { display: block; height: 100%; background: linear-gradient(90deg, #6366f1, #ec4899); border-radius: 4px; }
 .gc-count { flex: none; font-weight: 800; color: #1d4ed8; min-width: 40px; text-align: right; }
 
+/* ---------- Navigation entry cards ---------- */
+.nav-card {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  padding: 14px; margin-bottom: 10px; border: 1px solid var(--border, #e6eaf2);
+  border-radius: 14px; background: #fff; cursor: pointer;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, .05); transition: transform .12s ease, box-shadow .12s ease;
+}
+.nav-card:active { transform: scale(.98); }
+.nav-card-ic { flex: none; font-size: 26px; line-height: 1; }
+.nav-card-txt { flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px; }
+.nav-card-txt b { font-size: 15px; color: #0b1c3f; }
+.nav-card-txt small { font-size: 11.5px; color: #5a6b8c; }
+.nav-card-arrow { flex: none; font-size: 22px; color: #94a3b8; font-weight: 700; }
+html[data-dark] .nav-card { background: #101a30; border-color: var(--border); }
+html[data-dark] .nav-card-txt b { color: #e6edfa; }
+
 /* ---------- Country Leaderboard ---------- */
 .lb-scope { display: flex; gap: 8px; margin-bottom: 12px; }
 .lb-scope-btn {

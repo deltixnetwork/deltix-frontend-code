@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.5.7';
+const APP_VERSION = '1.5.8';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -221,7 +221,7 @@ function refreshTabContent(id) {
   } else if (id === 'tab-arcade') {
     if (typeof loadArcade === 'function') loadArcade().catch(() => {});
   } else if (id === 'tab-community') {
-    Promise.allSettled([loadGovernance(), loadReferrals(), loadGlobe(), loadLeaderboard(), loadPassport()]);
+    Promise.allSettled([loadGovernance(), loadReferrals(), loadGlobe()]);
   } else if (id === 'tab-rewards') {
     loadRewards().catch(() => {});
     loadPuzzle().catch(() => {});
@@ -232,6 +232,10 @@ function refreshTabContent(id) {
     loadEnergy().then(() => { if (typeof renderInstantGames === 'function') renderInstantGames(); }).catch(() => {});
   } else if (id === 'tab-shop') {
     loadShop().catch(() => {});
+  } else if (id === 'tab-leaderboard') {
+    loadLeaderboard().catch(() => {});
+  } else if (id === 'tab-ranking') {
+    loadPassport().catch(() => {});
   }
 }
 
@@ -250,7 +254,11 @@ async function refreshCurrentView({ isPull = false, silent = false } = {}) {
   } else if (activeTab === 'tab-stake') {
     tasks.push(loadStakes(), loadValidators());
   } else if (activeTab === 'tab-community') {
-    tasks.push(loadGovernance(), loadReferrals(), loadGlobe(), loadLeaderboard(), loadPassport());
+    tasks.push(loadGovernance(), loadReferrals(), loadGlobe());
+  } else if (activeTab === 'tab-leaderboard') {
+    tasks.push(loadLeaderboard());
+  } else if (activeTab === 'tab-ranking') {
+    tasks.push(loadPassport());
   } else if (activeTab === 'tab-arcade') {
     if (typeof loadArcade === 'function') tasks.push(loadArcade());
   } else if (activeTab === 'tab-network') {
