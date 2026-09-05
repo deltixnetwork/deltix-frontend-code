@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.6.1';
+const APP_VERSION = '1.6.2';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -430,8 +430,10 @@ function celebrate(opts = {}) {
   } = opts;
 
   // Nothing worth celebrating — keep the plain toast for zero/failed payouts.
+  // A milestone (e.g. a rank-up) still pops the full card, just without a number.
   const value = Number(amount) || 0;
-  if (value <= 0) {
+  const milestone = opts.milestone === true;
+  if (value <= 0 && !milestone) {
     if (subtitle || title) toast(subtitle || title);
     return;
   }
@@ -463,7 +465,7 @@ function celebrate(opts = {}) {
     <div class="rp-card" role="document">
       <div class="rp-badge"><span class="rp-icon">${icon}</span></div>
       <div class="rp-title">${title}</div>
-      <div class="rp-amount"><span class="rp-plus">+</span><span class="rp-num">0</span> <small>${unit}</small></div>
+      ${milestone ? '' : `<div class="rp-amount"><span class="rp-plus">+</span><span class="rp-num">0</span> <small>${unit}</small></div>`}
       <div class="rp-sub"${subtitle ? '' : ' hidden'}>${subtitle}</div>
       <button class="rp-close" type="button">Awesome</button>
     </div>`;
@@ -472,15 +474,17 @@ function celebrate(opts = {}) {
 
   // Count-up animation on the amount for a rewarding reveal.
   const numEl = pop.querySelector('.rp-num');
-  const start = performance.now();
-  const runUp = 700;
-  (function tick(now) {
-    const p = Math.min(1, (now - start) / runUp);
-    const eased = 1 - Math.pow(1 - p, 3);
-    numEl.textContent = fmt(value * eased);
-    if (p < 1) requestAnimationFrame(tick);
-    else numEl.textContent = fmt(value);
-  })(start);
+  if (numEl) {
+    const start = performance.now();
+    const runUp = 700;
+    (function tick(now) {
+      const p = Math.min(1, (now - start) / runUp);
+      const eased = 1 - Math.pow(1 - p, 3);
+      numEl.textContent = fmt(value * eased);
+      if (p < 1) requestAnimationFrame(tick);
+      else numEl.textContent = fmt(value);
+    })(start);
+  }
 
   const close = () => {
     clearTimeout(rewardPopTimer);
@@ -605,6 +609,8 @@ function resetAccountUI() {
   state.address = null;
   state.balances = null;
   state.energy = null;
+  lastRankIndex = null;
+  clearTimeout(rankUpTimer);
 
   const setText = (id, text) => { const el = $(id); if (el) el.textContent = text; };
   const setHtml = (id, html) => { const el = $(id); if (el) el.innerHTML = html; };
@@ -2258,6 +2264,9 @@ function rankForEnergy(e) {
   for (let i = ENERGY_RANKS.length - 1; i >= 0; i--) if (e >= ENERGY_RANKS[i].min) return { rank: ENERGY_RANKS[i], index: i };
   return { rank: ENERGY_RANKS[0], index: 0 };
 }
+// Tracks the last Energy rank we've shown so a rank-up pops a celebration once.
+let lastRankIndex = null;
+let rankUpTimer = null;
 
 // ---- Energy + cosmetic ownership live on the account, not the device ----
 // Held server-side so a rank survives a reinstall or a new phone and cannot be
@@ -2384,6 +2393,23 @@ function renderEnergy() {
   const opened = unlockedGames().length;
   set('efGamesSub', opened >= 5 ? 'All 5 bonus games unlocked ✅' : `${opened}/5 unlocked · spend Energy in the Arcade`);
   applyEnergyHour(state.energy?.happyHour);
+
+  // Celebrate reaching a new Energy rank — non-monetary status recognition.
+  // First render sets the baseline; later increases pop a rank-up card.
+  if (state.energy) {
+    if (lastRankIndex !== null && index > lastRankIndex) {
+      const rk = ENERGY_RANKS[index];
+      clearTimeout(rankUpTimer);
+      rankUpTimer = setTimeout(() => celebrate({
+        milestone: true,
+        title: 'Rank Up! 🎖️',
+        subtitle: `You reached ${rk.name}`,
+        icon: '⚡',
+        duration: 3400,
+      }), 900);
+    }
+    lastRankIndex = index;
+  }
 }
 
 // ---- Energy Happy Hour — one 2× Energy window per day (mirrors Deltix Hour) ----
