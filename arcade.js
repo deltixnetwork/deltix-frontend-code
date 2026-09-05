@@ -462,9 +462,7 @@ function maybeShowInterstitial() {
   if (gamesSinceInterstitial < 2 || !cooledDown) return;
   gamesSinceInterstitial = 0;
   lastInterstitialAt = Date.now();
-  AdMob.prepareInterstitial({ adId: ADMOB_INTERSTITIAL_ID, isTesting: ADMOB_TESTING })
-    .then(() => AdMob.showInterstitial())
-    .catch(() => {});
+  showPreloadedInterstitial();
 }
 
 // ---------- shared helpers ----------

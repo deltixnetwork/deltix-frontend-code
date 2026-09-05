@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.6.3';
+const APP_VERSION = '1.6.4';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -2128,6 +2128,14 @@ window.ADS_ENABLED = ADS_ENABLED;
 let adsReady = false;
 let gamesSinceInterstitial = 0;
 let lastInterstitialAt = 0;
+// Interstitial/rewarded ads are PRELOADED ahead of time so the moment a game
+// ends (or a reward action fires) the ad is already cached and shows
+// instantly — requesting the ad on-demand (the old pattern) meant a live
+// ad-network round-trip delay right when the user expected something to happen.
+let interstitialLoading = false;
+let interstitialLoaded = false;
+let rewardedLoading = false;
+let rewardedLoaded = false;
 
 async function initAds() {
   try {
@@ -2148,9 +2156,49 @@ async function initAds() {
     }
     await AdMob.initialize({ initializeForTesting: ADMOB_TESTING });
     adsReady = true;
+    preloadInterstitial();
+    preloadRewardedAd();
   } catch {
     /* ads are never allowed to break the app */
   }
+}
+
+/** Fetches the next interstitial in the background so it's cached before it's needed. */
+function preloadInterstitial() {
+  if (!ADS_ENABLED || interstitialLoading || interstitialLoaded) return;
+  const cap = window.Capacitor;
+  const AdMob = cap && cap.Plugins && cap.Plugins.AdMob;
+  if (!cap || !cap.isNativePlatform || !cap.isNativePlatform() || !AdMob) return;
+  interstitialLoading = true;
+  AdMob.prepareInterstitial({ adId: ADMOB_INTERSTITIAL_ID, isTesting: ADMOB_TESTING })
+    .then(() => { interstitialLoading = false; interstitialLoaded = true; })
+    .catch(() => { interstitialLoading = false; interstitialLoaded = false; });
+}
+
+/** Shows the already-preloaded interstitial instantly. If the preload hasn't
+ *  landed yet, this impression is skipped rather than making the user wait. */
+function showPreloadedInterstitial() {
+  const cap = window.Capacitor;
+  const AdMob = cap && cap.Plugins && cap.Plugins.AdMob;
+  if (!cap || !cap.isNativePlatform || !cap.isNativePlatform() || !AdMob) return;
+  if (!interstitialLoaded) { preloadInterstitial(); return; }
+  interstitialLoaded = false;
+  AdMob.showInterstitial().catch(() => {});
+  preloadInterstitial(); // start fetching the next one right away
+}
+window.showPreloadedInterstitial = showPreloadedInterstitial;
+
+/** Fetches the next rewarded ad in the background; opt-in taps fall back to
+ *  a fresh load only when the preload hasn't landed yet. */
+function preloadRewardedAd() {
+  if (!ADS_ENABLED || rewardedLoading || rewardedLoaded) return;
+  const cap = window.Capacitor;
+  const AdMob = cap && cap.Plugins && cap.Plugins.AdMob;
+  if (!cap || !cap.isNativePlatform || !cap.isNativePlatform() || !AdMob) return;
+  rewardedLoading = true;
+  AdMob.prepareRewardVideoAd({ adId: ADMOB_REWARDED_ID, isTesting: ADMOB_TESTING })
+    .then(() => { rewardedLoading = false; rewardedLoaded = true; })
+    .catch(() => { rewardedLoading = false; rewardedLoaded = false; });
 }
 
 /** Banner is placed cleanly across all tabs, fitting neatly between the header and the raised footer tab bar. */
@@ -2694,9 +2742,7 @@ function showRewardInterstitial() {
   if (!cap || !cap.isNativePlatform || !cap.isNativePlatform() || !AdMob) return;
   if (Date.now() - lastRewardInterstitial < 40000) return; // stay inside AdMob limits
   lastRewardInterstitial = Date.now();
-  AdMob.prepareInterstitial({ adId: ADMOB_INTERSTITIAL_ID, isTesting: ADMOB_TESTING })
-    .then(() => AdMob.showInterstitial())
-    .catch(() => {});
+  showPreloadedInterstitial();
 }
 
 async function loadRewards() {
@@ -3623,13 +3669,25 @@ function playRewardedAd() {
       let earned = false, settled = false;
       let handles = [];
       const cleanup = () => handles.forEach((h) => h?.remove?.());
-      const finish = (val) => { if (settled) return; settled = true; cleanup(); resolve(val); };
+      const finish = (val) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        rewardedLoaded = false;
+        preloadRewardedAd(); // start fetching the next one right away
+        resolve(val);
+      };
       Promise.all([
         AdMob.addListener('onRewardedVideoAdReward', () => { earned = true; }),
         AdMob.addListener('onRewardedVideoAdDismissed', () => finish(earned)),
         AdMob.addListener('onRewardedVideoAdFailedToShow', () => finish(false)),
       ]).then((hs) => { handles = hs; });
-      AdMob.prepareRewardVideoAd({ adId: ADMOB_REWARDED_ID, isTesting: ADMOB_TESTING })
+      // Already preloaded → shows instantly; otherwise falls back to a fresh
+      // load (only this one ad is delayed — the next one will be ready).
+      const ready = rewardedLoaded
+        ? Promise.resolve()
+        : AdMob.prepareRewardVideoAd({ adId: ADMOB_REWARDED_ID, isTesting: ADMOB_TESTING });
+      ready
         .then(() => AdMob.showRewardVideoAd())
         .then((item) => { if (item) earned = true; }) // showRewardVideoAd resolves with the reward item
         .catch(() => finish(false));
