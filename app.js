@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.5.9';
+const APP_VERSION = '1.6.0';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -2860,12 +2860,12 @@ async function openMysteryBox(useEnergy) {
   if (vis) vis.classList.add('box-shake');
   try {
     const r = await api('POST', '/rewards/mystery-box', { useEnergy: !!useEnergy });
-    if (vis) { vis.classList.remove('box-shake'); vis.textContent = '🎉'; }
+    if (vis) { vis.classList.remove('box-shake'); vis.classList.add('opened'); }
     if (r.capped) toast('Box opened — daily $DLTX cap reached. Try again tomorrow!');
     else celebrate({ amount: r.reward, title: 'Mystery Box Opened!', subtitle: 'You found a $DLTX reward inside.', icon: '📦' });
     await Promise.allSettled([loadRewards(), loadWallet(), loadEnergy(), loadTx()]);
     showRewardInterstitial();
-    setTimeout(() => { if (vis) vis.textContent = '📦'; }, 1600);
+    setTimeout(() => { if (vis) vis.classList.remove('opened'); }, 1800);
   } catch (e) {
     if (vis) vis.classList.remove('box-shake');
     toast(e.message);

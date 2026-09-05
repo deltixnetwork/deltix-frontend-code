@@ -514,7 +514,16 @@
             <div><div class="reward-title">Mystery Box</div>
             <div class="reward-sub" id="boxSub">Open a box every 12 hours for a $DLTX surprise.</div></div>
           </div>
-          <div class="box-visual" id="boxVisual">📦</div>
+          <div class="box-visual" id="boxVisual">
+            <div class="mbox" aria-hidden="true">
+              <div class="mbox-rays"></div>
+              <div class="mbox-body">
+                <div class="mbox-base"></div>
+                <div class="mbox-lid"></div>
+              </div>
+              <div class="mbox-gem">💎</div>
+            </div>
+          </div>
           <div class="reward-actions">
             <button class="btn primary reward-btn" id="boxBtn">Open box</button>
             <button class="btn ghost reward-btn" id="boxEnergyBtn">Extra box · 10 ⚡</button>
@@ -528,6 +537,8 @@
             <div class="reward-sub" id="spinSub">Free spin every 12 hours — win Energy or $DLTX.</div></div>
           </div>
           <div class="wheel-wrap">
+            <div class="wheel-buddy left" aria-hidden="true">🦊</div>
+            <div class="wheel-buddy right" aria-hidden="true">🤖</div>
             <div class="wheel-pointer"></div>
             <canvas id="spinWheel" width="300" height="300"></canvas>
             <div class="wheel-hub">Δ</div>
@@ -585,6 +596,12 @@
         <div class="showcase-banner missions-showcase">
           <div class="showcase-title">Deltix Missions 🚀</div>
           <div class="showcase-sub">A new mission unlocks every 4 hours. Journey from the city to the Moon — complete all six for a daily reward.</div>
+        </div>
+
+        <div class="mission-scene" aria-hidden="true">
+          <div class="ms-stars"></div>
+          <div class="ms-moon"></div>
+          <div class="ms-rocket">🚀</div>
         </div>
 
         <div class="mission-path" id="missionPath"></div>

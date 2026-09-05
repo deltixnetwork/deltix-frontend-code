@@ -1451,19 +1451,68 @@ body.has-ad-banner .tabbar {
 .btn.gold:disabled { opacity: .5; }
 .checkin-streak { font-size: 13px; font-weight: 700; color: #ea580c; margin-bottom: 8px; }
 .box-visual {
-  font-size: 64px; text-align: center; margin: 4px 0 8px; line-height: 1;
-  filter: drop-shadow(0 6px 10px rgba(20,35,70,.18));
+  position: relative; height: 104px; margin: 4px 0 10px;
+  display: flex; align-items: center; justify-content: center;
 }
-.box-visual.box-shake { animation: boxShake .5s ease-in-out infinite; }
+.mbox { position: relative; width: 94px; height: 86px; }
+.box-visual.box-shake .mbox { animation: boxShake .5s ease-in-out infinite; }
 @keyframes boxShake {
   0%,100% { transform: rotate(0) scale(1); }
   25% { transform: rotate(-9deg) scale(1.05); }
   75% { transform: rotate(9deg) scale(1.05); }
 }
+.mbox-body { position: absolute; inset: 0; filter: drop-shadow(0 7px 11px rgba(20,35,70,.22)); }
+.mbox-base {
+  position: absolute; bottom: 0; left: 0; right: 0; height: 54px; border-radius: 9px 9px 11px 11px;
+  background: linear-gradient(#b45309, #7c3a06); border: 2px solid #f59e0b;
+  box-shadow: inset 0 6px 10px rgba(255,220,150,.4);
+}
+.mbox-base::after {
+  content: ''; position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  width: 16px; height: 16px; border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #fde68a, #b45309); border: 2px solid #78350f;
+}
+.mbox-lid {
+  position: absolute; top: 0; left: -2px; right: -2px; height: 34px; border-radius: 11px 11px 4px 4px;
+  background: linear-gradient(#d97706, #b45309); border: 2px solid #fbbf24;
+  transform-origin: bottom center; transition: transform .5s cubic-bezier(.2,1.3,.5,1);
+  box-shadow: inset 0 4px 8px rgba(255,220,150,.5);
+}
+.mbox-lid::after {
+  content: ''; position: absolute; top: 9px; left: 50%; transform: translateX(-50%);
+  width: 22px; height: 8px; border-radius: 4px; background: rgba(255,235,190,.6);
+}
+.mbox-gem {
+  position: absolute; top: 14px; left: 50%; transform: translate(-50%,0) scale(0); opacity: 0;
+  font-size: 30px; transition: transform .45s cubic-bezier(.2,1.4,.5,1) .08s, opacity .3s ease .08s;
+}
+.mbox-rays {
+  position: absolute; top: 34%; left: 50%; width: 130px; height: 130px;
+  transform: translate(-50%,-50%) scale(.5); opacity: 0; z-index: 0; border-radius: 50%;
+  background: conic-gradient(rgba(251,191,36,0) 0deg, rgba(251,191,36,.4) 18deg, rgba(251,191,36,0) 36deg,
+    rgba(251,191,36,0) 54deg, rgba(251,191,36,.4) 72deg, rgba(251,191,36,0) 90deg,
+    rgba(251,191,36,0) 108deg, rgba(251,191,36,.4) 126deg, rgba(251,191,36,0) 144deg,
+    rgba(251,191,36,0) 162deg, rgba(251,191,36,.4) 180deg, rgba(251,191,36,0) 198deg,
+    rgba(251,191,36,0) 216deg, rgba(251,191,36,.4) 234deg, rgba(251,191,36,0) 252deg,
+    rgba(251,191,36,0) 270deg, rgba(251,191,36,.4) 288deg, rgba(251,191,36,0) 306deg,
+    rgba(251,191,36,0) 324deg, rgba(251,191,36,.4) 342deg, rgba(251,191,36,0) 360deg);
+  transition: opacity .35s ease;
+}
+.box-visual.opened .mbox-lid { transform: rotate(-62deg) translateY(-1px); }
+.box-visual.opened .mbox-gem { transform: translate(-50%,-24px) scale(1); opacity: 1; }
+.box-visual.opened .mbox-rays { opacity: .9; animation: mboxSpin 7s linear infinite; }
+@keyframes mboxSpin { to { transform: translate(-50%,-50%) scale(.5) rotate(360deg); } }
 
 /* Fortune wheel */
 .wheel-wrap { position: relative; width: 300px; max-width: 100%; margin: 6px auto 10px; aspect-ratio: 1; }
 .wheel-wrap canvas { width: 100%; height: 100%; display: block; border-radius: 50%; box-shadow: 0 8px 22px rgba(20,35,70,.22); }
+.wheel-buddy {
+  position: absolute; bottom: 2px; font-size: 34px; z-index: 4; line-height: 1;
+  filter: drop-shadow(0 4px 6px rgba(20,35,70,.28)); animation: buddyBob 2.4s ease-in-out infinite;
+}
+.wheel-buddy.left { left: -8px; }
+.wheel-buddy.right { right: -8px; animation-delay: 1.2s; }
+@keyframes buddyBob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
 .wheel-pointer {
   position: absolute; top: -4px; left: 50%; transform: translateX(-50%);
   width: 0; height: 0; border-left: 13px solid transparent; border-right: 13px solid transparent;
@@ -2149,6 +2198,45 @@ html[data-dark] .ppm-name, html[data-dark] .pps-name { color: #cfdcf3; }
 /* ---------- Deltix Missions ---------- */
 .missions-showcase { background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 55%, #7c3aed 100%); color: #fff; }
 .missions-showcase .showcase-title, .missions-showcase .showcase-sub { color: #fff; }
+
+.mission-scene {
+  position: relative; height: 96px; margin: 10px 0 4px; border-radius: 14px; overflow: hidden;
+  background: radial-gradient(130% 150% at 50% 130%, #1e293b 0%, #0b1220 72%);
+  box-shadow: inset 0 0 0 1px rgba(148,163,184,.12);
+}
+.ms-stars {
+  position: absolute; inset: 0; opacity: .9;
+  background-image:
+    radial-gradient(1.4px 1.4px at 18% 32%, #fff, transparent),
+    radial-gradient(1.4px 1.4px at 58% 52%, #cbd5e1, transparent),
+    radial-gradient(1.4px 1.4px at 82% 22%, #fff, transparent),
+    radial-gradient(1.4px 1.4px at 33% 72%, #e2e8f0, transparent),
+    radial-gradient(1.4px 1.4px at 92% 66%, #fff, transparent),
+    radial-gradient(1.4px 1.4px at 70% 82%, #cbd5e1, transparent);
+  animation: msTwinkle 3.5s ease-in-out infinite;
+}
+@keyframes msTwinkle { 0%,100% { opacity: .9; } 50% { opacity: .55; } }
+.ms-moon {
+  position: absolute; top: 12px; right: 22px; width: 44px; height: 44px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fef9c3, #fde68a 45%, #d4a017 100%);
+  box-shadow: 0 0 18px rgba(253,224,71,.5), inset -6px -6px 0 rgba(0,0,0,.08);
+}
+.ms-moon::before, .ms-moon::after { content: ''; position: absolute; border-radius: 50%; background: rgba(120,72,10,.22); }
+.ms-moon::before { width: 9px; height: 9px; top: 11px; left: 10px; }
+.ms-moon::after { width: 6px; height: 6px; bottom: 10px; left: 22px; box-shadow: 7px -5px 0 rgba(120,72,10,.16); }
+.ms-rocket {
+  position: absolute; left: 10px; bottom: 8px; font-size: 30px;
+  filter: drop-shadow(0 3px 5px rgba(0,0,0,.4)); animation: msFly 6s ease-in-out infinite;
+}
+@keyframes msFly {
+  0% { transform: translate(0,0) rotate(0); }
+  45% { transform: translate(140px,-44px) rotate(14deg); }
+  55% { transform: translate(140px,-44px) rotate(14deg); }
+  100% { transform: translate(0,0) rotate(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ms-rocket, .ms-stars, .wheel-buddy, .box-visual.opened .mbox-rays { animation: none; }
+}
 
 .mission-path {
   display: flex; align-items: center; justify-content: space-between;
