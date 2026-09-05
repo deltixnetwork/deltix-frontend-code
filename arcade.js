@@ -3856,12 +3856,10 @@ function announceInstant(r) {
     Promise.all([window.loadWallet?.(), window.loadTx?.()]).catch(() => {});
   } else if (r.energyAwarded > 0) {
     try { ArcadeSound.coin(); } catch {}
-    toast(`${prefix}+${r.energyAwarded} ⚡ Energy! You now have ${r.energy} ⚡.`);
   } else if (r.capped) {
     toast('You cracked a $DLTX prize — but today\u2019s reward cap is reached. Come back tomorrow!');
   } else {
     try { ArcadeSound.lose(); } catch {}
-    toast('Try again! Better luck on the next tap.');
   }
   const status = gel('instantStatus');
   if (status) {
@@ -3870,7 +3868,6 @@ function announceInstant(r) {
     if (r.energyAwarded > 0) parts.push(`+${r.energyAwarded} ⚡`);
     status.textContent = parts.length ? `Result: ${parts.join(' · ')}` : 'No prize this time — try again!';
   }
-  if (window.loadEnergy) window.loadEnergy().catch(() => {});
 }
 
 /** A shimmering blue Deltix diamond, drawn inline (no image dependency). */
@@ -3947,7 +3944,7 @@ function renderSmash(mount, g) {
       btn.textContent = `↻ Smash again — ⚡ ${g.cost}`;
       btn.disabled = false;
       instantBusy = false;
-    }, 620);
+    }, 440);
   }
   btn.addEventListener('click', smash);
 }
@@ -3974,7 +3971,7 @@ function instantButtonGame(mount, id, g, hooks) {
     try { ArcadeSound.tap(); } catch {}
     const r = await playInstant(id, g);
     if (!r) { instantBusy = false; btn.disabled = false; return; }
-    const delay = (hooks.reveal && hooks.reveal(stage, r)) || 500;
+    const delay = (hooks.reveal && hooks.reveal(stage, r)) || 380;
     setTimeout(() => {
       rewardEl.innerHTML = instantRewardLabel(r);
       rewardEl.hidden = false;
@@ -4027,7 +4024,7 @@ function instantPickGame(mount, id, g, { count, emoji, itemClass, instruction, a
       instr.textContent = againText;
       items.forEach((b) => (b.disabled = false));
       instantBusy = false;
-    }, 520);
+    }, 400);
   }
   items.forEach((b) => b.addEventListener('click', () => pick(b)));
 }

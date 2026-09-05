@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.5.8';
+const APP_VERSION = '1.5.9';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -2438,7 +2438,14 @@ async function earnEnergy(btn) {
     state.energy = r;
     renderEnergy();
     const gained = Number(r.earned) || 1;
-    toast(r.happyHour?.active ? `+${gained} Energy ⚡ (Happy Hour ${r.happyHour.multiplier}×!)` : `+${gained} Energy ⚡`);
+    celebrate({
+      amount: gained,
+      unit: 'Energy',
+      icon: '⚡',
+      title: r.happyHour?.active ? `Happy Hour ${r.happyHour.multiplier}× Energy!` : 'Energy earned!',
+      subtitle: `You now have ${fmt(r.energy)} ⚡ total.`,
+      duration: 2600,
+    });
   } catch (e) {
     if (e.data) { state.energy = e.data; renderEnergy(); }
     toast(e.message);
