@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.5.1';
+const APP_VERSION = '1.5.2';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -730,16 +730,17 @@ async function enterApp() {
     if (state.email) localStorage.setItem('dltx_email', state.email);
   }
   renderProfile();
-  // Load only what the home (Wallet) screen and profile actually show. Every
-  // other tab loads its own data when first opened (see refreshTabContent), so
-  // there's no need to fire a dozen database-backed requests at once on launch —
-  // that burst was a big part of the slow first load and server strain.
+  // One-request startup: /bootstrap returns wallet + stats + tx + referrals +
+  // energy in a single round-trip. Each loader falls back to its own request
+  // for any missing part (and on older backends without /bootstrap), so this is
+  // both faster and backward-compatible.
+  const boot = await api('GET', '/bootstrap').catch(() => null);
   await Promise.allSettled([
-    loadWallet(),
-    loadStats(),
-    loadTx(),
-    loadReferrals(),
-    loadEnergy(),
+    loadWallet(boot?.wallet),
+    loadStats(boot?.stats),
+    loadTx(boot?.transactions),
+    loadReferrals(boot?.referrals),
+    loadEnergy(boot?.energy),
   ]);
   if (typeof checkMysteryHour === 'function') checkMysteryHour();
 }
@@ -906,9 +907,9 @@ function getValidatorShield(name, index = 0) {
   return colors[index % colors.length];
 }
 
-async function loadWallet() {
+async function loadWallet(prefetched) {
   try {
-    const w = await api('GET', '/wallet');
+    const w = prefetched || await api('GET', '/wallet');
     state.address = w.address;
     state.balances = w;
     renderBalances();
@@ -955,9 +956,9 @@ $('privacyToggle')?.addEventListener('click', (e) => {
   toast(state.hideBalances ? 'Balances hidden' : 'Balances visible');
 });
 
-async function loadStats() {
+async function loadStats(prefetched) {
   try {
-    const s = await api('GET', '/network/stats');
+    const s = prefetched || await api('GET', '/network/stats');
     const g = $('statsGrid');
     const items = [
       ['Consensus', 'DPoS'],
@@ -1074,9 +1075,9 @@ async function loadStakes() {
   }
 }
 
-async function loadTx() {
+async function loadTx(prefetched) {
   try {
-    const r = await api('GET', '/wallet/transactions');
+    const r = prefetched || await api('GET', '/wallet/transactions');
     state.txs = r.transactions || [];
     const el = $('txList');
     if (!el) return;
@@ -1107,9 +1108,9 @@ async function loadTx() {
 }
 
 // ---------- Referrals + Ambassador program ----------
-async function loadReferrals() {
+async function loadReferrals(prefetched) {
   try {
-    const r = await api('GET', '/referrals');
+    const r = prefetched || await api('GET', '/referrals');
 
     // Referral code + copy
     const codeEl = $('myRefCode');
@@ -2243,11 +2244,11 @@ function legacyEnergyPayload() {
 // concurrent calls from double-running the one-time migration, which would
 // otherwise double-credit or clobber the account's Energy on first login.
 let _energyLoad = null;
-async function loadEnergy() {
+async function loadEnergy(prefetched) {
   if (_energyLoad) return _energyLoad;
   _energyLoad = (async () => {
     try {
-      let e = await api('GET', '/energy');
+      let e = prefetched || await api('GET', '/energy');
       const legacy = legacyEnergyPayload();
       if (!e.migrated && legacy) {
         const r = await api('POST', '/energy/migrate', legacy).catch(() => null);
