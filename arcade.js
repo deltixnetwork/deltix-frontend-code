@@ -72,6 +72,8 @@ const ArcadeSound = (() => {
   let musicTimer = null;
   let musicStep = 0;
   let unlocked = false;
+  // Global mute — remembered per device so the choice survives reloads.
+  let muted = (() => { try { return localStorage.getItem('dltx_muted') === '1'; } catch { return false; } })();
   const melody = [262, 330, 392, 523, 440, 392, 330, 294];
   function context() {
     if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -95,6 +97,7 @@ const ArcadeSound = (() => {
     } catch { /* audio is optional */ }
   }
   function tone(freq, duration, type = 'sine', gain = 0.045, delay = 0) {
+    if (muted) return;
     try {
       const audio = context();
       const start = audio.currentTime + delay;
@@ -114,6 +117,7 @@ const ArcadeSound = (() => {
   }
   function startMusic() {
     if (musicTimer) return;
+    if (muted) return;
     musicStep = 0;
     musicTimer = setInterval(() => {
       const root = melody[musicStep % melody.length];
@@ -128,8 +132,15 @@ const ArcadeSound = (() => {
     clearInterval(musicTimer);
     musicTimer = null;
   }
+  function setMuted(v) {
+    muted = !!v;
+    try { localStorage.setItem('dltx_muted', muted ? '1' : '0'); } catch { /* storage optional */ }
+    if (muted) stopMusic();
+  }
   return {
     unlock,
+    setMuted,
+    isMuted: () => muted,
     tap: () => tone(520, 0.055, 'triangle', 0.028),
     start: () => { tone(392, 0.08, 'triangle'); tone(588, 0.1, 'triangle', 0.045, 0.08); },
     win: () => { tone(523, 0.09, 'sine'); tone(659, 0.09, 'sine', 0.045, 0.09); tone(784, 0.16, 'sine', 0.05, 0.18); },

@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.5.3';
+const APP_VERSION = '1.5.4';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -475,6 +475,25 @@ function celebrate(opts = {}) {
   rewardPopTimer = setTimeout(close, duration);
 }
 window.celebrate = celebrate;
+
+// ---- Sound on/off toggle (topbar) — remembered per device ----
+function updateSoundBtn() {
+  const b = document.getElementById('soundBtn');
+  if (!b || !window.ArcadeSound?.isMuted) return;
+  const m = window.ArcadeSound.isMuted();
+  b.textContent = m ? '🔇' : '🔊';
+  b.classList.toggle('muted', m);
+  b.title = m ? 'Sound off — tap to unmute' : 'Sound on — tap to mute';
+}
+document.getElementById('soundBtn')?.addEventListener('click', () => {
+  if (!window.ArcadeSound?.setMuted) return;
+  const willMute = !window.ArcadeSound.isMuted();
+  window.ArcadeSound.setMuted(willMute);
+  if (!willMute) { window.ArcadeSound.unlock?.(); window.ArcadeSound.coin?.(); } // confirmation blip on unmute
+  updateSoundBtn();
+  toast(willMute ? 'Sound off 🔇' : 'Sound on 🔊');
+});
+updateSoundBtn();
 
 // ---------- Auth flow ----------
 // Separate Sign in / Sign up paths: sign-up collects the referral code and the

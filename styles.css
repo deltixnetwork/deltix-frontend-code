@@ -16,6 +16,7 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
+button, a, .tabbtn, .game-card, .instant-card, .pick-item { touch-action: manipulation; }
 
 body {
   font-family: "Segoe UI", "Trebuchet MS", sans-serif;
@@ -24,6 +25,8 @@ body {
   display: flex;
   justify-content: center;
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .phone {
@@ -632,20 +635,32 @@ body.has-gameover-ad #gameMount { padding-bottom: 270px; }
 .reward-pop.show { opacity: 1; }
 .reward-pop.hide { opacity: 0; }
 .rp-card {
-  position: relative; width: 100%; max-width: 320px; text-align: center;
-  background: linear-gradient(180deg, #ffffff 0%, #f4f8ff 100%);
-  border: 1px solid rgba(59, 130, 246, .18); border-radius: 24px;
-  padding: 28px 24px 22px; box-shadow: 0 24px 60px rgba(16, 24, 40, .35);
-  transform: translateY(14px) scale(.92); opacity: 0;
-  transition: transform .32s cubic-bezier(.2, 1.3, .4, 1), opacity .22s ease;
+  position: relative; width: 100%; max-width: 328px; text-align: center;
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(79, 140, 255, .14), transparent 60%),
+    linear-gradient(180deg, #ffffff 0%, #f2f7ff 100%);
+  border: 1px solid rgba(59, 130, 246, .22); border-radius: 26px;
+  padding: 30px 24px 22px; overflow: hidden;
+  box-shadow: 0 30px 70px rgba(16, 24, 40, .40), inset 0 2px 0 rgba(255, 255, 255, .6);
+  transform: translateY(14px) scale(.92); opacity: 0; will-change: transform, opacity;
+  transition: transform .34s cubic-bezier(.2, 1.3, .4, 1), opacity .22s ease;
+}
+.rp-card::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+  background: linear-gradient(90deg, #22c55e, #2563eb, #7c3aed);
 }
 .reward-pop.show .rp-card { transform: translateY(0) scale(1); opacity: 1; }
 .rp-badge {
-  width: 84px; height: 84px; margin: 0 auto 14px; border-radius: 50%;
+  position: relative; width: 88px; height: 88px; margin: 4px auto 16px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  background: radial-gradient(circle at 30% 25%, #6ea8ff, #2563eb);
-  box-shadow: 0 10px 26px rgba(37, 99, 235, .45), inset 0 0 0 4px rgba(255, 255, 255, .25);
+  background: radial-gradient(circle at 32% 26%, #7db0ff, #2563eb 72%);
+  box-shadow: 0 12px 30px rgba(37, 99, 235, .5), inset 0 0 0 4px rgba(255, 255, 255, .28), inset 0 -6px 12px rgba(0, 0, 0, .15);
   animation: rewardBadgePop .5s cubic-bezier(.2, 1.6, .4, 1) both;
+}
+.rp-badge::after {
+  content: ""; position: absolute; inset: -6px; border-radius: 50%;
+  border: 2px solid rgba(79, 140, 255, .5); will-change: transform, opacity;
+  animation: rpHalo 1.8s ease-out infinite;
 }
 .rp-icon { font-size: 42px; line-height: 1; animation: rewardIconWiggle 1.6s ease-in-out .3s infinite; }
 .rp-title { font-size: 18px; font-weight: 800; color: #0f172a; letter-spacing: -.2px; }
@@ -657,15 +672,16 @@ body.has-gameover-ad #gameMount { padding-bottom: 270px; }
 .rp-amount small { font-size: 15px; font-weight: 700; color: #64748b; }
 .rp-sub { font-size: 13px; color: #64748b; margin: 2px 4px 0; }
 .rp-close {
-  margin-top: 18px; width: 100%; padding: 12px; border: none; border-radius: 14px;
+  margin-top: 20px; width: 100%; padding: 13px; border: none; border-radius: 15px;
   background: linear-gradient(90deg, #2563eb, #4f8cff); color: #fff;
-  font-size: 15px; font-weight: 700; cursor: pointer;
-  box-shadow: 0 8px 20px rgba(37, 99, 235, .35); transition: transform .1s ease;
+  font-size: 15px; font-weight: 800; letter-spacing: .2px; cursor: pointer;
+  box-shadow: 0 10px 22px rgba(37, 99, 235, .40); transition: transform .1s ease, box-shadow .2s ease;
 }
+.rp-close:hover { box-shadow: 0 12px 28px rgba(37, 99, 235, .52); }
 .rp-close:active { transform: scale(.97); }
 .rp-confetti { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .rp-confetti i {
-  position: absolute; top: -12px; width: 9px; height: 14px; opacity: 0;
+  position: absolute; top: -12px; width: 9px; height: 14px; opacity: 0; will-change: transform, opacity;
   animation-name: rewardConfetti; animation-timing-function: ease-in; animation-iteration-count: 1; animation-fill-mode: forwards;
 }
 @keyframes rewardBadgePop {
@@ -682,9 +698,14 @@ body.has-gameover-ad #gameMount { padding-bottom: 270px; }
   0% { transform: translateY(0) rotate(0); opacity: 1; }
   100% { transform: translateY(115vh) rotate(540deg); opacity: 0; }
 }
+@keyframes rpHalo {
+  0% { transform: scale(1); opacity: .7; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+.sound-btn.muted { opacity: .55; }
 @media (prefers-reduced-motion: reduce) {
   .rp-confetti i { display: none; }
-  .rp-badge, .rp-icon { animation: none; }
+  .rp-badge, .rp-icon, .rp-badge::after { animation: none; }
 }
 
 /* -- Deltix Arcade ----------------------------------------- */
