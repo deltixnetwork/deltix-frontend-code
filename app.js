@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.5.1';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -3395,7 +3395,11 @@ window.addEventListener('popstate', () => {
 
 // ---------- Boot ----------
 (async function boot() {
-  if (!(await checkAppVersion())) return; // outdated client — blocked until update
+  // Run the version check in parallel instead of blocking launch on it: it
+  // self-shows the forced-update gate if needed, and the server also rejects
+  // outdated clients with 426 — so we save a full round-trip off the critical
+  // path (a big deal on cold starts / slow mobile networks).
+  checkAppVersion();
   initAds();
   initPullToRefresh();
   if (state.token) {
