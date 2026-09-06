@@ -163,6 +163,7 @@ function onAppResumed() {
   if (Date.now() - lastResumeAt < 1500) return;
   lastResumeAt = Date.now();
   checkAppVersion();
+  flushPendingCompletions();
   if (state.token && $('screen-main')?.classList.contains('active')) {
     refreshCurrentView({ silent: true });
     if (typeof checkMysteryHour === 'function') checkMysteryHour();
@@ -178,6 +179,69 @@ try {
     if (isActive) onAppResumed();
   });
 } catch {}
+
+// ---------- Resilient arcade-completion queue ----------
+// A finished game's result can fail to save if the database blips or the
+// device goes offline right at that moment. Rather than let that win vanish,
+// it is queued here (localStorage survives even a full app close) and
+// retried automatically the next time the app is online or comes back to the
+// foreground — so a real game result is never simply lost to a transient
+// outage. arcade.js calls queuePendingCompletion() only after its own
+// in-modal retries are exhausted; dropPendingCompletion() removes an entry
+// once it settles (manually or via a flush) so it is never resent forever.
+const PENDING_COMPLETIONS_KEY = 'dltx_pending_completions';
+function loadPendingCompletions() {
+  try { return JSON.parse(localStorage.getItem(PENDING_COMPLETIONS_KEY) || '[]'); } catch { return []; }
+}
+function savePendingCompletions(list) {
+  try { localStorage.setItem(PENDING_COMPLETIONS_KEY, JSON.stringify(list)); } catch {}
+}
+function queuePendingCompletion(sessionId, payload) {
+  const list = loadPendingCompletions().filter((p) => p.sessionId !== sessionId);
+  list.push({ sessionId, payload, queuedAt: Date.now() });
+  savePendingCompletions(list);
+}
+function dropPendingCompletion(sessionId) {
+  savePendingCompletions(loadPendingCompletions().filter((p) => p.sessionId !== sessionId));
+}
+let flushingCompletions = false;
+async function flushPendingCompletions() {
+  if (flushingCompletions || !state.token) return;
+  const list = loadPendingCompletions();
+  if (!list.length) return;
+  flushingCompletions = true;
+  const remaining = [];
+  let recovered = 0;
+  for (const item of list) {
+    // A day-old queued result belongs to a session the server has long since
+    // expired — stop retrying it rather than queue forever.
+    if (Date.now() - item.queuedAt > 24 * 3600 * 1000) continue;
+    try {
+      const extra = item.payload.won ? await getIntegrityPayload() : {};
+      const r = await api('POST', `/arcade/session/${item.sessionId}/complete`, { ...item.payload, ...extra }, { retries: 1 });
+      if (r.won && r.reward > 0) recovered += r.reward;
+    } catch (e) {
+      // 400/404 = the session was already settled or no longer exists — safe
+      // to drop. Anything else (still offline/5xx) stays queued for later.
+      if (e.status !== 400 && e.status !== 404) remaining.push(item);
+    }
+  }
+  savePendingCompletions(remaining);
+  flushingCompletions = false;
+  if (recovered > 0) {
+    (window.celebrate || toast)({
+      amount: recovered,
+      title: 'Reward recovered! 🏆',
+      subtitle: 'A game result that couldn\u2019t save earlier just went through.',
+      icon: '🏆',
+    });
+    Promise.all([loadWallet(), loadTx()]).catch(() => {});
+  }
+}
+window.addEventListener('online', flushPendingCompletions);
+window.queuePendingCompletion = queuePendingCompletion;
+window.dropPendingCompletion = dropPendingCompletion;
+window.flushPendingCompletions = flushPendingCompletions;
 
 // ---------- UI helpers ----------
 function showScreen(id) {
@@ -790,6 +854,7 @@ async function enterApp() {
     loadReferrals(boot?.referrals),
     loadEnergy(boot?.energy),
   ]);
+  flushPendingCompletions();
   if (typeof checkMysteryHour === 'function') checkMysteryHour();
 }
 

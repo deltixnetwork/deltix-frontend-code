@@ -470,9 +470,14 @@ async function finishGame(won, score) {
     // outage) — give a manual retry instead of just losing this win; "Play
     // again" alone would start a brand new session and abandon this result.
     if (e.offline || !e.status || e.status >= 500) {
+      // Queue it too — if the user closes the app/modal before retrying,
+      // this still gets resubmitted automatically next time the app is
+      // online or comes to the foreground (see app.js flushPendingCompletions).
+      if (window.queuePendingCompletion) window.queuePendingCompletion(sessionId, { won, score });
       showEndActions(async () => {
         try {
           await settle();
+          if (window.dropPendingCompletion) window.dropPendingCompletion(sessionId);
           return true;
         } catch (e2) {
           if (e2.status === 401) return true; // modal already closed by staleSession handling
