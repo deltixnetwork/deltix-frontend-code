@@ -3774,10 +3774,10 @@ const INSTANT_GAMES = {
     render: renderCoin,
   },
   rocket: {
-    name: 'Rocket Launch',
+    name: 'Deltix Rocket',
     emoji: '🚀',
     cost: 80,
-    tagline: 'Launch — how far you fly sets your reward.',
+    tagline: 'Hold to power up, release to launch — chase your record.',
     accent: '#6366f1',
     render: renderRocket,
   },
@@ -3796,6 +3796,38 @@ const INSTANT_GAMES = {
     tagline: 'Roll the dice — match a pair for a prize.',
     accent: '#8b5cf6',
     render: renderDice,
+  },
+  diamond: {
+    name: 'Diamond Drop',
+    emoji: '💎',
+    cost: 60,
+    tagline: 'Tap the diamonds for 10 seconds — dodge the ❌.',
+    accent: '#22d3ee',
+    render: renderDiamondDrop,
+  },
+  stopit: {
+    name: 'Deltix Stop',
+    emoji: '🎯',
+    cost: 30,
+    tagline: 'Stop the pointer right on the diamond.',
+    accent: '#f472b6',
+    render: renderStopIt,
+  },
+  key: {
+    name: 'Which Key?',
+    emoji: '🔑',
+    cost: 70,
+    tagline: 'Five keys, one chest — pick the one that opens it.',
+    accent: '#fbbf24',
+    render: renderWhichKey,
+  },
+  egg: {
+    name: 'Deltix Egg',
+    emoji: '🥚',
+    cost: 70,
+    tagline: 'Choose an egg, crack it open, see what hatches.',
+    accent: '#34d399',
+    render: renderEgg,
   },
 };
 
@@ -3850,6 +3882,18 @@ function closeInstantGame() {
 gel('instantClose')?.addEventListener('click', closeInstantGame);
 // Exposed so app.js (back button / expired session) can close it too.
 window.closeInstantGame = closeInstantGame;
+
+/** Opens a random affordable instant game — the player doesn't have to choose. */
+function quickPlay() {
+  const have = instantEnergy();
+  const candidates = Object.keys(INSTANT_GAMES).filter((id) => have >= INSTANT_GAMES[id].cost);
+  if (!candidates.length) {
+    toast('Not enough Energy for any Quick Play game — earn more in the Energy tab.');
+    return;
+  }
+  openInstantGame(candidates[Math.floor(Math.random() * candidates.length)]);
+}
+gel('quickPlayBtn')?.addEventListener('click', quickPlay);
 
 function updateInstantBal() {
   const bal = gel('instantBal');
@@ -4158,26 +4202,87 @@ function renderCoin(mount, g) {
   btns.forEach((b) => b.addEventListener('click', () => flip(b.dataset.side)));
 }
 
-// ---- Game 6: Rocket Launch ----
+// ---- Game 6: Deltix Rocket (hold to charge, release to launch) ----
 function renderRocket(mount, g) {
-  const DESTS = ['🌙 Reached the Moon', '♂️ Landed on Mars', '🪐 Passed Jupiter', '☄️ Into deep space'];
-  instantButtonGame(mount, 'rocket', g, {
-    actionLabel: '🚀 Launch',
-    againLabel: 'Launch again',
-    buildStage: () => `<div class="rocket-track"><div class="rocket-ship">🚀</div></div><div class="rocket-dest"></div>`,
-    windUp: (stage) => {
-      stage.querySelector('.rocket-ship')?.classList.remove('launched');
-      const d = stage.querySelector('.rocket-dest'); if (d) d.textContent = '';
-    },
-    reveal: (stage, r) => {
-      stage.querySelector('.rocket-ship')?.classList.add('launched');
-      const d = stage.querySelector('.rocket-dest');
-      // Reach farther when you win — pure flavour, the server sets the reward.
-      const pool = (r.reward > 0 || r.energyAwarded > 0) ? DESTS.slice(1) : DESTS.slice(0, 2);
-      setTimeout(() => { if (d) d.textContent = pool[Math.floor(Math.random() * pool.length)]; }, 520);
-      return 900;
-    },
-  });
+  const wrap = document.createElement('div');
+  wrap.className = 'instant-play';
+  wrap.innerHTML = `
+    <div class="ig-stage rocket-stage">
+      <div class="rocket-power"><div class="rocket-power-fill"></div></div>
+      <div class="rocket-track"><div class="rocket-ship">🚀</div></div>
+      <div class="rocket-dest"></div>
+      <div class="ig-reward" hidden></div>
+    </div>
+    <button class="btn primary ig-action">🚀 Hold to power up — ⚡ ${g.cost}</button>`;
+  mount.appendChild(wrap);
+  const stage = wrap.querySelector('.rocket-stage');
+  const ship = wrap.querySelector('.rocket-ship');
+  const fill = wrap.querySelector('.rocket-power-fill');
+  const dest = wrap.querySelector('.rocket-dest');
+  const rewardEl = wrap.querySelector('.ig-reward');
+  const btn = wrap.querySelector('.ig-action');
+  let charging = false;
+  let power = 0;
+  let raf = null;
+
+  function chargeLoop() {
+    if (!charging || !wrap.isConnected) return;
+    power = Math.min(1, power + 0.028);
+    fill.style.height = `${power * 100}%`;
+    raf = requestAnimationFrame(chargeLoop);
+  }
+  function startCharge() {
+    if (instantBusy || charging) return;
+    const have = instantEnergy();
+    if (have < g.cost) {
+      toast(`Not enough Energy — ${g.cost - have} more needed. Earn Energy in the Energy tab.`);
+      return;
+    }
+    charging = true;
+    power = 0;
+    rewardEl.hidden = true;
+    ship.classList.remove('launched');
+    dest.innerHTML = '';
+    chargeLoop();
+  }
+  async function release() {
+    if (!charging) return;
+    charging = false;
+    if (raf) cancelAnimationFrame(raf);
+    const finalPower = power;
+    instantBusy = true;
+    btn.disabled = true;
+    ship.classList.add('launched');
+    try { ArcadeSound.tap(); } catch {}
+    const r = await playInstant('rocket', g);
+    if (!r) {
+      instantBusy = false;
+      btn.disabled = false;
+      ship.classList.remove('launched');
+      fill.style.height = '0%';
+      return;
+    }
+    const win = r.reward > 0 || r.energyAwarded > 0;
+    // Distance is flavour — scales with how charged the launch was, plus a win bonus.
+    const km = Math.round((1200 + finalPower * 6000) * (win ? 1.4 + Math.random() * 0.8 : 0.5 + Math.random() * 0.6));
+    setTimeout(() => {
+      const best = Number(localStorage.getItem('dltx_rocket_best') || 0);
+      const record = km > best;
+      if (record) localStorage.setItem('dltx_rocket_best', String(km));
+      dest.innerHTML = `${km.toLocaleString()} KM${record ? ' — <span class="ig-record">NEW RECORD! 🏆</span>' : ''}`;
+      rewardEl.innerHTML = instantRewardLabel(r);
+      rewardEl.hidden = false;
+      if (win) burstShards(stage, g.accent, 14);
+      announceInstant(r);
+      fill.style.height = '0%';
+      btn.textContent = `↻ Hold to launch again — ⚡ ${g.cost}`;
+      btn.disabled = false;
+      instantBusy = false;
+    }, 900);
+  }
+  btn.addEventListener('pointerdown', (e) => { e.preventDefault(); startCharge(); });
+  btn.addEventListener('pointerup', release);
+  btn.addEventListener('pointerleave', () => { if (charging) release(); });
 }
 
 // ---- Game 7: Energy Target ----
@@ -4257,4 +4362,231 @@ function renderDice(mount, g) {
     }, 460);
   }
   btn.addEventListener('click', roll);
+}
+
+// ---- Game 9: Diamond Drop (real 10s tap round; payout still server-decided) ----
+function renderDiamondDrop(mount, g) {
+  const ROUND_MS = 10000;
+  const wrap = document.createElement('div');
+  wrap.className = 'instant-play';
+  wrap.innerHTML = `
+    <div class="dd-hud"><span class="dd-score">💎 <b>0</b></span><span class="dd-timer">${(ROUND_MS / 1000).toFixed(1)}s</span></div>
+    <div class="ig-stage dd-stage"><div class="ig-reward" hidden></div></div>
+    <button class="btn primary ig-action">▶ Play (10s) — ⚡ ${g.cost}</button>`;
+  mount.appendChild(wrap);
+  const stage = wrap.querySelector('.dd-stage');
+  const scoreEl = wrap.querySelector('.dd-score b');
+  const timerEl = wrap.querySelector('.dd-timer');
+  const rewardEl = wrap.querySelector('.ig-reward');
+  const btn = wrap.querySelector('.ig-action');
+
+  async function play() {
+    if (instantBusy) return;
+    instantBusy = true;
+    btn.disabled = true;
+    rewardEl.hidden = true;
+    stage.querySelectorAll('.dd-item, .dd-boom').forEach((el) => el.remove());
+    scoreEl.textContent = '0';
+    timerEl.textContent = `${(ROUND_MS / 1000).toFixed(1)}s`;
+    const r = await playInstant('diamond', g);
+    if (!r) { instantBusy = false; btn.disabled = false; return; }
+
+    let score = 0;
+    let over = false;
+    const started = Date.now();
+    let spawnTimer = null;
+    let tickTimer = null;
+
+    function end(boom) {
+      if (over) return;
+      over = true;
+      clearInterval(spawnTimer);
+      clearInterval(tickTimer);
+      stage.querySelectorAll('.dd-item').forEach((el) => el.remove());
+      if (boom) {
+        const flash = document.createElement('div');
+        flash.className = 'dd-boom';
+        flash.textContent = '💥';
+        stage.appendChild(flash);
+      }
+      const best = Number(localStorage.getItem('dltx_diamond_best') || 0);
+      const record = score > best;
+      if (record) localStorage.setItem('dltx_diamond_best', String(score));
+      setTimeout(() => {
+        rewardEl.innerHTML =
+          `<div class="dd-final">💎 Score: ${score}${record ? ' — <span class="ig-record">New best! 🏆</span>' : ` <span class="dd-bestline">(best ${Math.max(score, best)})</span>`}</div>` +
+          instantRewardLabel(r);
+        rewardEl.hidden = false;
+        if (r.reward > 0 || r.energyAwarded > 0) burstShards(stage, g.accent, 14);
+        announceInstant(r);
+        btn.textContent = `↻ Play again — ⚡ ${g.cost}`;
+        btn.disabled = false;
+        instantBusy = false;
+      }, boom ? 420 : 120);
+    }
+
+    function spawn() {
+      if (over || !stage.isConnected) { clearInterval(spawnTimer); clearInterval(tickTimer); return; }
+      const isBomb = Math.random() < 0.22;
+      const item = document.createElement('button');
+      item.className = `dd-item ${isBomb ? 'dd-bomb' : 'dd-gem'}`;
+      item.textContent = isBomb ? '❌' : '💎';
+      const pad = 14;
+      item.style.left = `${pad + Math.random() * (100 - pad * 2)}%`;
+      item.style.top = `${pad + Math.random() * (100 - pad * 2)}%`;
+      item.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        if (over) return;
+        if (isBomb) { end(true); return; }
+        score++;
+        scoreEl.textContent = String(score);
+        try { ArcadeSound.tap(); } catch {}
+        item.remove();
+      });
+      stage.appendChild(item);
+      setTimeout(() => item.remove(), 800);
+    }
+
+    spawnTimer = setInterval(spawn, 420);
+    spawn();
+    tickTimer = setInterval(() => {
+      const left = Math.max(0, ROUND_MS - (Date.now() - started));
+      timerEl.textContent = `${(left / 1000).toFixed(1)}s`;
+      if (left <= 0) end(false);
+    }, 100);
+  }
+  btn.addEventListener('click', play);
+}
+
+// ---- Game 10: Deltix Stop (timing tap; accuracy readout is flavour only) ----
+function renderStopIt(mount, g) {
+  const wrap = document.createElement('div');
+  wrap.className = 'instant-play';
+  wrap.innerHTML = `
+    <div class="stop-track"><div class="stop-target"></div><div class="stop-pointer">◆</div></div>
+    <div class="pick-reward" hidden></div>
+    <button class="btn primary ig-action">🛑 Stop — ⚡ ${g.cost}</button>`;
+  mount.appendChild(wrap);
+  const track = wrap.querySelector('.stop-track');
+  const pointer = wrap.querySelector('.stop-pointer');
+  const rewardEl = wrap.querySelector('.pick-reward');
+  const btn = wrap.querySelector('.ig-action');
+  let raf = null;
+  let running = false;
+
+  function sweep(ts) {
+    if (!running || !wrap.isConnected) return;
+    const period = 900; // ms for a full left-right-left cycle
+    const t = (ts % period) / period;
+    const wave = Math.abs(((t * 2) % 2) - 1); // triangle wave 0..1..0
+    pointer.style.left = `${4 + wave * 92}%`;
+    raf = requestAnimationFrame(sweep);
+  }
+  function startSweep() { running = true; raf = requestAnimationFrame(sweep); }
+  function stopSweep() { running = false; if (raf) cancelAnimationFrame(raf); }
+  startSweep();
+
+  async function stop() {
+    if (instantBusy) return;
+    const have = instantEnergy();
+    if (have < g.cost) {
+      toast(`Not enough Energy — ${g.cost - have} more needed. Earn Energy in the Energy tab.`);
+      return;
+    }
+    instantBusy = true;
+    btn.disabled = true;
+    rewardEl.hidden = true;
+    stopSweep();
+    const posPct = parseFloat(pointer.style.left) || 50;
+    const accuracy = Math.max(0, Math.round(100 - Math.abs(posPct - 50) * 2.2));
+    try { ArcadeSound.tap(); } catch {}
+    const r = await playInstant('stopit', g);
+    if (!r) { instantBusy = false; btn.disabled = false; startSweep(); return; }
+    const label = accuracy >= 96 ? 'PERFECT! 💎' : `${accuracy}%`;
+    setTimeout(() => {
+      rewardEl.innerHTML = `<div class="stop-acc">${label}</div>` + instantRewardLabel(r);
+      rewardEl.hidden = false;
+      if (r.reward > 0 || r.energyAwarded > 0) burstShards(track, g.accent, 14);
+      announceInstant(r);
+      btn.textContent = `↻ Stop again — ⚡ ${g.cost}`;
+      btn.disabled = false;
+      instantBusy = false;
+      startSweep();
+    }, 260);
+  }
+  btn.addEventListener('click', stop);
+}
+
+// ---- Game 11: Which Key? (pick 1 of 5 keys to try the chest) ----
+function renderWhichKey(mount, g) {
+  instantPickGame(mount, 'key', g, {
+    count: 5, emoji: '🔑', itemClass: 'key-item',
+    instruction: 'Pick a key to try the chest 🧰', againText: 'Pick another key to try again',
+  });
+}
+
+// ---- Game 12: Deltix Egg (choose one, tap 3 times to crack) ----
+function renderEgg(mount, g) {
+  const wrap = document.createElement('div');
+  wrap.className = 'instant-play';
+  wrap.innerHTML = `
+    <div class="pick-instruction">Choose an egg to crack</div>
+    <div class="ig-stage pick-row egg-row">${[0, 1, 2].map((i) =>
+      `<button class="pick-item egg-item" data-i="${i}"><span class="pick-emoji">🥚</span></button>`).join('')}</div>
+    <div class="pick-reward" hidden></div>`;
+  mount.appendChild(wrap);
+  const items = [...wrap.querySelectorAll('.egg-item')];
+  const row = wrap.querySelector('.egg-row');
+  const rewardEl = wrap.querySelector('.pick-reward');
+  const instr = wrap.querySelector('.pick-instruction');
+  let chosen = null;
+  let taps = 0;
+
+  function reset() {
+    chosen = null;
+    taps = 0;
+    items.forEach((b) => {
+      b.disabled = false;
+      b.classList.remove('chosen', 'dim', 'pop', 'egg-crack-1', 'egg-crack-2');
+      b.querySelector('.pick-emoji').textContent = '🥚';
+    });
+    instr.textContent = 'Choose an egg to crack';
+  }
+
+  async function tapEgg(item) {
+    if (instantBusy) return;
+    if (chosen && chosen !== item) return; // committed to a different egg already
+    if (!chosen) {
+      const have = instantEnergy();
+      if (have < g.cost) {
+        toast(`Not enough Energy — ${g.cost - have} more needed. Earn Energy in the Energy tab.`);
+        return;
+      }
+      chosen = item;
+      items.filter((b) => b !== item).forEach((b) => { b.disabled = true; b.classList.add('dim'); });
+    }
+    taps++;
+    try { ArcadeSound.tap(); } catch {}
+    if (taps === 1) { item.classList.add('egg-crack-1'); instr.textContent = 'Crack — tap again!'; return; }
+    if (taps === 2) { item.classList.add('egg-crack-2'); instr.textContent = 'Almost — one more tap!'; return; }
+
+    instantBusy = true;
+    item.disabled = true;
+    const r = await playInstant('egg', g);
+    if (!r) { instantBusy = false; reset(); return; }
+    const flavor = r.reward > 0
+      ? '💎 Rare Diamond!'
+      : (r.freeSpin ? '🎨 Special skin ticket!' : (r.energyAwarded > 0 ? (Math.random() < 0.5 ? '⚡ Energy!' : '🛡️ Shield!') : '😭 Nothing this time'));
+    item.querySelector('.pick-emoji').textContent = '🐣';
+    item.classList.add('pop');
+    setTimeout(() => {
+      rewardEl.innerHTML = `<div class="egg-flavor">${flavor}</div>` + instantRewardLabel(r);
+      rewardEl.hidden = false;
+      if (r.reward > 0 || r.energyAwarded > 0) burstShards(row, g.accent, 14);
+      announceInstant(r);
+      reset();
+      instantBusy = false;
+    }, 420);
+  }
+  items.forEach((b) => b.addEventListener('click', () => tapEgg(b)));
 }

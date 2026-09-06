@@ -2005,6 +2005,65 @@ html[data-dark] .ig-win { color: #7dd3fc; }
 html[data-dark] .die { color: #e2e8f0; }
 html[data-dark] .pick-item { background: linear-gradient(160deg, var(--panel) 0%, #16233f 100%); border-color: var(--border); }
 
+/* Quick Play */
+.quick-play-btn { width: 100%; margin: 2px 0 12px; font-weight: 800; }
+
+/* Shared "new record" flavour tag (Diamond Drop, Deltix Rocket) */
+.ig-record { color: #f59e0b; font-weight: 900; }
+
+/* Diamond Drop */
+.dd-hud { display: flex; justify-content: space-between; width: 100%; max-width: 260px; margin: 0 auto 6px; font-weight: 800; font-size: 14px; }
+.dd-timer { color: var(--muted); font-variant-numeric: tabular-nums; }
+.dd-stage {
+  width: 260px; height: 220px; border-radius: 16px; overflow: hidden;
+  background: linear-gradient(160deg, var(--panel) 0%, var(--panel-2) 100%);
+  border: 1px solid var(--border); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .03);
+}
+.dd-item {
+  position: absolute; width: 40px; height: 40px; border: none; background: none; font-size: 30px;
+  line-height: 1; cursor: pointer; transform: translate(-50%, -50%); animation: igPop .18s ease both;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, .25));
+}
+.dd-item.dd-gem:active { transform: translate(-50%, -50%) scale(.8); }
+.dd-boom { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 64px; animation: igPop .3s ease both; }
+.dd-final { font-weight: 900; font-size: 17px; margin-bottom: 4px; }
+.dd-bestline { font-weight: 700; font-size: 12px; color: var(--muted); }
+
+/* Deltix Stop */
+.stop-track {
+  position: relative; width: 260px; height: 52px; border-radius: 999px; margin: 10px auto;
+  background: linear-gradient(90deg, var(--panel-2), var(--panel)); border: 1px solid var(--border);
+}
+.stop-target {
+  position: absolute; left: 44%; top: 4px; bottom: 4px; width: 12%; border-radius: 999px;
+  background: color-mix(in srgb, #f472b6 22%, transparent);
+}
+.stop-pointer {
+  position: absolute; top: 50%; font-size: 26px; color: #f472b6; transform: translate(-50%, -50%);
+  filter: drop-shadow(0 2px 4px rgba(244, 114, 182, .5));
+}
+.stop-acc { font-weight: 900; font-size: 20px; color: #f472b6; }
+
+/* Which Key? */
+.key-item.chosen .pick-emoji { animation: igBoxOpen .5s ease forwards; }
+
+/* Deltix Egg */
+.egg-row { width: auto; }
+.egg-item.egg-crack-1 { animation: eggWobble .35s ease; }
+.egg-item.egg-crack-2 { animation: eggWobble .3s ease 2; }
+@keyframes eggWobble { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-8deg); } 75% { transform: rotate(8deg); } }
+.egg-flavor { font-weight: 900; font-size: 17px; margin-bottom: 4px; }
+
+/* Deltix Rocket — hold-to-charge power bar */
+.rocket-power {
+  position: absolute; left: 14px; bottom: 8px; top: 8px; width: 12px; border-radius: 999px;
+  background: var(--panel-2); border: 1px solid var(--border); overflow: hidden;
+}
+.rocket-power-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0%; background: linear-gradient(0deg, #6366f1, #a5b4fc); transition: height .25s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .dd-item, .dd-boom, .egg-item.egg-crack-1, .egg-item.egg-crack-2 { animation: none; }
+}
+
 /* ═══════════ Deltix Shop ═══════════ */
 .shop-open-btn { width: 100%; margin: 4px 0 10px; font-weight: 800; }
 .shop-modal { max-height: 92dvh; overflow-y: auto; }
