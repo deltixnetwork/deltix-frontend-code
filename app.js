@@ -815,6 +815,12 @@ const AVATAR_CHOICES = [
 // non-transferable cosmetic owned by the account — the AdMob-compliant reward.
 // unlockedAvatars() / unlockedThemes() read that account state (see loadEnergy).
 const PREMIUM_AVATARS = ['🐉','🦅','🧙','🥷','👑','🛸','🦸','🧛','🧜','🧚','🤴','👸','🦹','🧞','🐲','⚔️','🗿','💫'];
+// These are also sold in the Deltix Shop for Energy/$DLTX — showing them as a
+// free one-ad unlock here too undercut the Shop price entirely (e.g. the
+// Dragon Avatar cost 60 Energy in the Shop but was unlockable free with one
+// ad here). Already-owned copies (from either path) still display normally;
+// only the still-locked state is redirected to the Shop instead of an ad.
+const SHOP_ONLY_AVATARS = ['🐉', '🥷', '👑'];
 
 // App themes: "classic" and the community-requested dark "midnight" are free.
 // The colour packs use the same AdMob-compliant model — an opt-in rewarded ad
@@ -834,6 +840,8 @@ const THEMES = [
   { id: 'cyber',    name: 'Cyber',    free: false, dark: true },
   { id: 'aurora',   name: 'Aurora',   free: false, dark: true },
 ];
+// Also sold in the Deltix Shop for Energy/$DLTX — see SHOP_ONLY_AVATARS above.
+const SHOP_ONLY_THEMES = ['emerald', 'royal', 'aurora'];
 function applyTheme(id) {
   const t = THEMES.find((x) => x.id === id) || THEMES[0];
   if (t.id === 'classic') delete document.documentElement.dataset.theme;
@@ -850,7 +858,7 @@ function renderThemeGrid() {
   if (!grid) return;
   const unlocked = unlockedThemes();
   const current = localStorage.getItem('dltx_theme') || 'classic';
-  grid.innerHTML = THEMES.filter((t) => t.free || ADS_ENABLED || unlocked.includes(t.id)).map((t) => {
+  grid.innerHTML = THEMES.filter((t) => t.free || unlocked.includes(t.id) || SHOP_ONLY_THEMES.includes(t.id) || ADS_ENABLED).map((t) => {
     const locked = !t.free && !unlocked.includes(t.id);
     return `<button class="theme-opt ${t.id === current ? 'active' : ''} ${locked ? 'locked' : ''}" data-theme-id="${t.id}"><span class="sw sw-${t.id}"></span>${t.name}</button>`;
   }).join('');
@@ -858,6 +866,11 @@ function renderThemeGrid() {
     b.addEventListener('click', async () => {
       const id = b.dataset.themeId;
       if (b.classList.contains('locked')) {
+        if (SHOP_ONLY_THEMES.includes(id)) {
+          toast('Get this theme in the Deltix Shop ⚡');
+          if (typeof openShop === 'function') openShop();
+          return;
+        }
         // Clear opt-in disclosure before the rewarded ad (AdMob requirement).
         if (!window.confirm('▶ Watch a short ad to unlock this theme?')) return;
         b.disabled = true;
@@ -902,8 +915,9 @@ function openAvatarPicker() {
   const unlocked = unlockedAvatars();
   const all = [
     ...AVATAR_CHOICES.map((e) => ({ e, locked: false })),
-    // Ad-free builds hide still-locked premiums (no way to unlock them).
-    ...PREMIUM_AVATARS.filter((e) => ADS_ENABLED || unlocked.includes(e))
+    // Ad-free builds hide still-locked premiums (no way to unlock them); shop-only
+    // ones always show since the Shop purchase path doesn't depend on ads.
+    ...PREMIUM_AVATARS.filter((e) => SHOP_ONLY_AVATARS.includes(e) || ADS_ENABLED || unlocked.includes(e))
       .map((e) => ({ e, locked: !unlocked.includes(e) })),
   ];
   grid.innerHTML = all
@@ -913,6 +927,11 @@ function openAvatarPicker() {
     b.addEventListener('click', async () => {
       const emoji = b.dataset.emoji;
       if (b.classList.contains('locked')) {
+        if (SHOP_ONLY_AVATARS.includes(emoji)) {
+          toast('Get this avatar in the Deltix Shop ⚡');
+          if (typeof openShop === 'function') openShop();
+          return;
+        }
         // Clear opt-in disclosure before the rewarded ad (AdMob requirement).
         if (!window.confirm('▶ Watch a short ad to unlock this premium avatar?')) return;
         b.disabled = true;

@@ -365,12 +365,33 @@ async function startSession() {
   };
 }
 
-/** End-of-game actions — always give a way to replay or leave without scrolling hunts. */
-function showEndActions() {
+/**
+ * End-of-game actions — always give a way to replay or leave without
+ * scrolling hunts. Pass onRetry when the result failed to save (a brief
+ * server blip) so the user can retry recording THIS game instead of losing
+ * it — "Play again" alone would start a brand new session.
+ */
+function showEndActions(onRetry) {
   const mount = gel('gameMount');
   mount.querySelector('.game-end-actions')?.remove();
   const row = document.createElement('div');
   row.className = 'game-end-actions';
+  if (onRetry) {
+    const retryBtn = document.createElement('button');
+    retryBtn.className = 'btn primary';
+    retryBtn.textContent = '↻ Retry saving result';
+    retryBtn.addEventListener('click', async () => {
+      retryBtn.disabled = true;
+      retryBtn.textContent = 'Retrying…';
+      const ok = await onRetry();
+      if (ok) retryBtn.remove();
+      else {
+        retryBtn.disabled = false;
+        retryBtn.textContent = '↻ Retry saving result';
+      }
+    });
+    row.appendChild(retryBtn);
+  }
   const again = document.createElement('button');
   again.className = 'btn primary';
   again.textContent = '↻ Play again';
@@ -411,11 +432,14 @@ async function finishGame(won, score) {
   else ArcadeSound.lose();
   const sessionId = arcadeState.sessionId;
   arcadeState.sessionId = null;
-  try {
+  const settle = async () => {
     // Wins pay $DLTX directly — rewarded ads never gate rewards (AdMob policy:
     // ad rewards must be non-transferable; $DLTX is transferable P2P).
     const payload = { won, score, ...(won ? await getIntegrityPayload() : {}) };
-    const r = await api('POST', `/arcade/session/${sessionId}/complete`, payload);
+    // Absorb brief server/DB blips automatically — safe to retry: the server
+    // settles a session at most once and answers a repeat with a harmless
+    // "already settled" instead of paying twice.
+    const r = await api('POST', `/arcade/session/${sessionId}/complete`, payload, { retries: 2 });
     if (r.won && r.tooFast) {
       setGameStatus('You won — but too fast to count. Play a full game to earn.');
     } else if (r.won && r.reward > 0) {
@@ -433,12 +457,32 @@ async function finishGame(won, score) {
     } else {
       setGameStatus('Game over — no reward this time. Try again!');
     }
+  };
+  try {
+    await settle();
   } catch (e) {
     // A 401/expired session already closed the game modal and sent the user
     // back to sign-in (see api()'s staleSession handling) — don't paint a raw
     // server error into a modal that's no longer visible.
     if (e.status === 401) return;
     setGameStatus(e.message);
+    // Still failing after the automatic retries (offline, or a longer server
+    // outage) — give a manual retry instead of just losing this win; "Play
+    // again" alone would start a brand new session and abandon this result.
+    if (e.offline || !e.status || e.status >= 500) {
+      showEndActions(async () => {
+        try {
+          await settle();
+          return true;
+        } catch (e2) {
+          if (e2.status === 401) return true; // modal already closed by staleSession handling
+          setGameStatus(e2.message);
+          return false;
+        }
+      });
+      maybeShowInterstitial();
+      return;
+    }
   }
   showEndActions();
   maybeShowInterstitial();
