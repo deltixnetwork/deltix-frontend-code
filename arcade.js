@@ -439,7 +439,7 @@ async function finishGame(won, score) {
     // Absorb brief server/DB blips automatically — safe to retry: the server
     // settles a session at most once and answers a repeat with a harmless
     // "already settled" instead of paying twice.
-    const r = await api('POST', `/arcade/session/${sessionId}/complete`, payload, { retries: 2 });
+    const r = await api('POST', `/arcade/session/${sessionId}/complete`, payload, { retries: 3 });
     if (r.won && r.tooFast) {
       setGameStatus('You won — but too fast to count. Play a full game to earn.');
     } else if (r.won && r.reward > 0) {

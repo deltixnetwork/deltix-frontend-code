@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.6.4';
+const APP_VERSION = '1.6.5';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -26,7 +26,7 @@ const state = {
 // Mobile networks drop requests and hosts restart, so idempotent reads are
 // retried briefly before the user ever sees an error.
 const RETRY_STATUSES = new Set([502, 503, 504]);
-const RETRY_BACKOFF_MS = 500;
+const RETRY_BACKOFF_MS = 600;
 
 function friendlyError(status, json) {
   if (json && json.error) return json.error;
@@ -36,7 +36,7 @@ function friendlyError(status, json) {
   return 'Something went wrong. Please try again.';
 }
 
-async function api(method, path, body, { retries = method === 'GET' ? 2 : 0 } = {}) {
+async function api(method, path, body, { retries = method === 'GET' ? 3 : 0 } = {}) {
   let res = null;
   let offline = false;
   for (let attempt = 0; ; attempt++) {
