@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.6.6';
+const APP_VERSION = '1.7.0';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -300,6 +300,8 @@ function refreshTabContent(id) {
     loadLeaderboard().catch(() => {});
   } else if (id === 'tab-ranking') {
     loadPassport().catch(() => {});
+  } else if (id === 'tab-earn') {
+    loadEarn().catch(() => {});
   }
 }
 
@@ -333,6 +335,8 @@ async function refreshCurrentView({ isPull = false, silent = false } = {}) {
     tasks.push(loadRewards());
   } else if (activeTab === 'tab-missions') {
     tasks.push(loadMissions());
+  } else if (activeTab === 'tab-earn') {
+    tasks.push(loadEarn());
   }
 
   try {
@@ -696,6 +700,7 @@ function resetAccountUI() {
   if (typeof resetCommunityUI === 'function') resetCommunityUI();
   if (typeof resetMissionsUI === 'function') resetMissionsUI();
   if (typeof resetVaultUI === 'function') resetVaultUI();
+  if (typeof resetEarnUI === 'function') resetEarnUI();
 }
 
 /** Full sign-out: drops the session as well as the rendered account data. */
@@ -2930,6 +2935,103 @@ function resetRewardsUI() {
   setText('rewardCapNote', 'Daily reward allowance: — / — $DLTX');
   setText('chestResult', '');
 }
+
+// ==================== Deltix Earn (Path 2) ====================
+// Completely separate from games: spend Energy to start a timed session, wait
+// for it, then claim its $DLTX reward. Lives only on its own dedicated page.
+const earnState = { data: null };
+let earnTimer = null;
+
+async function loadEarn() {
+  if (!state.token) return;
+  try {
+    earnState.data = await api('GET', '/earn');
+    renderEarn();
+    startEarnTimer();
+  } catch { /* handled by api() */ }
+}
+
+function renderEarn() {
+  const d = earnState.data;
+  if (!d) {
+    setText('earnStatus', '◆ Deltix Earn');
+    setText('earnSub', 'Sign in to start earning.');
+    const b = $('earnBtn'); if (b) { b.disabled = true; b.textContent = 'Loading…'; }
+    return;
+  }
+  const ready = d.canClaim;
+  const running = d.active && !ready;
+  setText('earnStatus', ready ? `◆ ${fmt(d.reward)} DLTX READY` : running ? '◆ Deltix Earn — running' : '◆ Deltix Earn');
+  setText(
+    'earnSub',
+    ready
+      ? 'Your session is complete — claim your $DLTX.'
+      : running
+      ? `Ready in ${fmtCountdown(d.msRemaining)}`
+      : `Earn ${fmt(d.reward)} $DLTX every ${d.durationHours}h · costs ⚡ ${fmt(d.cost)} Energy`
+  );
+  const b = $('earnBtn');
+  if (b) {
+    b.disabled = running || (!d.active && d.energy < d.cost) || !d.enabled;
+    b.textContent = ready
+      ? `Claim ◆ ${fmt(d.reward)} DLTX`
+      : running
+      ? `⏳ ${fmtCountdown(d.msRemaining)}`
+      : `Start ${d.durationHours}H Session · ⚡${fmt(d.cost)}`;
+  }
+  setText('earnRateNote', `Current Earn Rate: ${fmt(d.reward)} DLTX / ${d.durationHours}h — subject to change as the network grows.`);
+}
+
+function startEarnTimer() {
+  if (earnTimer) return;
+  earnTimer = setInterval(() => {
+    if (!state.token || !earnState.data?.active) return;
+    if (!document.getElementById('tab-earn')?.classList.contains('active')) return;
+    earnState.data.msRemaining = Math.max(0, earnState.data.msRemaining - 1000);
+    if (earnState.data.msRemaining === 0) earnState.data.canClaim = true;
+    renderEarn();
+  }, 1000);
+}
+
+async function handleEarnAction() {
+  const d = earnState.data;
+  if (!d) return;
+  if (d.canClaim) return claimEarnSession();
+  if (!d.active) return startEarnSession();
+}
+
+async function startEarnSession() {
+  try {
+    const r = await api('POST', '/earn/start');
+    earnState.data = r;
+    renderEarn();
+    toast(`Deltix Earn session started — ready in ${r.durationHours}h.`);
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function claimEarnSession() {
+  try {
+    const payload = await getIntegrityPayload();
+    const r = await api('POST', '/earn/claim', payload);
+    earnState.data = r;
+    renderEarn();
+    celebrate({ amount: r.claimed, title: 'Deltix Earn Complete!', subtitle: 'Start another session any time.', icon: '◆' });
+    await Promise.allSettled([loadWallet(), loadEnergy(undefined, { force: true }), loadTx()]);
+    showRewardInterstitial();
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+function resetEarnUI() {
+  earnState.data = null;
+  if (earnTimer) { clearInterval(earnTimer); earnTimer = null; }
+  renderEarn();
+}
+
+$('earnBtn')?.addEventListener('click', handleEarnAction);
 
 // ---- Fortune wheel canvas ----
 const WHEEL_PALETTE = ['#6366f1', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#0ea5e9'];

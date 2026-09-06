@@ -1448,6 +1448,14 @@ body.has-ad-banner .tabbar {
 .reward-actions { display: flex; gap: 8px; margin-top: 6px; }
 .reward-actions .reward-btn { margin-top: 0; }
 .btn.gold { background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; }
+.earn-card {
+  background: linear-gradient(135deg, #fff7e6, #fff);
+  border: 1px solid #fcd34d;
+}
+html[data-dark] .earn-card {
+  background: linear-gradient(135deg, rgba(217,119,6,0.16), rgba(255,255,255,0.03));
+  border-color: rgba(252,211,77,0.4);
+}
 .btn.gold:disabled { opacity: .5; }
 .checkin-streak { font-size: 13px; font-weight: 700; color: #ea580c; margin-bottom: 8px; }
 .box-visual {
