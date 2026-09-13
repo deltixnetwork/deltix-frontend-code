@@ -447,13 +447,24 @@
         </div>
 
         <div class="card energy-earn-card">
-          <div class="eec-badge"><img src="assets/energy/08_energy_shield_large.png" alt="Energy booster" /><span>+1</span></div>
+          <div class="eec-badge"><img src="assets/energy/08_energy_shield_large.png" alt="Energy booster" /><span>+5</span></div>
           <div class="eec-body">
-            <div class="eec-title"><img src="assets/energy/08_energy_shield_large.png" alt="" /> +1 ENERGY</div>
+            <div class="eec-title"><img src="assets/energy/08_energy_shield_large.png" alt="" /> +5 ENERGY</div>
             <div class="eec-meta" id="eecMeta">Energy: 0</div>
             <div class="eec-until" id="eecUntil">50 Energy until Deltix Inspector</div>
           </div>
           <button class="btn primary energy-watch-btn" id="energyWatchBtn">WATCH ANOTHER</button>
+        </div>
+
+        <div class="card reward-card earn-mini-card" id="homeEarnCard">
+          <div class="reward-head">
+            <span class="reward-emoji">◆</span>
+            <div>
+              <div class="reward-title">Deltix Earn</div>
+              <div class="reward-sub">Spend 50 ⚡ for 12h, then claim 5 $DLTX.</div>
+            </div>
+          </div>
+          <button class="btn gold reward-btn home-earn-btn" id="homeEarnBtn">Open Deltix Earn</button>
         </div>
 
         <h3 class="section-title energy-section-title"><img src="assets/energy/18_trophy.png" alt="" /> Deltix Energy Ranks</h3>
@@ -479,6 +490,39 @@
           </div>
         </div>
 
+        <div class="card reward-card ladder-card">
+          <div class="reward-head">
+            <span class="reward-emoji">🪜</span>
+            <div>
+              <div class="reward-title">Daily Ladder</div>
+              <div class="reward-sub">Climb 15 steps a day — first step is free, later steps reward ad views.</div>
+            </div>
+          </div>
+          <div id="dailyLadder" class="ladder-grid"></div>
+        </div>
+
+        <div class="card reward-card calendar-card">
+          <div class="reward-head">
+            <span class="reward-emoji">📅</span>
+            <div>
+              <div class="reward-title">Weekly Energy Calendar</div>
+              <div class="reward-sub">Check one day each day and watch an ad to collect Energy.</div>
+            </div>
+          </div>
+          <div id="weekCalendar" class="week-calendar"></div>
+        </div>
+
+        <div class="card reward-card rain-card">
+          <div class="reward-head">
+            <span class="reward-emoji">🌧️</span>
+            <div>
+              <div class="reward-title">Rain Energy</div>
+              <div class="reward-sub">Tap the falling drops for tiny Energy boosts of 5–10 ⚡.</div>
+            </div>
+          </div>
+          <div id="rainScene" class="rain-scene"></div>
+        </div>
+
         <p class="energy-disclaimer">Energy has no monetary value and cannot be exchanged for $DLTX. Play games to earn up to 10 $DLTX daily.</p>
       </div>
 
@@ -497,6 +541,17 @@
             <div class="reward-sub" id="puzzleSub">Solve today's secret code to earn a reward.</div></div>
           </div>
         </button>
+
+        <div class="card reward-card daily-challenge-card">
+          <div class="reward-head"><span class="reward-emoji">🎯</span>
+            <div><div class="reward-title">Daily Challenge</div>
+            <div class="reward-sub">Complete a few actions and unlock a bonus.</div></div>
+          </div>
+          <div class="daily-challenge-meter"><span id="dailyChallengeFill"></span></div>
+          <div class="daily-challenge-label" id="dailyChallengeLabel">Loading challenge…</div>
+          <div class="daily-challenge-list" id="dailyChallengeList"></div>
+          <button class="btn primary reward-btn" id="dailyChallengeBtn" disabled>Loading challenge…</button>
+        </div>
 
         <!-- Daily check-in -->
         <div class="card reward-card">
@@ -674,6 +729,18 @@
           <div class="lb-list" id="lbList"><p class="muted center">Loading rankings…</p></div>
           <div class="lb-countries-title">Countries competing 🌍</div>
           <div class="lb-countries" id="lbCountries"></div>
+        </div>
+        <div class="card season-card">
+          <div class="reward-head">
+            <span class="reward-emoji">🏁</span>
+            <div>
+              <div class="reward-title">Season Challenge</div>
+              <div class="reward-sub">Monthly activity race for the top Deltix players.</div>
+            </div>
+          </div>
+          <div class="season-header" id="seasonHeader">Loading season…</div>
+          <div class="season-list" id="seasonList"></div>
+          <div class="season-rewards" id="seasonRewards"></div>
         </div>
       </div>
 

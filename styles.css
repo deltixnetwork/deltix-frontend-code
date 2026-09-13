@@ -1458,6 +1458,32 @@ html[data-dark] .earn-card {
 }
 .btn.gold:disabled { opacity: .5; }
 .checkin-streak { font-size: 13px; font-weight: 700; color: #ea580c; margin-bottom: 8px; }
+.daily-challenge-card { background: linear-gradient(135deg, rgba(59,130,246,0.07), rgba(255,255,255,0.8)); }
+.daily-challenge-meter {
+  height: 10px; border-radius: 999px; background: #e7eefb; overflow: hidden; margin: 8px 0 10px;
+  border: 1px solid rgba(59,130,246,0.18);
+}
+.daily-challenge-meter span {
+  display: block; height: 100%; width: 0; border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #22c55e); transition: width .25s ease;
+}
+.daily-challenge-label { font-size: 12px; color: #1d4ed8; font-weight: 800; margin-bottom: 8px; }
+.daily-challenge-list { display: flex; flex-direction: column; gap: 7px; }
+.daily-challenge-item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px;
+  background: rgba(255,255,255,0.7); border: 1px solid rgba(148,163,184,0.2);
+}
+.daily-challenge-item.complete { background: rgba(34,197,94,0.08); border-color: rgba(34,197,94,0.22); }
+.daily-challenge-dot {
+  width: 12px; height: 12px; border-radius: 50%; background: #cbd5e1; flex: none;
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,0.8);
+}
+.daily-challenge-item.complete .daily-challenge-dot { background: #22c55e; }
+.daily-challenge-copy { flex: 1 1 auto; min-width: 0; }
+.daily-challenge-copy b { display: block; font-size: 12px; color: #0f172a; }
+.daily-challenge-copy small { display: block; color: #5a6b8c; font-size: 10px; margin-top: 2px; }
+.daily-challenge-badge { flex: none; font-size: 11px; font-weight: 900; color: #1d4ed8; }
+
 .box-visual {
   position: relative; height: 104px; margin: 4px 0 10px;
   display: flex; align-items: center; justify-content: center;
@@ -1608,6 +1634,22 @@ html[data-dark] .nav-card-txt b { color: #e6edfa; }
 .lbc-rank { flex: 0 0 22px; text-align: center; font-weight: 800; color: #64748b; }
 .lbc-meta { flex: none; font-size: 11px; color: #5a6b8c; font-weight: 700; }
 
+.season-card { margin-top: 14px; }
+.season-header { font-size: 12px; color: #1d4ed8; font-weight: 800; margin-bottom: 8px; }
+.season-list { display: flex; flex-direction: column; gap: 7px; }
+.season-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: #f8faff; }
+.season-row.me { background: #e9f3ff; border: 1px solid #bfd6ff; }
+.season-rank { flex: 0 0 26px; text-align: center; font-weight: 900; color: #64748b; }
+.season-name { flex: 1 1 auto; font-weight: 800; color: #1f2937; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.season-xp { flex: none; font-weight: 900; color: #1d4ed8; }
+.season-rewards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.season-reward { border-radius: 10px; padding: 8px 10px; background: #f4f7ff; border: 1px solid #dfe9ff; }
+.season-reward.unlocked { background: linear-gradient(180deg, #fff7df, #fff); border-color: #fbd974; }
+.season-reward .sr-top { display: flex; align-items: center; justify-content: space-between; font-weight: 900; color: #1f2937; }
+.season-reward .sr-top span:last-child { font-size: 18px; }
+.season-reward .sr-title { font-size: 12px; font-weight: 800; }
+.season-reward .sr-perk { font-size: 10.5px; color: #5a6b8c; margin-top: 2px; }
+
 /* ---------- Deltix Passport ---------- */
 .pp-summary { display: flex; justify-content: space-around; margin-bottom: 14px; }
 .pp-stat { display: flex; flex-direction: column; align-items: center; }
@@ -1730,6 +1772,28 @@ html[data-dark] .nav-card-txt b { color: #e6edfa; }
 .energy-feat .ef-sub { font-size: 7.4px; line-height: 1.12; color: var(--muted); margin-top: 2px; }
 
 .energy-disclaimer { margin: 12px 4px 4px; font-size: 10px; color: #35507a; text-align: center; background: #eef4ff; border-radius: 8px; padding: 8px 10px; }
+
+.rain-scene {
+  position: relative; height: 180px; overflow: hidden; border-radius: 16px;
+  border: 1px solid rgba(96, 165, 250, .25); background: linear-gradient(180deg, #dbeafe, #eff6ff 55%, #dbeafe);
+  box-shadow: inset 0 2px 8px rgba(59,130,246,.08);
+}
+.rain-cloud {
+  position: absolute; left: 50%; top: 20px; transform: translateX(-50%); font-size: 52px; filter: drop-shadow(0 10px 12px rgba(59,130,246,.15));
+}
+.rain-drop {
+  position: absolute; width: 22px; height: 32px; border-radius: 50% 50% 55% 55%;
+  background: linear-gradient(180deg, rgba(59,130,246,.8), rgba(96,165,250,.25));
+  border: 1px solid rgba(29,78,216,.18); box-shadow: 0 0 12px rgba(59,130,246,.18);
+  color: #fff; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 900;
+  animation: rain-fall 2.1s ease-in-out infinite alternate;
+}
+@keyframes rain-fall {
+  0% { transform: translateY(-4px) scale(.96); opacity: .65; }
+  100% { transform: translateY(18px) scale(1.06); opacity: 1; }
+}
+.rain-drop:hover { transform: scale(1.15); filter: brightness(1.08); }
+.rain-drop.collected { opacity: 0; pointer-events: none; }
 
 .slot-count { font-size: 12px; color: var(--muted); align-self: center; margin-left: 8px; }
 

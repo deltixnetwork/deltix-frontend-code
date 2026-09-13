@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.7.1';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -285,10 +285,11 @@ function refreshTabContent(id) {
   } else if (id === 'tab-arcade') {
     if (typeof loadArcade === 'function') loadArcade().catch(() => {});
   } else if (id === 'tab-community') {
-    Promise.allSettled([loadGovernance(), loadReferrals(), loadGlobe()]);
+    Promise.allSettled([loadGovernance(), loadReferrals(), loadGlobe(), loadLeaderboard(), loadSeason()]);
   } else if (id === 'tab-rewards') {
     loadRewards().catch(() => {});
     loadPuzzle().catch(() => {});
+    loadDailyChallenge().catch(() => {});
   } else if (id === 'tab-network') {
     Promise.allSettled([loadChain(), loadStats()]);
   } else if (id === 'tab-energygames') {
@@ -320,7 +321,7 @@ async function refreshCurrentView({ isPull = false, silent = false } = {}) {
   } else if (activeTab === 'tab-stake') {
     tasks.push(loadStakes(), loadValidators());
   } else if (activeTab === 'tab-community') {
-    tasks.push(loadGovernance(), loadReferrals(), loadGlobe());
+    tasks.push(loadGovernance(), loadReferrals(), loadGlobe(), loadLeaderboard(), loadSeason());
   } else if (activeTab === 'tab-leaderboard') {
     tasks.push(loadLeaderboard());
   } else if (activeTab === 'tab-ranking') {
@@ -332,7 +333,7 @@ async function refreshCurrentView({ isPull = false, silent = false } = {}) {
   } else if (activeTab === 'tab-energy') {
     tasks.push(loadEnergy());
   } else if (activeTab === 'tab-rewards') {
-    tasks.push(loadRewards());
+    tasks.push(loadRewards(), loadDailyChallenge());
   } else if (activeTab === 'tab-missions') {
     tasks.push(loadMissions());
   } else if (activeTab === 'tab-earn') {
@@ -2531,11 +2532,14 @@ function renderEnergy() {
       <div class="er-name">${rk.name.replace(' ', '<br>')}</div>
       <img src="assets/energy/${rk.asset}" class="er-badge" alt="${rk.name}" />
       <div class="er-range">${rk.max === Infinity ? rk.min + '+' : rk.min + '\u2013' + rk.max}</div>
-      <div class="er-rate">+1 Energy / Ad</div>
+      <div class="er-rate">+5 Energy / Ad</div>
     </div>`).join('');
   set('efStreakSub', st.streak > 0 ? `${st.streak}-day streak 🔥` : 'Build streaks, earn bonus Energy');
   const opened = unlockedGames().length;
   set('efGamesSub', opened >= 5 ? 'All 5 bonus games unlocked ✅' : `${opened}/5 unlocked · spend Energy in the Arcade`);
+  renderDailyLadder();
+  renderWeekCalendar();
+  renderRainScene();
   applyEnergyHour(state.energy?.happyHour);
 
   // Celebrate reaching a new Energy rank — non-monetary status recognition.
@@ -2623,7 +2627,223 @@ async function earnEnergy(btn) {
     if (btn) btn.disabled = false;
   }
 }
+
+const DAILY_LADDER_STEPS = [
+  { label: '1', reward: 10, free: true },
+  { label: '2', reward: 10, requiresAd: true },
+  { label: '3', reward: 15, requiresAd: true },
+  { label: '4', reward: 20, requiresAd: true },
+  { label: '5', reward: 25, requiresAd: true, bonus: true },
+  { label: '6', reward: 15, requiresAd: true },
+  { label: '7', reward: 20, requiresAd: true },
+  { label: '8', reward: 15, requiresAd: true },
+  { label: '9', reward: 25, requiresAd: true },
+  { label: '10', reward: 20, requiresAd: true },
+  { label: '11', reward: 25, requiresAd: true },
+  { label: '12', reward: 30, requiresAd: true },
+  { label: '13', reward: 20, requiresAd: true },
+  { label: '14', reward: 25, requiresAd: true },
+  { label: '15', reward: 35, requiresAd: true, bonus: true }
+];
+
+function dailyLadderState() {
+  const key = 'dltx_daily_ladder';
+  try {
+    const raw = JSON.parse(localStorage.getItem(key) || '{}');
+    const today = new Date().toISOString().slice(0, 10);
+    if (!raw.day || raw.day !== today) {
+      return { day: today, claimed: Array(DAILY_LADDER_STEPS.length).fill(false) };
+    }
+    return { day: raw.day, claimed: Array.isArray(raw.claimed) ? raw.claimed.slice(0, DAILY_LADDER_STEPS.length) : Array(DAILY_LADDER_STEPS.length).fill(false) };
+  } catch {
+    return { day: new Date().toISOString().slice(0, 10), claimed: Array(DAILY_LADDER_STEPS.length).fill(false) };
+  }
+}
+
+function saveDailyLadderState(data) {
+  localStorage.setItem('dltx_daily_ladder', JSON.stringify(data));
+}
+
+function renderDailyLadder() {
+  const host = $('dailyLadder');
+  if (!host) return;
+  const state = dailyLadderState();
+  host.innerHTML = DAILY_LADDER_STEPS.map((step, index) => {
+    const claimed = state.claimed[index];
+    const canUnlock = index === 0 || (index > 0 && state.claimed[index - 1]);
+    const badge = claimed ? 'Claimed ✓' : canUnlock ? `+${step.reward} ⚡` : 'Locked';
+    return `<button class="ladder-step ${claimed ? 'claimed' : ''} ${canUnlock ? 'ready' : 'locked'}" data-ladder-step="${index}" ${claimed || !canUnlock ? 'disabled' : ''}>
+      <span>${step.label}</span>
+      <small>${badge}</small>
+    </button>`;
+  }).join('');
+  host.querySelectorAll('[data-ladder-step]').forEach((btn) => {
+    btn.addEventListener('click', () => claimLadderStep(Number(btn.dataset.ladderStep)));
+  });
+}
+
+async function claimLadderStep(stepIndex) {
+  const step = DAILY_LADDER_STEPS[stepIndex];
+  if (!step) return;
+  const state = dailyLadderState();
+  if (state.claimed[stepIndex]) return;
+  if (stepIndex > 0 && !state.claimed[stepIndex - 1]) {
+    toast('Complete the previous ladder step first.');
+    return;
+  }
+
+  try {
+    if (step.requiresAd) {
+      const earned = await playRewardedAd();
+      if (!earned) {
+        toast('Ad not completed — the ladder step stays locked.');
+        return;
+      }
+    }
+
+    const r = await api('POST', '/energy/bonus', { amount: step.reward, reason: `daily_ladder_${stepIndex + 1}` });
+    state.claimed[stepIndex] = true;
+    saveDailyLadderState(state);
+    state.energy = r;
+    renderEnergy();
+    renderDailyLadder();
+    celebrate({
+      amount: step.reward,
+      unit: 'Energy',
+      icon: '⚡',
+      title: `Ladder step ${step.label}!`,
+      subtitle: `+${step.reward} ⚡ added to your Energy total.`,
+      duration: 2600,
+    });
+  } catch (e) {
+    toast(e.message || 'Unable to claim ladder reward.');
+  }
+}
+
+const WEEKLY_CHECKIN_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function weeklyCalendarState() {
+  const key = 'dltx_week_calendar';
+  try {
+    const raw = JSON.parse(localStorage.getItem(key) || '{}');
+    const today = new Date();
+    const weekKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    if (!raw.weekKey || raw.weekKey !== weekKey.slice(0, 7)) {
+      return { weekKey: weekKey.slice(0, 7), claimed: Array(7).fill(false) };
+    }
+    return { weekKey: raw.weekKey, claimed: Array.isArray(raw.claimed) ? raw.claimed.slice(0, 7) : Array(7).fill(false) };
+  } catch {
+    return { weekKey: new Date().toISOString().slice(0, 7), claimed: Array(7).fill(false) };
+  }
+}
+
+function saveWeeklyCalendarState(data) {
+  localStorage.setItem('dltx_week_calendar', JSON.stringify(data));
+}
+
+function renderWeekCalendar() {
+  const host = $('weekCalendar');
+  if (!host) return;
+  const state = weeklyCalendarState();
+  const day = new Date().getDay();
+  host.innerHTML = WEEKLY_CHECKIN_DAYS.map((label, index) => {
+    const claimed = state.claimed[index];
+    const isToday = index === day;
+    return `<button class="calendar-day ${claimed ? 'claimed' : ''} ${isToday ? 'today' : ''}" data-calendar-day="${index}" ${claimed ? 'disabled' : ''}>
+      <span>${label}</span>
+      <small>${claimed ? '✓' : isToday ? 'Today' : '+' + (index < 5 ? 8 : 10) + ' ⚡'}</small>
+    </button>`;
+  }).join('');
+  host.querySelectorAll('[data-calendar-day]').forEach((btn) => {
+    btn.addEventListener('click', () => claimWeeklyDay(Number(btn.dataset.calendarDay)));
+  });
+}
+
+async function claimWeeklyDay(dayIndex) {
+  const state = weeklyCalendarState();
+  if (state.claimed[dayIndex]) return;
+  const today = new Date().getDay();
+  if (dayIndex > today) {
+    toast('You can only claim the current day and earlier days in this week.');
+    return;
+  }
+
+  try {
+    const earned = await playRewardedAd();
+    if (!earned) {
+      toast('Ad not completed — no daily calendar reward was added.');
+      return;
+    }
+    const reward = dayIndex < 5 ? 8 : 10;
+    const r = await api('POST', '/energy/bonus', { amount: reward, reason: `weekly_calendar_${dayIndex}` });
+    state.claimed[dayIndex] = true;
+    saveWeeklyCalendarState(state);
+    state.energy = r;
+    renderEnergy();
+    renderWeekCalendar();
+    celebrate({ amount: reward, unit: 'Energy', icon: '📅', title: 'Daily check-in claimed!', subtitle: `+${reward} ⚡ added for ${WEEKLY_CHECKIN_DAYS[dayIndex]}.`, duration: 2200 });
+  } catch (e) {
+    toast(e.message || 'Calendar reward failed.');
+  }
+}
+
+function rainKey() {
+  const d = new Date();
+  return `dltx_rain_${d.toISOString().slice(0, 10)}`;
+}
+
+function renderRainScene() {
+  const host = $('rainScene');
+  if (!host) return;
+  const key = rainKey();
+  const raw = localStorage.getItem(key);
+  const collected = raw ? JSON.parse(raw) : [];
+  const drops = [
+    { x: 18, y: 40, value: 5 },
+    { x: 28, y: 56, value: 6 },
+    { x: 42, y: 50, value: 7 },
+    { x: 58, y: 46, value: 8 },
+    { x: 70, y: 62, value: 9 },
+    { x: 82, y: 44, value: 10 },
+  ];
+  host.innerHTML = `
+    <div class="rain-cloud">☁️</div>
+    ${drops.map((drop, idx) => {
+      const used = collected.includes(idx);
+      return `<button class="rain-drop ${used ? 'collected' : ''}" data-rain-index="${idx}" style="left:${drop.x}%; top:${drop.y}%;" ${used ? 'disabled' : ''}>${drop.value}</button>`;
+    }).join('')}
+  `;
+  host.querySelectorAll('.rain-drop').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const idx = Number(btn.dataset.rainIndex);
+      if (!Number.isFinite(idx)) return;
+      try {
+        const earned = await playRewardedAd();
+        if (!earned) {
+          toast('Ad not completed — the rain drop stays in the sky.');
+          return;
+        }
+        const value = Number(btn.textContent) || 5;
+        const r = await api('POST', '/energy/rain', { amount: value, reason: 'rain_drop' });
+        const collectedList = JSON.parse(localStorage.getItem(rainKey()) || '[]');
+        collectedList.push(idx);
+        localStorage.setItem(rainKey(), JSON.stringify(collectedList));
+        renderRainScene();
+        state.energy = r;
+        renderEnergy();
+        celebrate({ amount: value, unit: 'Energy', icon: '🌧️', title: 'Rain collected!', subtitle: `+${value} ⚡ Energy landed in your account.`, duration: 2200 });
+      } catch (e) {
+        toast(e.message || 'Rain reward failed.');
+      }
+    });
+  });
+}
+
 $('energyEarnBtn')?.addEventListener('click', (e) => earnEnergy(e.currentTarget));
+$('homeEarnBtn')?.addEventListener('click', () => {
+  showTab('tab-earn');
+  if (state.token) loadEarn().catch(() => {});
+});
 
 // ---------- Deltix Shop ----------
 const SHOP_CAT_LABELS = { avatar: 'Avatars', theme: 'Themes', energy: 'Energy Packs', boost: 'Arcade Boosts' };
@@ -2819,9 +3039,67 @@ document.querySelectorAll('.energy-feat').forEach((c) =>
 // only animates the result. Interstitial ads are shown around actions but are
 // never required to receive a reward.
 const rewardState = { data: null, spinning: false, wheelRot: 0, wheelSegs: [], wheelMode: 'free', readyAt: {} };
+const dailyChallengeState = { data: null };
 let rewardTimer = null;
 let lastRewardInterstitial = 0;
 const fmtInt = (n) => Number(n || 0).toLocaleString();
+
+async function loadDailyChallenge() {
+  if (!state.token) return;
+  try {
+    const r = await api('GET', '/community/daily-challenge');
+    dailyChallengeState.data = r;
+    renderDailyChallenge();
+  } catch { /* handled by api() */ }
+}
+
+function renderDailyChallenge() {
+  const d = dailyChallengeState.data;
+  const fill = $('dailyChallengeFill');
+  const label = $('dailyChallengeLabel');
+  const list = $('dailyChallengeList');
+  const btn = $('dailyChallengeBtn');
+  if (!fill || !label || !list || !btn) return;
+  if (!d) {
+    fill.style.width = '0%';
+    label.textContent = 'Loading challenge…';
+    list.innerHTML = '';
+    btn.disabled = true;
+    btn.textContent = 'Loading challenge…';
+    return;
+  }
+  fill.style.width = `${d.progress || 0}%`;
+  label.textContent = `${d.completed}/${d.total} complete · ${d.rewardText}`;
+  list.innerHTML = (d.tasks || []).map((task) => `
+    <div class="daily-challenge-item ${task.progress >= task.goal ? 'complete' : ''}">
+      <span class="daily-challenge-dot"></span>
+      <div class="daily-challenge-copy">
+        <b>${task.title}</b>
+        <small>${task.hint}</small>
+      </div>
+      <span class="daily-challenge-badge">${task.reward}</span>
+    </div>
+  `).join('');
+  btn.disabled = !d.claimable;
+  btn.textContent = d.claimed ? 'Bonus claimed ✓ · back tomorrow' : d.claimable ? 'Claim +20 ⚡ bonus' : 'Complete 3 tasks to claim';
+}
+
+async function claimDailyChallenge() {
+  const btn = $('dailyChallengeBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const r = await api('POST', '/community/daily-challenge/claim', await getIntegrityPayload());
+    dailyChallengeState.data = r.challenge;
+    renderDailyChallenge();
+    celebrate({ amount: r.energyAwarded, unit: '⚡ Energy', title: 'Daily Challenge Complete!', subtitle: 'Come back tomorrow for another bonus.', icon: '🎯' });
+    await Promise.allSettled([loadEnergy(undefined, { force: true }), loadDailyChallenge()]);
+    showRewardInterstitial();
+  } catch (e) {
+    if (e.data?.challenge) dailyChallengeState.data = e.data.challenge;
+    renderDailyChallenge();
+    toast(e.message);
+  }
+}
 
 /** Frequency-capped interstitial for reward actions (native only). */
 function showRewardInterstitial() {
@@ -3032,6 +3310,7 @@ function resetEarnUI() {
 }
 
 $('earnBtn')?.addEventListener('click', handleEarnAction);
+$('dailyChallengeBtn')?.addEventListener('click', claimDailyChallenge);
 
 // ---- Fortune wheel canvas ----
 const WHEEL_PALETTE = ['#6366f1', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#0ea5e9'];
@@ -3725,11 +4004,61 @@ function startGlobe() {
 }
 
 // ==================== Country Leaderboard + Deltix Passport ====================
-const communityState = { lbScope: 'country', lbData: null, passport: null };
+const communityState = { lbScope: 'country', lbData: null, season: null, passport: null };
 const ordinal = (n) => {
   const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 };
+
+async function loadSeason() {
+  if (!state.token) return;
+  try {
+    const r = await api('GET', '/community/season');
+    communityState.season = r;
+    renderSeason();
+  } catch { /* handled by api() */ }
+}
+
+function renderSeason() {
+  const d = communityState.season;
+  const header = $('seasonHeader');
+  if (header) {
+    if (!d) {
+      header.textContent = 'Loading season…';
+      return;
+    }
+    header.textContent = `${d.title} · ${fmtInt(d.totals?.players || 0)} players active`;
+  }
+
+  const list = $('seasonList');
+  if (!list) return;
+  if (!d || !d.season || !d.season.length) {
+    list.innerHTML = '<p class="muted center">Season standings are loading…</p>';
+  } else {
+    list.innerHTML = d.season.map((p) => `
+      <div class="season-row${p.isYou ? ' me' : ''}">
+        <span class="season-rank">${p.rank <= 3 ? ['🥇', '🥈', '🥉'][p.rank - 1] : p.rank}</span>
+        <span class="season-name">${p.handle}${p.isYou ? ' · You' : ''}</span>
+        <span class="season-xp">${fmtInt(p.xp)} XP</span>
+      </div>
+    `).join('');
+  }
+
+  const rewards = $('seasonRewards');
+  if (rewards) {
+    if (!d || !d.rewardTiers) {
+      rewards.innerHTML = '';
+    } else {
+      rewards.innerHTML = d.rewardTiers.map((tier) => `
+        <div class="season-reward${tier.unlocked ? ' unlocked' : ''}">
+          <div class="sr-top"><span class="sr-title">${tier.title}</span><span>${tier.icon}</span></div>
+          <div class="sr-perk">Top ${tier.rank === 100 ? '100' : tier.rank}</div>
+          <div class="sr-perk">${tier.perk}</div>
+        </div>
+      `).join('');
+    }
+  }
+}
 
 async function loadLeaderboard() {
   if (!state.token) return;
@@ -3836,9 +4165,12 @@ document.querySelectorAll('[data-lbscope]').forEach((b) =>
 function resetCommunityUI() {
   communityState.lbScope = 'country';
   communityState.lbData = null;
+  communityState.season = null;
   communityState.passport = null;
   const list = $('lbList'); if (list) list.innerHTML = '<p class="muted center">Loading rankings…</p>';
   const you = $('lbYou'); if (you) you.textContent = 'Play games and check in daily to climb the ranks.';
+  const seasonList = $('seasonList'); if (seasonList) seasonList.innerHTML = '<p class="muted center">Loading season standings…</p>';
+  const seasonHeader = $('seasonHeader'); if (seasonHeader) seasonHeader.textContent = 'Loading season…';
   setText('ppStamps', '0/0'); setText('ppMedals', '0/0'); setText('ppStreak', '0');
   const mg = $('ppMedalsGrid'); if (mg) mg.innerHTML = '';
   const sg = $('ppStampsGrid'); if (sg) sg.innerHTML = '';
