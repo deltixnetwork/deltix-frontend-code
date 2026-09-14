@@ -14,7 +14,7 @@ const ARCADE_ICONS = {
   tictactoe: '◍', memory: '❖', snake: '➰', merge: '⬚', sudoku: '▦',
   minehunt: '☄', slide: '⇄', reversi: '◐', recall: '◌', reaction: '⚡',
   ludo: '⛃', chess: '♞', threecard: 'Δ', carom: '⬤', slicer: '◈', soccer: '◎', racing: '»',
-  connect4: '◉', breaker: '▬', tower: '▮', blocks: '▤', flyer: '➤',
+  connect4: '◉', breaker: '▬', tower: '▮', blocks: '▤', flyer: '➤', flash: '➹',
 };
 
 // One emoji per game — the community asked for more personality on the cards.
@@ -22,7 +22,7 @@ const ARCADE_EMOJI = {
   tictactoe: '❌', memory: '🧠', snake: '🐍', merge: '🔢', sudoku: '🔡',
   minehunt: '💣', slide: '🧩', reversi: '⚫', recall: '🎼', reaction: '⚡',
   ludo: '🎲', chess: '♟️', threecard: '🃏', carom: '🎱', slicer: '🍉', soccer: '⚽', racing: '🏎️',
-  connect4: '🔴', breaker: '🧱', tower: '🏗️', blocks: '🟦', flyer: '🚀',
+  connect4: '🔴', breaker: '🧱', tower: '🏗️', blocks: '🟦', flyer: '🚀', flash: '🕹️',
 };
 
 // The rival personas players meet across the arcade.
@@ -3727,6 +3727,77 @@ GAME_IMPL.flyer = (mount, diff, finish, status) => {
     cv.removeEventListener('pointerdown', onDown);
     document.removeEventListener('keydown', onKey);
   };
+};
+
+// ---- 18. Delta Reflex — match the arrow before the window shrinks shut ----
+GAME_IMPL.flash = (mount, diff, finish, status) => {
+  const goal = diff === 'hard' ? 26 : 14;
+  const baseWindow = diff === 'hard' ? 900 : 1300;
+  const minWindow = diff === 'hard' ? 480 : 750;
+  const DIRS = ['up', 'down', 'left', 'right'];
+  const GLYPH = { up: '▲', down: '▼', left: '◀', right: '▶' };
+  mount.innerHTML = `
+    <div class="flash-stage">
+      <div class="flash-arrow" id="flashArrow">▲</div>
+      <div class="flash-pad">
+        <button class="flash-btn fb-up" data-dir="up" aria-label="Up">▲</button>
+        <button class="flash-btn fb-left" data-dir="left" aria-label="Left">◀</button>
+        <button class="flash-btn fb-right" data-dir="right" aria-label="Right">▶</button>
+        <button class="flash-btn fb-down" data-dir="down" aria-label="Down">▼</button>
+      </div>
+    </div>
+  `;
+  const arrowEl = mount.querySelector('#flashArrow');
+  const btns = mount.querySelectorAll('.flash-btn');
+  let current = null, hits = 0, streak = 0, left = 30, over = false, moveTimer = null;
+  const windowNow = () => Math.max(minWindow, baseWindow - hits * 18);
+  function update(note) {
+    status(`➤ ${hits}/${goal} · ${left}s${streak >= 5 ? ` · 🔥 x${streak}` : ''}${note ? ' · ' + note : ''}`);
+  }
+  function next() {
+    clearTimeout(moveTimer);
+    const prev = current;
+    do { current = DIRS[Math.floor(Math.random() * DIRS.length)]; } while (current === prev);
+    arrowEl.textContent = GLYPH[current];
+    arrowEl.className = 'flash-arrow pulse';
+    void arrowEl.offsetWidth; // restart the pulse animation each round
+    moveTimer = setTimeout(() => {
+      if (over) return;
+      streak = 0;
+      update('too slow!');
+      next();
+    }, windowNow());
+  }
+  function end(won) {
+    if (over) return;
+    over = true;
+    clearInterval(clock);
+    clearTimeout(moveTimer);
+    finish(won, hits);
+  }
+  function press(dir) {
+    if (over) return;
+    if (dir === current) {
+      hits++;
+      streak++;
+      update();
+      if (hits >= goal) return end(true);
+      next();
+    } else {
+      hits = Math.max(0, hits - 1);
+      streak = 0;
+      update('✕ wrong direction');
+    }
+  }
+  btns.forEach((b) => b.addEventListener('click', () => press(b.dataset.dir)));
+  next();
+  update();
+  const clock = setInterval(() => {
+    left--;
+    update();
+    if (left <= 0) end(hits >= goal);
+  }, 1000);
+  return () => { over = true; clearInterval(clock); clearTimeout(moveTimer); };
 };
 
 // ═════════════════════ INSTANT ENERGY GAMES (tap → reveal) ═════════════════════

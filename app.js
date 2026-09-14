@@ -249,6 +249,7 @@ function showScreen(id) {
   $(id).classList.add('active');
   const authed = id === 'screen-main';
   $('topbar').hidden = !authed;
+  const botFab = $('botFab'); if (botFab) botFab.hidden = !authed;
   closeSidenav();
   if (!authed) {
     document.body.classList.remove('has-ad-banner');
@@ -705,6 +706,8 @@ function resetAccountUI() {
   treeState = null;
   const treeScene = $('treeScene'); if (treeScene) treeScene.textContent = '🌱';
   setText('treeSub', 'Water it once a day to grow it and collect a small reward.');
+  const botMessages = $('botMessages'); if (botMessages) botMessages.innerHTML = '';
+  const kycCard = $('kycNavCard'); if (kycCard) kycCard.hidden = true;
 }
 
 /** Full sign-out: drops the session as well as the rendered account data. */
@@ -865,6 +868,10 @@ async function enterApp() {
   ]);
   flushPendingCompletions();
   if (typeof checkMysteryHour === 'function') checkMysteryHour();
+  // Non-blocking: powers the Deltix Bot's one-shot daily nudge (checked
+  // against data already needed elsewhere, no dedicated notification backend).
+  Promise.allSettled([loadRewards(), loadTree()]).then(() => setTimeout(checkBotNudge, 1500));
+  loadKycStatus();
 }
 
 /** Extracts the email claim from the JWT payload (no verification needed). */
@@ -2906,6 +2913,99 @@ async function waterTree() {
 
 $('treeWaterBtn')?.addEventListener('click', waterTree);
 
+// ==================== Deltix Bot (canned companion, no LLM) ====================
+function addBotMessage(role, text) {
+  const list = $('botMessages');
+  if (!list) return;
+  const div = document.createElement('div');
+  div.className = `bot-msg ${role}`;
+  div.textContent = text;
+  list.appendChild(div);
+  list.scrollTop = list.scrollHeight;
+}
+
+function openBot() {
+  const modal = $('botModal');
+  if (!modal) return;
+  modal.hidden = false;
+  const list = $('botMessages');
+  if (list && !list.children.length) {
+    addBotMessage('bot', 'Hey! I\u2019m the Deltix Bot 🤖 — ask me about Energy, staking, referrals, missions, the Vault, Puzzle, Tree, Ladder, Rain, Season, or the Shop.');
+  }
+  $('botInput')?.focus();
+}
+
+async function sendBotMessage() {
+  const input = $('botInput');
+  const text = input?.value.trim();
+  if (!text || !state.token) return;
+  input.value = '';
+  addBotMessage('user', text);
+  try {
+    const r = await api('POST', '/bot/ask', { message: text });
+    addBotMessage('bot', r.reply);
+  } catch (e) {
+    addBotMessage('bot', e.message || 'Sorry, I couldn\u2019t reach the server just now.');
+  }
+}
+
+$('botFab')?.addEventListener('click', openBot);
+$('botClose')?.addEventListener('click', () => { const m = $('botModal'); if (m) m.hidden = true; });
+$('botSend')?.addEventListener('click', sendBotMessage);
+$('botInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendBotMessage(); });
+
+/**
+ * Bot "notification" — a one-shot nudge toward the single highest-value
+ * unclaimed daily action, computed entirely from state already in memory
+ * (no extra network calls, no push infrastructure required).
+ */
+function checkBotNudge() {
+  if (!state.token) return;
+  const nudges = [];
+  if (rewardState?.data?.checkin?.ready) {
+    nudges.push('Don\u2019t forget your daily check-in — it only takes a second! 📅');
+  }
+  if (treeState && !treeState.wateredToday && treeState.energy >= treeState.waterCost) {
+    nudges.push('Your Deltix Tree is thirsty 🌴 — water it for a small reward.');
+  }
+  const ladder = (() => { try { return JSON.parse(localStorage.getItem('dltx_daily_ladder') || '{}'); } catch { return {}; } })();
+  if (Array.isArray(ladder.claimed) && !ladder.claimed[0]) {
+    nudges.push('Step 1 of today\u2019s Ladder is free — grab it! 🪜');
+  }
+  if (!nudges.length) return;
+  const pick = nudges[Math.floor(Math.random() * nudges.length)];
+  toast('🤖 ' + pick);
+}
+
+// ==================== Deltix KYC (Persona, opt-in, off unless enabled) ====================
+async function loadKycStatus() {
+  if (!state.token) return;
+  try {
+    const r = await api('GET', '/kyc/status');
+    const card = $('kycNavCard');
+    if (!card) return;
+    if (!r.enabled) { card.hidden = true; return; }
+    card.hidden = false;
+    const title = $('kycNavTitle');
+    const sub = $('kycNavSub');
+    if (r.status === 'approved') {
+      if (title) title.textContent = 'Identity Verified ✅';
+      if (sub) sub.textContent = 'You\u2019re verified — extra features are unlocked.';
+      card.onclick = null;
+    } else if (r.status === 'pending') {
+      if (title) title.textContent = 'Verification Pending ⏳';
+      if (sub) sub.textContent = 'We\u2019re reviewing your submission.';
+      card.onclick = null;
+    } else {
+      if (title) title.textContent = 'Verify Identity';
+      if (sub) sub.textContent = 'Unlock extra features with a quick identity check.';
+      card.onclick = () => { if (r.hostedFlowUrl) window.open(r.hostedFlowUrl, '_blank', 'noopener'); };
+    }
+  } catch {
+    // Non-critical — leave the card hidden if the check fails.
+  }
+}
+
 $('energyEarnBtn')?.addEventListener('click', (e) => earnEnergy(e.currentTarget));
 $('homeEarnBtn')?.addEventListener('click', () => {
   showTab('tab-earn');
@@ -4292,7 +4392,7 @@ function playRewardedAd() {
 const BACK_SENTINEL = { deltix: true };
 let exitArmed = false;
 function closeTopOverlay() {
-  for (const id of ['swapModal', 'dappModal', 'stakeModal', 'sendModal', 'deleteModal']) {
+  for (const id of ['swapModal', 'dappModal', 'stakeModal', 'sendModal', 'deleteModal', 'botModal']) {
     const el = document.getElementById(id);
     if (el && !el.hidden) { el.hidden = true; return true; }
   }

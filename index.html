@@ -218,7 +218,7 @@
           <img src="assets/art-arcade-banner.png" class="banner-3d-img" alt="Arcade" onerror="this.onerror=null;this.src='assets/art-arcade-banner.svg'" />
         </div>
         <h3 class="section-title">Deltix Arcade <span class="pill live">Live</span></h3>
-        <p class="muted small-note">Twenty-two original Deltix games — classic, ownerless game concepts rebuilt in our own style. Win to earn $DLTX.</p>
+        <p class="muted small-note">Twenty-three original Deltix games — classic, ownerless game concepts rebuilt in our own style. Win to earn $DLTX.</p>
         <div class="mystery-hour idle" id="mysteryHourBanner">
           <span class="mh-icon">⏳</span>
           <div class="mh-text"><b id="mysteryHourTitle">Deltix Hour</b><span id="mysteryHourSub">2× rewards strike at a surprise time each day</span></div>
@@ -331,6 +331,11 @@
         <button class="nav-card" type="button" onclick="showTab('tab-ranking')">
           <span class="nav-card-ic">🛂</span>
           <span class="nav-card-txt"><b>Deltix Passport</b><small>Collect loyalty medals and achievement stamps.</small></span>
+          <span class="nav-card-arrow">›</span>
+        </button>
+        <button class="nav-card" type="button" id="kycNavCard" hidden>
+          <span class="nav-card-ic">🪪</span>
+          <span class="nav-card-txt"><b id="kycNavTitle">Verify Identity</b><small id="kycNavSub">Unlock extra features with a quick identity check.</small></span>
           <span class="nav-card-arrow">›</span>
         </button>
 
@@ -1009,6 +1014,22 @@
   </div>
 
   <div class="toast" id="toast" hidden></div>
+
+  <!-- Deltix Bot — canned-answer companion (no LLM, no per-message cost) -->
+  <button class="bot-fab" id="botFab" title="Ask Deltix Bot" aria-label="Ask Deltix Bot" hidden>🤖</button>
+  <div class="modal-backdrop" id="botModal" hidden>
+    <div class="modal bot-modal">
+      <div class="game-head">
+        <h3>🤖 Deltix Bot</h3>
+        <button class="btn ghost small" id="botClose">✕ Close</button>
+      </div>
+      <div class="bot-messages" id="botMessages"></div>
+      <div class="bot-input-row">
+        <input id="botInput" type="text" placeholder="Ask about Energy, staking, missions…" maxlength="200" />
+        <button class="btn primary" id="botSend">Send</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Deltix Arcade game overlay -->
   <div class="modal-backdrop" id="gameModal" hidden>

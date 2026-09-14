@@ -626,6 +626,22 @@ body.has-gameover-ad #gameMount { padding-bottom: 270px; }
   font-size: 14px; z-index: 300; box-shadow: 0 8px 24px rgba(16, 24, 40, .3); max-width: 90%;
 }
 
+/* Deltix Bot */
+.bot-fab {
+  position: fixed; right: 14px; bottom: 150px; width: 52px; height: 52px; border-radius: 50%;
+  background: linear-gradient(145deg, #2563eb, #1d4ed8); color: #fff; border: none; font-size: 24px;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, .4); z-index: 150; cursor: pointer;
+}
+.bot-fab:active { transform: scale(.94); }
+.bot-modal { display: flex; flex-direction: column; height: 70vh; height: 70dvh; }
+.bot-messages { flex: 1 1 auto; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 2px; }
+.bot-msg { max-width: 82%; padding: 9px 12px; border-radius: 14px; font-size: 13.5px; line-height: 1.35; }
+.bot-msg.bot { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+.bot-msg.user { align-self: flex-end; background: linear-gradient(145deg, #2563eb, #1d4ed8); color: #fff; border-bottom-right-radius: 4px; }
+.bot-input-row { display: flex; gap: 8px; }
+.bot-input-row input { flex: 1 1 auto; }
+html[data-dark] .bot-fab { box-shadow: 0 8px 20px rgba(37, 99, 235, .55); }
+
 /* Reward celebration popup */
 .reward-pop {
   position: fixed; inset: 0; z-index: 400; display: flex; align-items: center; justify-content: center;
@@ -846,6 +862,30 @@ html[data-dark] .mystery-hour.idle .mh-text span { color: #9a8fc4; }
 .dpad button { width: 52px; height: 40px; border-radius: 10px; border: 1px solid var(--border, #e6eaf2); background: #fff; font-size: 15px; color: var(--accent); cursor: pointer; }
 .dpad button:active { background: #eef3ff; }
 .dpad-mid { display: flex; gap: 60px; }
+
+/* -- Delta Reflex ------------------------------------ */
+.flash-stage { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 10px 0 18px; }
+.flash-arrow {
+  font-size: 56px; line-height: 1; color: var(--accent, #2563eb);
+  filter: drop-shadow(0 4px 8px rgba(37, 99, 235, .25));
+}
+.flash-arrow.pulse { animation: flashPulse .28s ease; }
+@keyframes flashPulse { 0% { transform: scale(1.35); opacity: .5; } 100% { transform: scale(1); opacity: 1; } }
+.flash-pad {
+  display: grid; grid-template-columns: 64px 64px 64px; grid-template-rows: 56px 56px;
+  gap: 6px; place-items: center;
+}
+.flash-btn {
+  width: 56px; height: 56px; border-radius: 14px; border: 1px solid var(--border, #e6eaf2);
+  background: #fff; font-size: 20px; color: var(--accent, #2563eb); cursor: pointer;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, .08);
+}
+.flash-btn:active { transform: scale(.92); background: #eef3ff; }
+.fb-up { grid-column: 2; grid-row: 1; }
+.fb-left { grid-column: 1; grid-row: 2; }
+.fb-right { grid-column: 3; grid-row: 2; }
+.fb-down { grid-column: 2; grid-row: 2; }
+html[data-dark] .flash-btn { background: #101a30; border-color: var(--border); }
 
 /* -- Forced update gate ------------------------------------ */
 .update-gate {
