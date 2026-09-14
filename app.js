@@ -249,7 +249,6 @@ function showScreen(id) {
   $(id).classList.add('active');
   const authed = id === 'screen-main';
   $('topbar').hidden = !authed;
-  const botFab = $('botFab'); if (botFab) botFab.hidden = !authed;
   closeSidenav();
   if (!authed) {
     document.body.classList.remove('has-ad-banner');
@@ -304,6 +303,9 @@ function refreshTabContent(id) {
     loadPassport().catch(() => {});
   } else if (id === 'tab-earn') {
     loadEarn().catch(() => {});
+  } else if (id === 'tab-assistant') {
+    ensureBotGreeting();
+    loadKycStatus().catch(() => {});
   }
 }
 
@@ -339,6 +341,8 @@ async function refreshCurrentView({ isPull = false, silent = false } = {}) {
     tasks.push(loadMissions());
   } else if (activeTab === 'tab-earn') {
     tasks.push(loadEarn());
+  } else if (activeTab === 'tab-assistant') {
+    tasks.push(loadKycStatus());
   }
 
   try {
@@ -707,7 +711,9 @@ function resetAccountUI() {
   const treeScene = $('treeScene'); if (treeScene) treeScene.textContent = '🌱';
   setText('treeSub', 'Water it once a day to grow it and collect a small reward.');
   const botMessages = $('botMessages'); if (botMessages) botMessages.innerHTML = '';
-  const kycCard = $('kycNavCard'); if (kycCard) kycCard.hidden = true;
+  setText('kycTitle', 'Identity Verification');
+  setText('kycSub', 'Not available yet — check back soon.');
+  const kycBtn = $('kycActionBtn'); if (kycBtn) kycBtn.hidden = true;
 }
 
 /** Full sign-out: drops the session as well as the rendered account data. */
@@ -2924,15 +2930,11 @@ function addBotMessage(role, text) {
   list.scrollTop = list.scrollHeight;
 }
 
-function openBot() {
-  const modal = $('botModal');
-  if (!modal) return;
-  modal.hidden = false;
+function ensureBotGreeting() {
   const list = $('botMessages');
   if (list && !list.children.length) {
     addBotMessage('bot', 'Hey! I\u2019m the Deltix Bot 🤖 — ask me about Energy, staking, referrals, missions, the Vault, Puzzle, Tree, Ladder, Rain, Season, or the Shop.');
   }
-  $('botInput')?.focus();
 }
 
 async function sendBotMessage() {
@@ -2949,8 +2951,6 @@ async function sendBotMessage() {
   }
 }
 
-$('botFab')?.addEventListener('click', openBot);
-$('botClose')?.addEventListener('click', () => { const m = $('botModal'); if (m) m.hidden = true; });
 $('botSend')?.addEventListener('click', sendBotMessage);
 $('botInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendBotMessage(); });
 
@@ -2980,29 +2980,36 @@ function checkBotNudge() {
 // ==================== Deltix KYC (Persona, opt-in, off unless enabled) ====================
 async function loadKycStatus() {
   if (!state.token) return;
+  const title = $('kycTitle');
+  const sub = $('kycSub');
+  const btn = $('kycActionBtn');
   try {
     const r = await api('GET', '/kyc/status');
-    const card = $('kycNavCard');
-    if (!card) return;
-    if (!r.enabled) { card.hidden = true; return; }
-    card.hidden = false;
-    const title = $('kycNavTitle');
-    const sub = $('kycNavSub');
+    if (!r.enabled) {
+      if (title) title.textContent = 'Identity Verification';
+      if (sub) sub.textContent = 'Not available yet — check back soon.';
+      if (btn) btn.hidden = true;
+      return;
+    }
     if (r.status === 'approved') {
       if (title) title.textContent = 'Identity Verified ✅';
       if (sub) sub.textContent = 'You\u2019re verified — extra features are unlocked.';
-      card.onclick = null;
+      if (btn) btn.hidden = true;
     } else if (r.status === 'pending') {
       if (title) title.textContent = 'Verification Pending ⏳';
       if (sub) sub.textContent = 'We\u2019re reviewing your submission.';
-      card.onclick = null;
+      if (btn) btn.hidden = true;
     } else {
       if (title) title.textContent = 'Verify Identity';
       if (sub) sub.textContent = 'Unlock extra features with a quick identity check.';
-      card.onclick = () => { if (r.hostedFlowUrl) window.open(r.hostedFlowUrl, '_blank', 'noopener'); };
+      if (btn) {
+        btn.hidden = false;
+        btn.textContent = 'Verify Identity';
+        btn.onclick = () => { if (r.hostedFlowUrl) window.open(r.hostedFlowUrl, '_blank', 'noopener'); };
+      }
     }
   } catch {
-    // Non-critical — leave the card hidden if the check fails.
+    // Non-critical — leave the card in its last known state if the check fails.
   }
 }
 
@@ -4392,7 +4399,7 @@ function playRewardedAd() {
 const BACK_SENTINEL = { deltix: true };
 let exitArmed = false;
 function closeTopOverlay() {
-  for (const id of ['swapModal', 'dappModal', 'stakeModal', 'sendModal', 'deleteModal', 'botModal']) {
+  for (const id of ['swapModal', 'dappModal', 'stakeModal', 'sendModal', 'deleteModal']) {
     const el = document.getElementById(id);
     if (el && !el.hidden) { el.hidden = true; return true; }
   }

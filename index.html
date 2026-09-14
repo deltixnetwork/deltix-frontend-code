@@ -333,11 +333,6 @@
           <span class="nav-card-txt"><b>Deltix Passport</b><small>Collect loyalty medals and achievement stamps.</small></span>
           <span class="nav-card-arrow">›</span>
         </button>
-        <button class="nav-card" type="button" id="kycNavCard" hidden>
-          <span class="nav-card-ic">🪪</span>
-          <span class="nav-card-txt"><b id="kycNavTitle">Verify Identity</b><small id="kycNavSub">Unlock extra features with a quick identity check.</small></span>
-          <span class="nav-card-arrow">›</span>
-        </button>
 
         <h3 class="section-title">Deltix DAO <span class="pill live" id="daoPill">Live</span></h3>
         <div class="feature-card">
@@ -740,6 +735,31 @@
         </ul>
       </div>
 
+      <!-- Deltix Assistant — canned-answer bot + identity verification, one place -->
+      <div class="tab" id="tab-assistant">
+        <div class="showcase-banner"><div class="showcase-title">🤖 Deltix Assistant</div><div class="showcase-sub">Ask the bot anything, and verify your identity to unlock more.</div></div>
+
+        <div class="card bot-embed-card">
+          <div class="reward-head">
+            <span class="reward-emoji">🤖</span>
+            <div><div class="reward-title">Deltix Bot</div><div class="reward-sub">Ask about Energy, staking, missions, the Vault, Puzzle, Tree, Ladder, Rain, Season, or the Shop.</div></div>
+          </div>
+          <div class="bot-messages" id="botMessages"></div>
+          <div class="bot-input-row">
+            <input id="botInput" type="text" placeholder="Ask about Energy, staking, missions…" maxlength="200" />
+            <button class="btn primary" id="botSend">Send</button>
+          </div>
+        </div>
+
+        <div class="card kyc-card" id="kycCard">
+          <div class="reward-head">
+            <span class="reward-emoji">🪪</span>
+            <div><div class="reward-title" id="kycTitle">Identity Verification</div><div class="reward-sub" id="kycSub">Not available yet — check back soon.</div></div>
+          </div>
+          <button class="btn primary reward-btn" id="kycActionBtn" hidden>Verify Identity</button>
+        </div>
+      </div>
+
       <!-- Country Leaderboard -->
       <div class="tab" id="tab-leaderboard">
         <div class="showcase-banner"><div class="showcase-title">Leaderboard 🏆</div><div class="showcase-sub">Climb your country and global rankings by playing and checking in daily.</div></div>
@@ -828,6 +848,9 @@
         </button>
         <button class="sidenav-item" data-tab="tab-earn">
           <span class="nav-3d-icon nav-emoji">◆</span><span>Deltix Earn</span>
+        </button>
+        <button class="sidenav-item" data-tab="tab-assistant">
+          <span class="nav-3d-icon nav-emoji">🤖</span><span>Assistant</span>
         </button>
         <button class="sidenav-item" data-tab="tab-missions">
           <span class="nav-3d-icon nav-emoji">🚀</span><span>Missions</span>
@@ -1014,22 +1037,6 @@
   </div>
 
   <div class="toast" id="toast" hidden></div>
-
-  <!-- Deltix Bot — canned-answer companion (no LLM, no per-message cost) -->
-  <button class="bot-fab" id="botFab" title="Ask Deltix Bot" aria-label="Ask Deltix Bot" hidden>🤖</button>
-  <div class="modal-backdrop" id="botModal" hidden>
-    <div class="modal bot-modal">
-      <div class="game-head">
-        <h3>🤖 Deltix Bot</h3>
-        <button class="btn ghost small" id="botClose">✕ Close</button>
-      </div>
-      <div class="bot-messages" id="botMessages"></div>
-      <div class="bot-input-row">
-        <input id="botInput" type="text" placeholder="Ask about Energy, staking, missions…" maxlength="200" />
-        <button class="btn primary" id="botSend">Send</button>
-      </div>
-    </div>
-  </div>
 
   <!-- Deltix Arcade game overlay -->
   <div class="modal-backdrop" id="gameModal" hidden>
