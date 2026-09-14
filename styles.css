@@ -480,6 +480,7 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
 
 /* Profile (wallet card) */
 .profile-row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; position: relative; z-index: 1; }
+.avatar-wrap { position: relative; flex-shrink: 0; }
 .avatar-btn {
   width: 46px; height: 46px; flex-shrink: 0; border-radius: 50%; padding: 0;
   border: 2px solid rgba(255,255,255,.55); background: rgba(255,255,255,.22);
@@ -487,6 +488,13 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   display: flex; align-items: center; justify-content: center;
 }
 .avatar-btn:active { transform: scale(.95); }
+.avatar-wrap.verified .avatar-btn { border-color: #34d399; box-shadow: 0 0 0 2px rgba(52, 211, 153, .35); }
+.verified-badge {
+  position: absolute; right: -2px; bottom: -2px; width: 18px; height: 18px; border-radius: 50%;
+  background: #10b981; color: #fff; font-size: 11px; font-weight: 900; line-height: 1;
+  display: flex; align-items: center; justify-content: center; border: 2px solid #fff;
+}
+html[data-dark] .verified-badge { border-color: #0b1120; }
 .profile-meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .profile-email { font-size: 14px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .profile-ref {

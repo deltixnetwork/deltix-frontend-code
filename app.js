@@ -714,6 +714,7 @@ function resetAccountUI() {
   setText('kycTitle', 'Identity Verification');
   setText('kycSub', 'Not available yet — check back soon.');
   const kycBtn = $('kycActionBtn'); if (kycBtn) kycBtn.hidden = true;
+  setVerifiedBadge(false);
 }
 
 /** Full sign-out: drops the session as well as the rendered account data. */
@@ -2978,6 +2979,13 @@ function checkBotNudge() {
 }
 
 // ==================== Deltix KYC (Persona, opt-in, off unless enabled) ====================
+function setVerifiedBadge(on) {
+  const wrap = document.querySelector('.avatar-wrap');
+  const badge = $('verifiedBadge');
+  if (wrap) wrap.classList.toggle('verified', Boolean(on));
+  if (badge) badge.hidden = !on;
+}
+
 async function loadKycStatus() {
   if (!state.token) return;
   const title = $('kycTitle');
@@ -2985,20 +2993,24 @@ async function loadKycStatus() {
   const btn = $('kycActionBtn');
   try {
     const r = await api('GET', '/kyc/status');
-    if (!r.enabled) {
-      if (title) title.textContent = 'Identity Verification';
-      if (sub) sub.textContent = 'Not available yet — check back soon.';
-      if (btn) btn.hidden = true;
-      return;
-    }
+    // Status is reported truthfully even while new verifications are paused —
+    // an already-earned badge must never disappear just because `enabled`
+    // is currently false.
     if (r.status === 'approved') {
       if (title) title.textContent = 'Identity Verified ✅';
-      if (sub) sub.textContent = 'You\u2019re verified — extra features are unlocked.';
+      if (sub) sub.textContent = 'Verified badge added to your profile and Deltix Passport.';
       if (btn) btn.hidden = true;
+      setVerifiedBadge(true);
     } else if (r.status === 'pending') {
       if (title) title.textContent = 'Verification Pending ⏳';
       if (sub) sub.textContent = 'We\u2019re reviewing your submission.';
       if (btn) btn.hidden = true;
+      setVerifiedBadge(false);
+    } else if (!r.enabled) {
+      if (title) title.textContent = 'Identity Verification';
+      if (sub) sub.textContent = 'Not available yet — check back soon.';
+      if (btn) btn.hidden = true;
+      setVerifiedBadge(false);
     } else {
       if (title) title.textContent = 'Verify Identity';
       if (sub) sub.textContent = 'Unlock extra features with a quick identity check.';
@@ -3007,6 +3019,7 @@ async function loadKycStatus() {
         btn.textContent = 'Verify Identity';
         btn.onclick = () => { if (r.hostedFlowUrl) window.open(r.hostedFlowUrl, '_blank', 'noopener'); };
       }
+      setVerifiedBadge(false);
     }
   } catch {
     // Non-critical — leave the card in its last known state if the check fails.
