@@ -128,6 +128,12 @@
           <button class="btn ghost pill-btn" id="receiveBtn">↓ Receive</button>
         </div>
 
+        <button class="nav-card earn-nav-card" type="button" id="walletEarnCard" onclick="showTab('tab-earn')">
+          <span class="nav-card-ic">◆</span>
+          <span class="nav-card-txt"><b>Deltix Earn</b><small>Spend Energy, earn $DLTX every 12h</small></span>
+          <span class="nav-card-arrow">›</span>
+        </button>
+
         <h3 class="section-title">Network snapshot</h3>
         <div class="stats-grid" id="statsGrid"></div>
 
@@ -140,12 +146,12 @@
         <div class="banner-3d-wrap">
           <img src="assets/art-staking-banner.png" class="banner-3d-img" alt="Staking rewards" onerror="this.onerror=null;this.src='assets/art-staking-banner.svg'" />
         </div>
-        <h3 class="section-title">Your delegations</h3>
-        <div id="myStakes"><p class="muted center">You have no active stakes.</p></div>
-
         <h3 class="section-title">Validators</h3>
         <p class="muted small-note">Delegate stake to a validator to help secure consensus. Rewards are variable protocol incentives — never guaranteed income.</p>
         <div id="validatorList" class="validator-list"></div>
+
+        <h3 class="section-title">Your delegations</h3>
+        <div id="myStakes"><p class="muted center">You have no active stakes.</p></div>
 
         <h3 class="section-title">Delegation risks</h3>
         <ul class="disclosure">
@@ -521,6 +527,18 @@
             </div>
           </div>
           <div id="rainScene" class="rain-scene"></div>
+        </div>
+
+        <div class="card reward-card tree-card">
+          <div class="reward-head">
+            <span class="reward-emoji">🌴</span>
+            <div>
+              <div class="reward-title">Deltix Tree</div>
+              <div class="reward-sub" id="treeSub">Water it once a day to grow it and collect a small reward.</div>
+            </div>
+          </div>
+          <div class="tree-scene" id="treeScene">🌱</div>
+          <button class="btn primary pill-btn" id="treeWaterBtn">💧 Water the tree</button>
         </div>
 
         <p class="energy-disclaimer">Energy has no monetary value and cannot be exchanged for $DLTX. Play games to earn up to 10 $DLTX daily.</p>

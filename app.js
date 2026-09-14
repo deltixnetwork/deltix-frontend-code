@@ -702,6 +702,9 @@ function resetAccountUI() {
   if (typeof resetMissionsUI === 'function') resetMissionsUI();
   if (typeof resetVaultUI === 'function') resetVaultUI();
   if (typeof resetEarnUI === 'function') resetEarnUI();
+  treeState = null;
+  const treeScene = $('treeScene'); if (treeScene) treeScene.textContent = '🌱';
+  setText('treeSub', 'Water it once a day to grow it and collect a small reward.');
 }
 
 /** Full sign-out: drops the session as well as the rendered account data. */
@@ -885,13 +888,13 @@ const AVATAR_CHOICES = [
 // Premium avatars: unlocked via an opt-in rewarded ad. The unlock is a
 // non-transferable cosmetic owned by the account — the AdMob-compliant reward.
 // unlockedAvatars() / unlockedThemes() read that account state (see loadEnergy).
-const PREMIUM_AVATARS = ['🐉','🦅','🧙','🥷','👑','🛸','🦸','🧛','🧜','🧚','🤴','👸','🦹','🧞','🐲','⚔️','🗿','💫'];
+const PREMIUM_AVATARS = ['🐉','🦅','🧙','🥷','👑','🛸','🦸','🧛','🧜','🧚','🤴','👸','🦹','🧞','🐲','⚔️','🗿','💫','🧌','🦂','🐊'];
 // These are also sold in the Deltix Shop for Energy/$DLTX — showing them as a
 // free one-ad unlock here too undercut the Shop price entirely (e.g. the
 // Dragon Avatar cost 60 Energy in the Shop but was unlockable free with one
 // ad here). Already-owned copies (from either path) still display normally;
 // only the still-locked state is redirected to the Shop instead of an ad.
-const SHOP_ONLY_AVATARS = ['🐉', '🥷', '👑'];
+const SHOP_ONLY_AVATARS = ['🐉', '🥷', '👑', '🧌', '🦂', '🐊'];
 
 // App themes: "classic" and the community-requested dark "midnight" are free.
 // The colour packs use the same AdMob-compliant model — an opt-in rewarded ad
@@ -910,9 +913,12 @@ const THEMES = [
   { id: 'carbon',   name: 'Carbon',   free: false, dark: true },
   { id: 'cyber',    name: 'Cyber',    free: false, dark: true },
   { id: 'aurora',   name: 'Aurora',   free: false, dark: true },
+  { id: 'crimson',  name: 'Crimson',  free: false, dark: true },
+  { id: 'arctic',   name: 'Arctic',   free: false },
+  { id: 'volt',     name: 'Volt',     free: false, dark: true },
 ];
 // Also sold in the Deltix Shop for Energy/$DLTX — see SHOP_ONLY_AVATARS above.
-const SHOP_ONLY_THEMES = ['emerald', 'royal', 'aurora'];
+const SHOP_ONLY_THEMES = ['emerald', 'royal', 'aurora', 'crimson', 'arctic', 'volt'];
 function applyTheme(id) {
   const t = THEMES.find((x) => x.id === id) || THEMES[0];
   if (t.id === 'classic') delete document.documentElement.dataset.theme;
@@ -2540,6 +2546,7 @@ function renderEnergy() {
   renderDailyLadder();
   renderWeekCalendar();
   renderRainScene();
+  loadTree();
   applyEnergyHour(state.energy?.happyHour);
 
   // Celebrate reaching a new Energy rank — non-monetary status recognition.
@@ -2629,21 +2636,21 @@ async function earnEnergy(btn) {
 }
 
 const DAILY_LADDER_STEPS = [
-  { label: '1', reward: 10, free: true },
-  { label: '2', reward: 10, requiresAd: true },
-  { label: '3', reward: 15, requiresAd: true },
-  { label: '4', reward: 20, requiresAd: true },
-  { label: '5', reward: 25, requiresAd: true, bonus: true },
-  { label: '6', reward: 15, requiresAd: true },
-  { label: '7', reward: 20, requiresAd: true },
-  { label: '8', reward: 15, requiresAd: true },
-  { label: '9', reward: 25, requiresAd: true },
-  { label: '10', reward: 20, requiresAd: true },
-  { label: '11', reward: 25, requiresAd: true },
-  { label: '12', reward: 30, requiresAd: true },
-  { label: '13', reward: 20, requiresAd: true },
-  { label: '14', reward: 25, requiresAd: true },
-  { label: '15', reward: 35, requiresAd: true, bonus: true }
+  { label: '1', reward: 5, free: true },
+  { label: '2', reward: 5, requiresAd: true },
+  { label: '3', reward: 8, requiresAd: true },
+  { label: '4', reward: 10, requiresAd: true },
+  { label: '5', reward: 12, requiresAd: true, bonus: true },
+  { label: '6', reward: 8, requiresAd: true },
+  { label: '7', reward: 10, requiresAd: true },
+  { label: '8', reward: 8, requiresAd: true },
+  { label: '9', reward: 12, requiresAd: true },
+  { label: '10', reward: 10, requiresAd: true },
+  { label: '11', reward: 12, requiresAd: true },
+  { label: '12', reward: 15, requiresAd: true },
+  { label: '13', reward: 10, requiresAd: true },
+  { label: '14', reward: 12, requiresAd: true },
+  { label: '15', reward: 18, requiresAd: true, bonus: true }
 ];
 
 function dailyLadderState() {
@@ -2724,16 +2731,19 @@ const WEEKLY_CHECKIN_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function weeklyCalendarState() {
   const key = 'dltx_week_calendar';
+  const weekKey = (() => {
+    const d = new Date();
+    const sunday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay());
+    return sunday.toISOString().slice(0, 10);
+  })();
   try {
     const raw = JSON.parse(localStorage.getItem(key) || '{}');
-    const today = new Date();
-    const weekKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    if (!raw.weekKey || raw.weekKey !== weekKey.slice(0, 7)) {
-      return { weekKey: weekKey.slice(0, 7), claimed: Array(7).fill(false) };
+    if (!raw.weekKey || raw.weekKey !== weekKey) {
+      return { weekKey, claimed: Array(7).fill(false) };
     }
     return { weekKey: raw.weekKey, claimed: Array.isArray(raw.claimed) ? raw.claimed.slice(0, 7) : Array(7).fill(false) };
   } catch {
-    return { weekKey: new Date().toISOString().slice(0, 7), claimed: Array(7).fill(false) };
+    return { weekKey, claimed: Array(7).fill(false) };
   }
 }
 
@@ -2824,20 +2834,77 @@ function renderRainScene() {
           return;
         }
         const value = Number(btn.textContent) || 5;
-        const r = await api('POST', '/energy/rain', { amount: value, reason: 'rain_drop' });
+        const r = await api('POST', '/energy/rain', { index: idx });
         const collectedList = JSON.parse(localStorage.getItem(rainKey()) || '[]');
         collectedList.push(idx);
         localStorage.setItem(rainKey(), JSON.stringify(collectedList));
         renderRainScene();
         state.energy = r;
         renderEnergy();
-        celebrate({ amount: value, unit: 'Energy', icon: '🌧️', title: 'Rain collected!', subtitle: `+${value} ⚡ Energy landed in your account.`, duration: 2200 });
+        celebrate({ amount: r.awarded ?? value, unit: 'Energy', icon: '🌧️', title: 'Rain collected!', subtitle: `+${r.awarded ?? value} ⚡ Energy landed in your account.`, duration: 2200 });
       } catch (e) {
         toast(e.message || 'Rain reward failed.');
       }
     });
   });
 }
+
+const TREE_STAGES = ['🌱', '🌿', '🪴', '🌳', '🌴'];
+let treeState = null;
+
+async function loadTree() {
+  if (!state.token) return;
+  try {
+    treeState = await api('GET', '/energy/tree');
+    renderTree();
+  } catch {
+    // Non-critical — the tree card just stays in its last known state.
+  }
+}
+
+function renderTree() {
+  const scene = $('treeScene');
+  const sub = $('treeSub');
+  const btn = $('treeWaterBtn');
+  if (!scene || !treeState) return;
+  const pct = Math.min(1, treeState.level / treeState.maxLevel);
+  const stage = TREE_STAGES[Math.min(TREE_STAGES.length - 1, Math.floor(pct * (TREE_STAGES.length - 1)))];
+  scene.textContent = stage;
+  if (sub) sub.textContent = treeState.wateredToday
+    ? `Level ${treeState.level}/${treeState.maxLevel} · watered today — come back tomorrow 🌤️`
+    : `Level ${treeState.level}/${treeState.maxLevel} · costs ⚡ ${treeState.waterCost} Energy to water`;
+  if (btn) {
+    btn.disabled = treeState.wateredToday || treeState.energy < treeState.waterCost;
+    btn.textContent = treeState.wateredToday ? '✓ Watered today' : `💧 Water the tree · ⚡${treeState.waterCost}`;
+  }
+}
+
+async function waterTree() {
+  if (!treeState || treeState.wateredToday) return;
+  const btn = $('treeWaterBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const r = await api('POST', '/energy/tree/water', { ...await getIntegrityPayload() });
+    treeState = { ...treeState, level: r.level, wateredToday: true, energy: r.energy };
+    renderTree();
+    const rw = r.reward || {};
+    if (rw.dltx > 0) {
+      celebrate({ amount: rw.dltx, title: 'Tree watered! 🌴', subtitle: `Grew to level ${r.level}.`, icon: '💧' });
+    } else if (rw.energy > 0) {
+      celebrate({ amount: rw.energy, unit: 'Energy', title: 'Tree watered! 🌴', subtitle: `Grew to level ${r.level}.`, icon: '💧' });
+    } else {
+      toast(`Tree grew to level ${r.level} 🌴`);
+    }
+    Promise.allSettled([loadWallet(), loadEnergy(undefined, { force: true })]);
+  } catch (e) {
+    toast(e.message || 'Unable to water the tree.');
+    renderTree();
+  } finally {
+    if (btn) btn.disabled = treeState?.wateredToday || false;
+  }
+}
+
+$('treeWaterBtn')?.addEventListener('click', waterTree);
 
 $('energyEarnBtn')?.addEventListener('click', (e) => earnEnergy(e.currentTarget));
 $('homeEarnBtn')?.addEventListener('click', () => {
@@ -3582,8 +3649,8 @@ async function completeMission() {
     const r = await api('POST', '/missions/complete');
     missionState.data = r;
     renderMissions();
-    if (r.allComplete) celebrate({ amount: 0, title: '🌕 Moon Landing!', subtitle: 'All 6 missions complete — claim your daily reward!' });
-    else toast(`${r.completedMission?.name || 'Mission'} complete — ${r.progress} ✅`);
+    if (r.allComplete) celebrate({ amount: 0, milestone: true, title: '🌕 Moon Landing!', subtitle: 'All 6 missions complete — claim your daily reward!' });
+    else { try { window.ArcadeSound?.unlock?.(); window.ArcadeSound?.coin?.(); } catch {} toast(`${r.completedMission?.name || 'Mission'} complete — ${r.progress} ✅`); }
     showRewardInterstitial();
   } catch (e) {
     if (e.data) { missionState.data = e.data; renderMissions(); }
@@ -4027,7 +4094,7 @@ function renderSeason() {
       header.textContent = 'Loading season…';
       return;
     }
-    header.textContent = `${d.title} · ${fmtInt(d.totals?.players || 0)} players active`;
+    header.textContent = `${d.title} · ${fmtInt(d.totals?.players || 0)} players active · resets in ${d.daysRemaining ?? '?'}d`;
   }
 
   const list = $('seasonList');
