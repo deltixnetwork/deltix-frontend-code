@@ -2554,7 +2554,7 @@ function renderEnergy() {
       <div class="er-name">${rk.name.replace(' ', '<br>')}</div>
       <img src="assets/energy/${rk.asset}" class="er-badge" alt="${rk.name}" />
       <div class="er-range">${rk.max === Infinity ? rk.min + '+' : rk.min + '\u2013' + rk.max}</div>
-      <div class="er-rate">+5 Energy / Ad</div>
+      <div class="er-rate">+1 Energy / Ad</div>
     </div>`).join('');
   set('efStreakSub', st.streak > 0 ? `${st.streak}-day streak 🔥` : 'Build streaks, earn bonus Energy');
   const opened = unlockedGames().length;
