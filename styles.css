@@ -1818,6 +1818,57 @@ html[data-dark] .nav-card-txt b { color: #e6edfa; }
 
 .energy-disclaimer { margin: 12px 4px 4px; font-size: 10px; color: #35507a; text-align: center; background: #eef4ff; border-radius: 8px; padding: 8px 10px; }
 
+/* ── Mini progress bar (shared by Ladder / Tree) ── */
+.mini-progress { height: 7px; border-radius: 999px; background: var(--panel-2, #eef1f8); overflow: hidden; margin: 2px 0 12px; }
+.mini-progress-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-2, var(--accent))); transition: width .4s ease; }
+
+/* ── Daily Ladder ── */
+.ladder-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 2px; }
+.ladder-step {
+  position: relative; aspect-ratio: 1; border-radius: 12px; border: 1px solid var(--border, #e6eaf2);
+  background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; padding: 4px 2px; cursor: pointer; overflow: hidden;
+  box-shadow: 0 3px 8px rgba(15, 23, 42, .05);
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease, background .15s ease;
+}
+.ladder-step span { font-size: 15px; font-weight: 800; color: #0b1c3f; line-height: 1; }
+.ladder-step small { font-size: 8.4px; font-weight: 700; color: var(--muted); line-height: 1.15; }
+.ladder-step.locked { opacity: .48; cursor: not-allowed; background: var(--panel-2, #f4f6fb); }
+.ladder-step.ready {
+  border-color: var(--accent); cursor: pointer;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 30%, transparent);
+  animation: ladderPulse 2s ease-in-out infinite;
+}
+.ladder-step.ready span, .ladder-step.ready small { color: var(--accent); }
+.ladder-step.ready:active { transform: scale(.92); }
+.ladder-step.claimed {
+  background: linear-gradient(160deg, #ecfdf5, #d1fae5); border-color: #34d399; cursor: default;
+}
+.ladder-step.claimed span, .ladder-step.claimed small { color: #059669; }
+.ladder-step.bonus:not(.claimed)::after {
+  content: '★'; position: absolute; top: 2px; right: 4px; font-size: 8px; color: #f59e0b;
+}
+@keyframes ladderPulse {
+  0%, 100% { box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 25%, transparent); }
+  50% { box-shadow: 0 5px 20px color-mix(in srgb, var(--accent) 48%, transparent); }
+}
+
+/* ── Weekly Energy Calendar ── */
+.week-calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 2px; }
+.calendar-day {
+  border-radius: 12px; border: 1px solid var(--border, #e6eaf2); background: #fff;
+  padding: 9px 2px; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  cursor: pointer; box-shadow: 0 3px 8px rgba(15, 23, 42, .05);
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease, background .15s ease;
+}
+.calendar-day span { font-size: 10.5px; font-weight: 800; color: #0b1c3f; text-transform: uppercase; letter-spacing: .03em; }
+.calendar-day small { font-size: 9px; font-weight: 700; color: var(--muted); }
+.calendar-day.today { border-color: var(--accent); box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 28%, transparent); }
+.calendar-day.today span, .calendar-day.today small { color: var(--accent); }
+.calendar-day.claimed { background: linear-gradient(160deg, #ecfdf5, #d1fae5); border-color: #34d399; cursor: default; }
+.calendar-day.claimed span, .calendar-day.claimed small { color: #059669; }
+.calendar-day:not(.claimed):hover { transform: translateY(-2px); }
+
 .rain-scene {
   position: relative; height: 180px; overflow: hidden; border-radius: 16px;
   border: 1px solid rgba(96, 165, 250, .25); background: linear-gradient(180deg, #dbeafe, #eff6ff 55%, #dbeafe);
@@ -1832,16 +1883,17 @@ html[data-dark] .nav-card-txt b { color: #e6edfa; }
   border: 1px solid rgba(29,78,216,.18); box-shadow: 0 0 12px rgba(59,130,246,.18);
   color: #fff; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 900;
   animation: rain-fall 2.1s ease-in-out infinite alternate;
+  transition: opacity .35s ease, transform .2s ease, filter .2s ease;
 }
 @keyframes rain-fall {
   0% { transform: translateY(-4px) scale(.96); opacity: .65; }
   100% { transform: translateY(18px) scale(1.06); opacity: 1; }
 }
 .rain-drop:hover { transform: scale(1.15); filter: brightness(1.08); }
-.rain-drop.collected { opacity: 0; pointer-events: none; }
+.rain-drop.collected { opacity: 0; pointer-events: none; transform: scale(.6); }
 
 .tree-scene {
-  height: 120px; display: flex; align-items: center; justify-content: center;
+  position: relative; height: 120px; display: flex; align-items: center; justify-content: center;
   font-size: 64px; border-radius: 16px; margin-bottom: 10px;
   background: linear-gradient(180deg, #ecfdf5, #f0fdf4 60%, #dcfce7);
   border: 1px solid rgba(34,197,94,.22); box-shadow: inset 0 2px 8px rgba(34,197,94,.08);
@@ -1849,6 +1901,7 @@ html[data-dark] .nav-card-txt b { color: #e6edfa; }
 .tree-card .pill-btn { width: 100%; }
 
 .slot-count { font-size: 12px; color: var(--muted); align-self: center; margin-left: 8px; }
+
 
 /* 8-item bottom nav — tighten so labels fit */
 .tabbar { padding-left: 1px; padding-right: 1px; }
@@ -2374,6 +2427,13 @@ html[data-dark] .chest-pick span { color: #c7d6f0; }
 html[data-dark] .gc-name { color: #c7d6f0; }
 html[data-dark] .gc-bar { background: #16233f; }
 html[data-dark] .wheel-hub { background: #16233f; }
+html[data-dark] .ladder-step, html[data-dark] .calendar-day { background: #101a30; border-color: var(--border); }
+html[data-dark] .ladder-step span, html[data-dark] .calendar-day span { color: var(--text); }
+html[data-dark] .ladder-step.locked { background: #0b1120; }
+html[data-dark] .ladder-step.claimed, html[data-dark] .calendar-day.claimed { background: linear-gradient(160deg, #0f2b1f, #123524); border-color: #16a34a; }
+html[data-dark] .mini-progress { background: #101a30; }
+html[data-dark] .rain-scene { background: linear-gradient(180deg, #101a30, #0b1120 55%, #101a30); border-color: #24406e; }
+html[data-dark] .tree-scene { background: linear-gradient(180deg, #0f2b1f, #0b1120 60%, #123524); border-color: #1f6b3f; }
 /* Leaderboard + Passport (dark) */
 html[data-dark] .lb-scope-btn { background: #101a30; border-color: var(--border); color: var(--muted); }
 html[data-dark] .lb-scope-btn.active { background: #16233f; color: #cfe0ff; border-color: #3b5aa6; }

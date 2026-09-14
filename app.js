@@ -710,6 +710,8 @@ function resetAccountUI() {
   treeState = null;
   const treeScene = $('treeScene'); if (treeScene) treeScene.textContent = '🌱';
   setText('treeSub', 'Water it once a day to grow it and collect a small reward.');
+  const treeFill = $('treeProgressFill'); if (treeFill) treeFill.style.width = '0%';
+  const ladderFill = $('ladderProgressFill'); if (ladderFill) ladderFill.style.width = '0%';
   const botMessages = $('botMessages'); if (botMessages) botMessages.innerHTML = '';
   setText('kycTitle', 'Identity Verification');
   setText('kycSub', 'Not available yet — check back soon.');
@@ -2693,7 +2695,8 @@ function renderDailyLadder() {
     const claimed = state.claimed[index];
     const canUnlock = index === 0 || (index > 0 && state.claimed[index - 1]);
     const badge = claimed ? 'Claimed ✓' : canUnlock ? `+${step.reward} ⚡` : 'Locked';
-    return `<button class="ladder-step ${claimed ? 'claimed' : ''} ${canUnlock ? 'ready' : 'locked'}" data-ladder-step="${index}" ${claimed || !canUnlock ? 'disabled' : ''}>
+    const cls = ['ladder-step', claimed ? 'claimed' : (canUnlock ? 'ready' : 'locked'), step.bonus ? 'bonus' : ''].filter(Boolean).join(' ');
+    return `<button class="${cls}" data-ladder-step="${index}" ${claimed || !canUnlock ? 'disabled' : ''}>
       <span>${step.label}</span>
       <small>${badge}</small>
     </button>`;
@@ -2701,6 +2704,8 @@ function renderDailyLadder() {
   host.querySelectorAll('[data-ladder-step]').forEach((btn) => {
     btn.addEventListener('click', () => claimLadderStep(Number(btn.dataset.ladderStep)));
   });
+  const fill = $('ladderProgressFill');
+  if (fill) fill.style.width = `${Math.round((state.claimed.filter(Boolean).length / DAILY_LADDER_STEPS.length) * 100)}%`;
 }
 
 async function claimLadderStep(stepIndex) {
@@ -2891,6 +2896,8 @@ function renderTree() {
     btn.disabled = treeState.wateredToday || treeState.energy < treeState.waterCost;
     btn.textContent = treeState.wateredToday ? '✓ Watered today' : `💧 Water the tree · ⚡${treeState.waterCost}`;
   }
+  const fill = $('treeProgressFill');
+  if (fill) fill.style.width = `${Math.round(pct * 100)}%`;
 }
 
 async function waterTree() {
