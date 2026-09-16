@@ -2652,21 +2652,21 @@ async function earnEnergy(btn) {
 }
 
 const DAILY_LADDER_STEPS = [
-  { label: '1', reward: 5, free: true },
-  { label: '2', reward: 5, requiresAd: true },
-  { label: '3', reward: 8, requiresAd: true },
-  { label: '4', reward: 10, requiresAd: true },
-  { label: '5', reward: 12, requiresAd: true, bonus: true },
-  { label: '6', reward: 8, requiresAd: true },
-  { label: '7', reward: 10, requiresAd: true },
-  { label: '8', reward: 8, requiresAd: true },
-  { label: '9', reward: 12, requiresAd: true },
-  { label: '10', reward: 10, requiresAd: true },
-  { label: '11', reward: 12, requiresAd: true },
-  { label: '12', reward: 15, requiresAd: true },
-  { label: '13', reward: 10, requiresAd: true },
-  { label: '14', reward: 12, requiresAd: true },
-  { label: '15', reward: 18, requiresAd: true, bonus: true }
+  { label: '1', reward: 1, free: true },
+  { label: '2', reward: 1, requiresAd: true },
+  { label: '3', reward: 1, requiresAd: true },
+  { label: '4', reward: 0, requiresAd: true },
+  { label: '5', reward: 2, requiresAd: true, bonus: true },
+  { label: '6', reward: 0, requiresAd: true },
+  { label: '7', reward: 1, requiresAd: true },
+  { label: '8', reward: 0, requiresAd: true },
+  { label: '9', reward: 1, requiresAd: true },
+  { label: '10', reward: 0, requiresAd: true },
+  { label: '11', reward: 1, requiresAd: true },
+  { label: '12', reward: 0, requiresAd: true },
+  { label: '13', reward: 0, requiresAd: true },
+  { label: '14', reward: 0, requiresAd: true },
+  { label: '15', reward: 2, requiresAd: true, bonus: true }
 ];
 
 function dailyLadderState() {
@@ -2780,7 +2780,7 @@ function renderWeekCalendar() {
     const isToday = index === day;
     return `<button class="calendar-day ${claimed ? 'claimed' : ''} ${isToday ? 'today' : ''}" data-calendar-day="${index}" ${claimed ? 'disabled' : ''}>
       <span>${label}</span>
-      <small>${claimed ? '✓' : isToday ? 'Today' : '+' + (index < 5 ? 8 : 10) + ' ⚡'}</small>
+      <small>${claimed ? '✓' : isToday ? 'Today' : '+' + (index < 5 ? 1 : 2) + ' ⚡'}</small>
     </button>`;
   }).join('');
   host.querySelectorAll('[data-calendar-day]').forEach((btn) => {
@@ -2803,7 +2803,7 @@ async function claimWeeklyDay(dayIndex) {
       toast('Ad not completed — no daily calendar reward was added.');
       return;
     }
-    const reward = dayIndex < 5 ? 8 : 10;
+    const reward = dayIndex < 5 ? 1 : 2;
     const r = await api('POST', '/energy/bonus', { amount: reward, reason: `weekly_calendar_${dayIndex}` });
     state.claimed[dayIndex] = true;
     saveWeeklyCalendarState(state);
@@ -2828,12 +2828,12 @@ function renderRainScene() {
   const raw = localStorage.getItem(key);
   const collected = raw ? JSON.parse(raw) : [];
   const drops = [
-    { x: 18, y: 40, value: 5 },
-    { x: 28, y: 56, value: 6 },
-    { x: 42, y: 50, value: 7 },
-    { x: 58, y: 46, value: 8 },
-    { x: 70, y: 62, value: 9 },
-    { x: 82, y: 44, value: 10 },
+    { x: 18, y: 40, value: 1 },
+    { x: 28, y: 56, value: 1 },
+    { x: 42, y: 50, value: 2 },
+    { x: 58, y: 46, value: 2 },
+    { x: 70, y: 62, value: 2 },
+    { x: 82, y: 44, value: 2 },
   ];
   host.innerHTML = `
     <div class="rain-cloud">☁️</div>
@@ -2852,7 +2852,7 @@ function renderRainScene() {
           toast('Ad not completed — the rain drop stays in the sky.');
           return;
         }
-        const value = Number(btn.textContent) || 5;
+        const value = Number(btn.textContent) || 1;
         const r = await api('POST', '/energy/rain', { index: idx });
         const collectedList = JSON.parse(localStorage.getItem(rainKey()) || '[]');
         collectedList.push(idx);
