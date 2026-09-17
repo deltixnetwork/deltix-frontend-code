@@ -2656,17 +2656,17 @@ const DAILY_LADDER_STEPS = [
   { label: '2', reward: 1, requiresAd: true },
   { label: '3', reward: 1, requiresAd: true },
   { label: '4', reward: 1, requiresAd: true },
-  { label: '5', reward: 2, requiresAd: true, bonus: true },
+  { label: '5', reward: 1, requiresAd: true },
   { label: '6', reward: 1, requiresAd: true },
-  { label: '7', reward: 2, requiresAd: true },
-  { label: '8', reward: 2, requiresAd: true },
-  { label: '9', reward: 2, requiresAd: true },
-  { label: '10', reward: 2, requiresAd: true },
-  { label: '11', reward: 2, requiresAd: true },
-  { label: '12', reward: 2, requiresAd: true },
-  { label: '13', reward: 2, requiresAd: true },
-  { label: '14', reward: 2, requiresAd: true },
-  { label: '15', reward: 2, requiresAd: true, bonus: true }
+  { label: '7', reward: 1, requiresAd: true },
+  { label: '8', reward: 1, requiresAd: true },
+  { label: '9', reward: 1, requiresAd: true },
+  { label: '10', reward: 5, requiresAd: true, bonus: true },
+  { label: '11', reward: 1, requiresAd: true },
+  { label: '12', reward: 1, requiresAd: true },
+  { label: '13', reward: 1, requiresAd: true },
+  { label: '14', reward: 1, requiresAd: true },
+  { label: '15', reward: 5, requiresAd: true, bonus: true }
 ];
 
 function dailyLadderState() {

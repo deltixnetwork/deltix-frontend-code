@@ -647,6 +647,15 @@ body.has-gameover-ad #gameMount { padding-bottom: 270px; }
 .bot-input-row input { flex: 1 1 auto; }
 .kyc-card .reward-btn { margin-top: 4px; }
 
+/* FAQ tab */
+.faq-item {
+  border: 1px solid var(--border); border-radius: 12px; background: var(--panel-2);
+  padding: 10px 14px; margin: 8px 0;
+}
+.faq-item summary { font-weight: 700; font-size: 13.5px; cursor: pointer; }
+.faq-item p { font-size: 13px; line-height: 1.5; color: var(--muted); margin: 8px 0 2px; }
+.faq-card .pp-section-label { margin-top: 18px; }
+
 /* Reward celebration popup */
 .reward-pop {
   position: fixed; inset: 0; z-index: 400; display: flex; align-items: center; justify-content: center;
