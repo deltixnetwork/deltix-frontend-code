@@ -2420,6 +2420,10 @@ function energyState() {
     remainingToday: e ? Number(e.remainingToday) || 0 : null,
   };
 }
+// Server-authoritative ladder/calendar/rain amounts (module `state` is
+// shadowed by locals inside the render functions, hence this accessor).
+function serverBonusValues() { return state.energy?.bonus || null; }
+function adoptEnergy(e) { if (e && typeof e.energy === 'number') state.energy = e; }
 function rankForEnergy(e) {
   for (let i = ENERGY_RANKS.length - 1; i >= 0; i--) if (e >= ENERGY_RANKS[i].min) return { rank: ENERGY_RANKS[i], index: i };
   return { rank: ENERGY_RANKS[0], index: 0 };
@@ -2691,11 +2695,18 @@ function renderDailyLadder() {
   const host = $('dailyLadder');
   if (!host) return;
   const state = dailyLadderState();
+  // Server-provided amounts win over the bundled fallbacks — rebalances
+  // reach installed apps without a new build.
+  const serverRewards = serverBonusValues()?.ladderRewards;
+  const rewards = Array.isArray(serverRewards) && serverRewards.length === DAILY_LADDER_STEPS.length
+    ? serverRewards : DAILY_LADDER_STEPS.map((s) => s.reward);
   host.innerHTML = DAILY_LADDER_STEPS.map((step, index) => {
+    const reward = rewards[index];
     const claimed = state.claimed[index];
     const canUnlock = index === 0 || (index > 0 && state.claimed[index - 1]);
-    const badge = claimed ? 'Claimed ✓' : canUnlock ? `+${step.reward} ⚡` : 'Locked';
-    const cls = ['ladder-step', claimed ? 'claimed' : (canUnlock ? 'ready' : 'locked'), step.bonus ? 'bonus' : ''].filter(Boolean).join(' ');
+    const badge = claimed ? 'Claimed ✓' : canUnlock ? `+${reward} ⚡` : 'Locked';
+    const bonus = reward > Math.min(...rewards);
+    const cls = ['ladder-step', claimed ? 'claimed' : (canUnlock ? 'ready' : 'locked'), bonus ? 'bonus' : ''].filter(Boolean).join(' ');
     return `<button class="${cls}" data-ladder-step="${index}" ${claimed || !canUnlock ? 'disabled' : ''}>
       <span>${step.label}</span>
       <small>${badge}</small>
@@ -2727,18 +2738,21 @@ async function claimLadderStep(stepIndex) {
       }
     }
 
-    const r = await api('POST', '/energy/bonus', { amount: step.reward, reason: `daily_ladder_${stepIndex + 1}` });
+    const r = await api('POST', '/energy/bonus', { reason: `daily_ladder_${stepIndex + 1}` });
     state.claimed[stepIndex] = true;
     saveDailyLadderState(state);
-    state.energy = r;
+    adoptEnergy(r); // local `state` shadows the module state here
     renderEnergy();
     renderDailyLadder();
+    const awarded = Number(r.awarded ?? step.reward);
     celebrate({
-      amount: step.reward,
+      amount: awarded,
       unit: 'Energy',
       icon: '⚡',
       title: `Ladder step ${step.label}!`,
-      subtitle: `+${step.reward} ⚡ added to your Energy total.`,
+      subtitle: r.capped && awarded === 0
+        ? 'Daily free-Energy allowance reached — step saved for your streak.'
+        : `+${awarded} ⚡ added to your Energy total.`,
       duration: 2600,
     });
   } catch (e) {
@@ -2775,12 +2789,14 @@ function renderWeekCalendar() {
   if (!host) return;
   const state = weeklyCalendarState();
   const day = new Date().getDay();
+  const wd = Number(serverBonusValues()?.calendarWeekdayReward) || 1;
+  const we = Number(serverBonusValues()?.calendarWeekendReward) || 2;
   host.innerHTML = WEEKLY_CHECKIN_DAYS.map((label, index) => {
     const claimed = state.claimed[index];
     const isToday = index === day;
     return `<button class="calendar-day ${claimed ? 'claimed' : ''} ${isToday ? 'today' : ''}" data-calendar-day="${index}" ${claimed ? 'disabled' : ''}>
       <span>${label}</span>
-      <small>${claimed ? '✓' : isToday ? 'Today' : '+' + (index < 5 ? 1 : 2) + ' ⚡'}</small>
+      <small>${claimed ? '✓' : isToday ? 'Today' : '+' + (index < 5 ? wd : we) + ' ⚡'}</small>
     </button>`;
   }).join('');
   host.querySelectorAll('[data-calendar-day]').forEach((btn) => {
@@ -2803,14 +2819,14 @@ async function claimWeeklyDay(dayIndex) {
       toast('Ad not completed — no daily calendar reward was added.');
       return;
     }
-    const reward = dayIndex < 5 ? 1 : 2;
-    const r = await api('POST', '/energy/bonus', { amount: reward, reason: `weekly_calendar_${dayIndex}` });
+    const r = await api('POST', '/energy/bonus', { reason: `weekly_calendar_${dayIndex}` });
     state.claimed[dayIndex] = true;
     saveWeeklyCalendarState(state);
-    state.energy = r;
+    adoptEnergy(r); // local `state` shadows the module state here
     renderEnergy();
     renderWeekCalendar();
-    celebrate({ amount: reward, unit: 'Energy', icon: '📅', title: 'Daily check-in claimed!', subtitle: `+${reward} ⚡ added for ${WEEKLY_CHECKIN_DAYS[dayIndex]}.`, duration: 2200 });
+    const awarded = Number(r.awarded ?? 1);
+    celebrate({ amount: awarded, unit: 'Energy', icon: '📅', title: 'Daily check-in claimed!', subtitle: `+${awarded} ⚡ added for ${WEEKLY_CHECKIN_DAYS[dayIndex]}.`, duration: 2200 });
   } catch (e) {
     toast(e.message || 'Calendar reward failed.');
   }
@@ -2827,14 +2843,18 @@ function renderRainScene() {
   const key = rainKey();
   const raw = localStorage.getItem(key);
   const collected = raw ? JSON.parse(raw) : [];
-  const drops = [
-    { x: 18, y: 40, value: 1 },
-    { x: 28, y: 56, value: 1 },
-    { x: 42, y: 50, value: 2 },
-    { x: 58, y: 46, value: 2 },
-    { x: 70, y: 62, value: 2 },
-    { x: 82, y: 44, value: 2 },
+  const positions = [
+    { x: 18, y: 40 },
+    { x: 28, y: 56 },
+    { x: 42, y: 50 },
+    { x: 58, y: 46 },
+    { x: 70, y: 62 },
+    { x: 82, y: 44 },
   ];
+  const serverValues = serverBonusValues()?.rainValues;
+  const values = Array.isArray(serverValues) && serverValues.length === positions.length
+    ? serverValues : [1, 1, 2, 2, 2, 2];
+  const drops = positions.map((p, i) => ({ ...p, value: values[i] }));
   host.innerHTML = `
     <div class="rain-cloud">☁️</div>
     ${drops.map((drop, idx) => {
