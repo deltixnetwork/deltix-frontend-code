@@ -2655,17 +2655,17 @@ const DAILY_LADDER_STEPS = [
   { label: '1', reward: 1, free: true },
   { label: '2', reward: 1, requiresAd: true },
   { label: '3', reward: 1, requiresAd: true },
-  { label: '4', reward: 0, requiresAd: true },
+  { label: '4', reward: 1, requiresAd: true },
   { label: '5', reward: 2, requiresAd: true, bonus: true },
-  { label: '6', reward: 0, requiresAd: true },
-  { label: '7', reward: 1, requiresAd: true },
-  { label: '8', reward: 0, requiresAd: true },
-  { label: '9', reward: 1, requiresAd: true },
-  { label: '10', reward: 0, requiresAd: true },
-  { label: '11', reward: 1, requiresAd: true },
-  { label: '12', reward: 0, requiresAd: true },
-  { label: '13', reward: 0, requiresAd: true },
-  { label: '14', reward: 0, requiresAd: true },
+  { label: '6', reward: 1, requiresAd: true },
+  { label: '7', reward: 2, requiresAd: true },
+  { label: '8', reward: 2, requiresAd: true },
+  { label: '9', reward: 2, requiresAd: true },
+  { label: '10', reward: 2, requiresAd: true },
+  { label: '11', reward: 2, requiresAd: true },
+  { label: '12', reward: 2, requiresAd: true },
+  { label: '13', reward: 2, requiresAd: true },
+  { label: '14', reward: 2, requiresAd: true },
   { label: '15', reward: 2, requiresAd: true, bonus: true }
 ];
 
@@ -3377,7 +3377,7 @@ function renderRewards({ redrawWheel = true } = {}) {
   // Daily chest
   const ch = d.chest;
   setText('chestSub', ch.ready
-    ? 'Pick one chest — one holds $DLTX, one Energy, one is empty.'
+    ? 'Pick one chest — one holds $DLTX, the other two hold Energy.'
     : 'You already opened today\u2019s chest. Come back tomorrow!');
   document.querySelectorAll('.chest-pick').forEach((b) => {
     b.disabled = !ch.ready;
@@ -3661,23 +3661,21 @@ document.querySelectorAll('.chest-pick').forEach((b) =>
       const r = await api('POST', '/rewards/chest', { pick });
       const labels = {
         dltx: `+${fmt(rewardState.data.chest.dltx)} $DLTX`,
-        energy: `+${rewardState.data.chest.energy} ⚡`,
-        nothing: 'Empty',
+        energy_low: `+${rewardState.data.chest.energyLow} ⚡`,
+        energy_high: `+${rewardState.data.chest.energyHigh} ⚡`,
       };
       document.querySelectorAll('.chest-pick').forEach((x) => {
         const outcome = r.outcomes[Number(x.dataset.pick)];
-        x.classList.add(outcome === 'nothing' ? 'lose' : 'win');
+        x.classList.add('win');
         const span = x.querySelector('span');
         if (span) span.textContent = labels[outcome];
       });
       const msg = r.chosen === 'dltx'
         ? (r.capped ? 'You picked $DLTX, but the daily cap is reached!' : `🎉 You won +${fmt(r.reward)} $DLTX!`)
-        : r.chosen === 'energy'
-          ? `⚡ You won +${r.energyAwarded} Energy!`
-          : 'Empty chest — try again tomorrow!';
+        : `⚡ You won +${r.energyAwarded} Energy!`;
       setText('chestResult', msg);
       if (r.chosen === 'dltx' && !r.capped && r.reward > 0) celebrate({ amount: r.reward, title: 'Mystery Chest Unlocked!', subtitle: 'A shiny $DLTX reward is yours.', icon: '🎁' });
-      else if (r.chosen === 'energy' && r.energyAwarded > 0) celebrate({ amount: r.energyAwarded, unit: '⚡ Energy', title: 'Mystery Chest Unlocked!', subtitle: `You now have ${fmt(r.energy)} ⚡ total.`, icon: '🎁' });
+      else if (r.energyAwarded > 0) celebrate({ amount: r.energyAwarded, unit: '⚡ Energy', title: 'Mystery Chest Unlocked!', subtitle: `You now have ${fmt(r.energy)} ⚡ total.`, icon: '🎁' });
       else toast(msg);
       await Promise.allSettled([loadRewards(), loadWallet(), loadEnergy(undefined, { force: true }), loadTx()]);
       showRewardInterstitial();
