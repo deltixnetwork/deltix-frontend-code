@@ -634,6 +634,47 @@ body.has-gameover-ad #gameMount { padding-bottom: 270px; }
   font-size: 14px; z-index: 300; box-shadow: 0 8px 24px rgba(16, 24, 40, .3); max-width: 90%;
 }
 
+/* In-app notification card — push-notification-style reminder banner */
+.app-notice {
+  position: fixed; top: calc(env(safe-area-inset-top, 0px) + 66px);
+  left: 12px; right: 12px; margin: 0 auto; max-width: 430px; z-index: 350;
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f6f9ff 100%);
+  border: 1px solid rgba(59, 130, 246, .22); border-radius: 16px;
+  box-shadow: 0 18px 44px rgba(16, 24, 40, .22), inset 0 1px 0 rgba(255, 255, 255, .7);
+  opacity: 0; transform: translateY(-14px) scale(.98);
+  transition: opacity .28s ease, transform .32s cubic-bezier(.2, 1.2, .4, 1);
+}
+.app-notice.show { opacity: 1; transform: translateY(0) scale(1); }
+.app-notice.tappable { cursor: pointer; }
+.an-icon {
+  flex-shrink: 0; width: 44px; height: 44px; border-radius: 13px;
+  display: flex; align-items: center; justify-content: center; font-size: 22px;
+  background: radial-gradient(circle at 32% 26%, #7db0ff, #2563eb 78%);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, .35), inset 0 0 0 2px rgba(255, 255, 255, .25);
+}
+.an-body { flex: 1 1 auto; min-width: 0; }
+.an-app {
+  font-size: 10px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase;
+  color: #2563eb; margin-bottom: 1px;
+}
+.an-title { font-size: 14px; font-weight: 800; color: #0f172a; line-height: 1.25; }
+.an-msg { font-size: 12.5px; color: #55617a; line-height: 1.4; margin-top: 2px; }
+.an-close {
+  flex-shrink: 0; align-self: flex-start; border: 0; background: transparent;
+  color: #98a2b8; font-size: 13px; padding: 4px 6px; cursor: pointer; border-radius: 8px;
+}
+.an-close:hover { color: #0f172a; background: rgba(15, 23, 42, .06); }
+html[data-dark] .app-notice {
+  background: linear-gradient(180deg, #1a2236 0%, #151c30 100%);
+  border-color: #2c3a5c; box-shadow: 0 18px 44px rgba(0, 0, 0, .5);
+}
+html[data-dark] .an-title { color: #eef2fb; }
+html[data-dark] .an-msg { color: #9aa7c4; }
+html[data-dark] .an-app { color: #7db0ff; }
+html[data-dark] .an-close:hover { color: #eef2fb; background: rgba(255, 255, 255, .08); }
+@media (prefers-reduced-motion: reduce) { .app-notice { transition: opacity .2s ease; transform: none; } }
+
 /* Deltix Assistant (bot chat + KYC), embedded inline in its own tab */
 .bot-embed-card { display: flex; flex-direction: column; gap: 10px; }
 .bot-messages {
@@ -764,6 +805,14 @@ body.has-gameover-ad #gameMount { padding-bottom: 270px; }
 .mystery-hour.idle .mh-text span { color: #7c6ba8; }
 html[data-dark] .mystery-hour.idle { background: #14182b; border-color: #2a2350; color: #c9bbf0; }
 html[data-dark] .mystery-hour.idle .mh-text span { color: #9a8fc4; }
+/* 2x Energy Hour activation button (hidden while an hour is running). */
+.mh-activate {
+  margin-left: auto; flex-shrink: 0; border: 0; border-radius: 10px;
+  padding: 9px 14px; font-size: 13px; font-weight: 800; cursor: pointer;
+  background: #7048e8; color: #fff; box-shadow: 0 3px 10px rgba(112, 72, 232, .35);
+}
+.mh-activate:disabled { opacity: .6; cursor: default; }
+html[data-dark] .mh-activate { background: #7048e8; color: #fff; }
 
 .games-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 14px 0; }
 .game-card {

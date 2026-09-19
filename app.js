@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.9.0';
+const APP_VERSION = '1.9.1';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -2603,14 +2603,35 @@ function renderEnergy() {
   }
 }
 
-// ---- Energy Happy Hour — one 2× Energy window per day (mirrors Deltix Hour) ----
+// ---- 2x Energy Hour — ad-activated personal 2× window, 2 uses per day ----
 let ehTimer = null;
 let ehAnnouncedFor = null;
+let ehEndedFor = null;
 function updateEhCountdown(endsAt) {
   const sub = $('energyHourSub');
   if (!sub || !endsAt) return;
   const ms = new Date(endsAt).getTime() - Date.now();
-  if (ms <= 0) { applyEnergyHour({ active: false }); loadEnergy().catch(() => {}); return; }
+  if (ms <= 0) {
+    applyEnergyHour({ active: false });
+    // Close the window with the same branded popup used for reward claims,
+    // refreshed from the server so the remaining-uses count is authoritative.
+    const announceEnd = ehEndedFor !== endsAt;
+    if (announceEnd) ehEndedFor = endsAt;
+    loadEnergy().then(() => {
+      if (!announceEnd) return;
+      const left = Math.max(0, Number(state.energy?.happyHour?.usesRemaining) || 0);
+      celebrate({
+        milestone: true,
+        title: '2x Energy Hour Complete ⏳',
+        subtitle: left > 0
+          ? `Nice work! ${left === 1 ? '1 activation' : `${left} activations`} remaining today — watch an ad to double up again.`
+          : 'Both 2x Energy Hours are used for today — fresh boosts arrive tomorrow.',
+        icon: '⚡',
+        duration: 3600,
+      });
+    }).catch(() => {});
+    return;
+  }
   const m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000);
   sub.textContent = `2× Energy on every ad · ends in ${m}:${String(s).padStart(2, '0')}`;
 }
@@ -2618,24 +2639,87 @@ function applyEnergyHour(hh) {
   const banner = $('energyHourBanner');
   if (!banner) return;
   const title = $('energyHourTitle');
+  const sub = $('energyHourSub');
+  const btn = $('energyHourBtn');
   if (!hh || !hh.active) {
     banner.classList.add('idle');
-    if (title) title.textContent = 'Energy Happy Hour';
-    const sub = $('energyHourSub');
-    if (sub) sub.textContent = '2× Energy earning strikes at a surprise time each day';
     if (ehTimer) { clearInterval(ehTimer); ehTimer = null; }
     ehAnnouncedFor = null;
+    if (title) title.textContent = '2x Energy Hour';
+    // The server is the source of truth for remaining uses; until it has
+    // answered, show the default availability copy.
+    const left = hh && hh.usesRemaining != null ? Math.max(0, Number(hh.usesRemaining) || 0) : null;
+    if (left === 0) {
+      if (sub) sub.textContent = 'All 2x Energy Hours used today · Available again tomorrow';
+      if (btn) btn.hidden = true;
+    } else {
+      const usesTxt = left === null ? '' : left === 1 ? ' · 1 use remaining today' : ` · ${left} uses available today`;
+      if (sub) sub.textContent = `Watch an ad to activate 2× Energy${usesTxt}`;
+      if (btn) { btn.hidden = false; btn.disabled = false; }
+    }
     return;
   }
   banner.classList.remove('idle');
-  if (title) title.textContent = `⚡ ENERGY HAPPY HOUR — ${hh.multiplier}× LIVE`;
+  if (btn) btn.hidden = true;
+  if (title) title.textContent = `⚡ 2x ENERGY HOUR — ${hh.multiplier}× LIVE`;
   updateEhCountdown(hh.endsAt);
   if (ehTimer) clearInterval(ehTimer);
   ehTimer = setInterval(() => updateEhCountdown(hh.endsAt), 1000);
   if (ehAnnouncedFor !== hh.endsAt) {
     ehAnnouncedFor = hh.endsAt;
-    try { window.ArcadeSound?.reward?.(); } catch {}
-    toast(`⚡ ENERGY HAPPY HOUR is live — ${hh.multiplier}× Energy for the next hour!`);
+    // Same branded popup as reward claims — celebrate() handles sound/haptics.
+    const minsLeft = Math.max(1, Math.round((new Date(hh.endsAt).getTime() - Date.now()) / 60000));
+    celebrate({
+      milestone: true,
+      title: `2x Energy Hour — ${hh.multiplier}× LIVE ⚡`,
+      subtitle: `Every ad pays ${hh.multiplier}× Energy for the next ${minsLeft} min.`,
+      icon: '⚡',
+      duration: 3200,
+    });
+  }
+}
+// Human-friendly window length for popups: 60 → "1 hour", 90 → "90 minutes".
+function fmtHourDuration(mins) {
+  const m = Math.max(1, Math.round(Number(mins) || 60));
+  if (m === 60) return '1 hour';
+  return m % 60 === 0 ? `${m / 60} hours` : `${m} minute${m === 1 ? '' : 's'}`;
+}
+// Watch an ad, then ask the server to start one of today's 2x Energy Hours.
+// The server enforces the daily limit — a cancelled/failed ad never reaches
+// the API, so it can't consume one of the day's uses.
+async function activateEnergyHour(btn) {
+  if (window.ADS_ENABLED === false) { toast('Ads are temporarily unavailable — please try again later.'); return; }
+  const hh = state.energy?.happyHour;
+  if (hh?.active) { toast('A 2x Energy Hour is already running!'); return; }
+  if (hh && Number(hh.usesRemaining) <= 0) { toast('All 2x Energy Hours used today — available again tomorrow.'); return; }
+  const waitMs = ENERGY_AD_COOLDOWN_MS - (Date.now() - lastEnergyAdAt);
+  if (waitMs > 0) { toast(`Please wait ${Math.ceil(waitMs / 1000)}s before the next ad.`); return; }
+  if (btn) btn.disabled = true;
+  try {
+    const earned = await playRewardedAd();
+    if (!earned) { toast('Ad not completed — 2x Energy Hour not activated.'); return; }
+    lastEnergyAdAt = Date.now();
+    // Fresh nonce per completed ad — the server refuses duplicate activations
+    // (double SDK callbacks, network retries, replays) without consuming a use.
+    const adNonce = (window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const r = await api('POST', '/energy/hour/activate', { adNonce });
+    state.energy = r;
+    // The detailed popup below covers the announcement — don't double-notify.
+    ehAnnouncedFor = r.happyHour?.endsAt || null;
+    renderEnergy();
+    const left = Math.max(0, Number(r.happyHour?.usesRemaining) || 0);
+    celebrate({
+      milestone: true,
+      title: '2x Energy Hour Activated! ⚡',
+      subtitle: `${r.happyHour?.multiplier || 2}× Energy on every ad for the next ${fmtHourDuration(r.happyHour?.durationMinutes)} · ${left === 1 ? '1 use remaining today' : left === 0 ? 'no uses left today' : `${left} uses remaining today`}.`,
+      icon: '⚡',
+      duration: 3200,
+    });
+  } catch (e) {
+    if (e.data) { state.energy = e.data; renderEnergy(); }
+    toast(e.message);
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 // Rewarded ads may not be requested back-to-back — enforce a 30s gap between views.
@@ -2662,7 +2746,7 @@ async function earnEnergy(btn) {
       amount: gained,
       unit: 'Energy',
       icon: '⚡',
-      title: r.happyHour?.active ? `Happy Hour ${r.happyHour.multiplier}× Energy!` : 'Energy earned!',
+      title: r.happyHour?.active ? `2x Energy Hour — ${r.happyHour.multiplier}× Energy!` : 'Energy earned!',
       subtitle: `You now have ${fmt(r.energy)} ⚡ total.`,
       duration: 2600,
     });
@@ -3002,6 +3086,43 @@ $('botSend')?.addEventListener('click', sendBotMessage);
 $('botInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendBotMessage(); });
 
 /**
+ * In-app notification card — a push-notification-style banner used for
+ * reminders/nudges. Branded and tappable (opens the relevant tab), with its
+ * own dismiss control; a step up in polish from the plain toast pill.
+ */
+let appNoticeTimer;
+function notify({ icon = '◆', title = 'Deltix', message = '', tab = null, duration = 6500 } = {}) {
+  document.getElementById('appNotice')?.remove();
+  clearTimeout(appNoticeTimer);
+  const el = document.createElement('div');
+  el.className = 'app-notice';
+  el.id = 'appNotice';
+  el.setAttribute('role', 'status');
+  el.setAttribute('aria-live', 'polite');
+  el.innerHTML = `
+    <div class="an-icon">${icon}</div>
+    <div class="an-body">
+      <div class="an-app">◆ Deltix</div>
+      <div class="an-title">${title}</div>
+      <div class="an-msg">${message}</div>
+    </div>
+    <button class="an-close" type="button" aria-label="Dismiss">✕</button>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  const close = () => {
+    clearTimeout(appNoticeTimer);
+    el.classList.remove('show');
+    setTimeout(() => el.remove(), 280);
+  };
+  el.querySelector('.an-close').addEventListener('click', (e) => { e.stopPropagation(); close(); });
+  if (tab) {
+    el.classList.add('tappable');
+    el.addEventListener('click', () => { close(); try { showTab(tab); } catch {} });
+  }
+  appNoticeTimer = setTimeout(close, duration);
+}
+
+/**
  * Bot "notification" — a one-shot nudge toward the single highest-value
  * unclaimed daily action, computed entirely from state already in memory
  * (no extra network calls, no push infrastructure required).
@@ -3010,18 +3131,41 @@ function checkBotNudge() {
   if (!state.token) return;
   const nudges = [];
   if (rewardState?.data?.checkin?.ready) {
-    nudges.push('Don\u2019t forget your daily check-in — it only takes a second! 📅');
+    nudges.push({
+      icon: '📅',
+      title: 'Daily Check-in Ready',
+      message: 'Your daily reward is waiting in Rewards — tap to claim it.',
+      tab: 'tab-rewards',
+    });
   }
   if (treeState && !treeState.wateredToday && treeState.energy >= treeState.waterCost) {
-    nudges.push('Your Deltix Tree is thirsty 🌴 — water it for a small reward.');
+    nudges.push({
+      icon: '🌴',
+      title: 'Deltix Tree Reminder',
+      message: 'Your tree hasn\u2019t been watered today — water it to grow a level and collect a reward.',
+      tab: 'tab-energy',
+    });
+  }
+  const hh = state.energy?.happyHour;
+  if (hh && !hh.active && Number(hh.usesRemaining) > 0) {
+    nudges.push({
+      icon: '⚡',
+      title: '2x Energy Hour Available',
+      message: `Watch an ad to double your Energy earnings for a full hour · ${hh.usesRemaining} of ${hh.maxPerDay || 2} left today.`,
+      tab: 'tab-energy',
+    });
   }
   const ladder = (() => { try { return JSON.parse(localStorage.getItem('dltx_daily_ladder') || '{}'); } catch { return {}; } })();
   if (Array.isArray(ladder.claimed) && !ladder.claimed[0]) {
-    nudges.push('Step 1 of today\u2019s Ladder is free — grab it! 🪜');
+    nudges.push({
+      icon: '🪜',
+      title: 'Free Ladder Step Available',
+      message: 'Step 1 of today\u2019s Daily Ladder is free — tap to claim it.',
+      tab: 'tab-game-ladder',
+    });
   }
   if (!nudges.length) return;
-  const pick = nudges[Math.floor(Math.random() * nudges.length)];
-  toast('🤖 ' + pick);
+  notify(nudges[Math.floor(Math.random() * nudges.length)]);
 }
 
 // ==================== Deltix KYC (Persona, opt-in, off unless enabled) ====================
@@ -3073,6 +3217,7 @@ async function loadKycStatus() {
 }
 
 $('energyEarnBtn')?.addEventListener('click', (e) => earnEnergy(e.currentTarget));
+$('energyHourBtn')?.addEventListener('click', (e) => activateEnergyHour(e.currentTarget));
 $('homeEarnBtn')?.addEventListener('click', () => {
   showTab('tab-earn');
   if (state.token) loadEarn().catch(() => {});
