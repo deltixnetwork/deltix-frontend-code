@@ -499,17 +499,15 @@
           </div>
         </div>
 
-        <div class="card reward-card ladder-card">
+        <button class="card reward-card hub-link-card" type="button" onclick="showTab('tab-game-ladder')">
           <div class="reward-head">
             <span class="reward-emoji">🪜</span>
             <div>
               <div class="reward-title">Daily Ladder</div>
-              <div class="reward-sub">Climb 15 steps a day — first step is free, later steps reward ad views.</div>
+              <div class="reward-sub">Now in the Games hub — climb 15 steps a day for up to 23 ⚡. Tap to play →</div>
             </div>
           </div>
-          <div class="mini-progress"><div class="mini-progress-fill" id="ladderProgressFill"></div></div>
-          <div id="dailyLadder" class="ladder-grid"></div>
-        </div>
+        </button>
 
         <div class="card reward-card calendar-card">
           <div class="reward-head">
@@ -608,25 +606,13 @@
           </div>
         </div>
 
-        <!-- Spin wheel (free + paid) -->
-        <div class="card reward-card">
+        <!-- Spin wheel now lives on its own Games-hub page (tab-game-wheel) -->
+        <button class="card reward-card hub-link-card" type="button" onclick="showTab('tab-game-wheel')">
           <div class="reward-head"><span class="reward-emoji">🎡</span>
             <div><div class="reward-title">Deltix Fortune Wheel</div>
-            <div class="reward-sub" id="spinSub">Free spin every 12 hours — win Energy or $DLTX.</div></div>
+            <div class="reward-sub">Now on its own page in the Games hub — free spin every 12 hours. Tap to spin →</div></div>
           </div>
-          <div class="wheel-wrap">
-            <div class="wheel-buddy left" aria-hidden="true">🦊</div>
-            <div class="wheel-buddy right" aria-hidden="true">🤖</div>
-            <div class="wheel-pointer"></div>
-            <canvas id="spinWheel" width="300" height="300"></canvas>
-            <div class="wheel-hub">Δ</div>
-          </div>
-          <div class="reward-actions">
-            <button class="btn primary reward-btn" id="freeSpinBtn">Free spin</button>
-            <button class="btn gold reward-btn" id="paidSpinBtn">Spin for 1 $DLTX</button>
-          </div>
-          <div class="muted small-note" id="spinPool"></div>
-        </div>
+        </button>
 
         <!-- Choose your daily chest -->
         <div class="card reward-card">
@@ -703,11 +689,88 @@
       <!-- Energy Arcade — instant one-tap Energy games -->
       <div class="tab" id="tab-energygames">
         <div class="showcase-banner"><div class="showcase-title">Energy Arcade ⚡</div><div class="showcase-sub">Spend Energy for instant one-tap rewards — no skill, no waiting.</div></div>
+        <button class="btn ghost hub-back-btn" type="button" onclick="showTab('tab-games')">← All games</button>
         <h3 class="section-title">Instant Energy games ⚡💎</h3>
         <p class="muted small-note">Spend <b>Energy</b> for a one-tap reveal — win Energy, a little $DLTX, a free spin, or try again.</p>
         <button class="btn primary quick-play-btn" id="quickPlayBtn">🎮 Quick Play — surprise me</button>
         <div class="instant-grid" id="instantGamesGrid"></div>
         <ul class="disclosure"><li>Energy is a non-monetary status point. $DLTX prizes are capped by the daily allowance.</li></ul>
+      </div>
+
+      <!-- Games Hub — every game in one place, each on its own page -->
+      <div class="tab" id="tab-games">
+        <div class="showcase-banner"><div class="showcase-title">Deltix Games 🎮</div><div class="showcase-sub">Every game in one place — spin, climb, flip and play.</div></div>
+        <div class="hub-grid">
+          <button class="hub-card" type="button" onclick="showTab('tab-game-wheel')" style="--hub-accent:#38bdf8">
+            <span class="hub-emoji">🎡</span><span class="hub-name">Fortune Wheel</span>
+            <span class="hub-sub">Free spin every 12h — win 2, 5 or 8 ⚡</span>
+          </button>
+          <button class="hub-card" type="button" onclick="showTab('tab-game-ladder')" style="--hub-accent:#22c55e">
+            <span class="hub-emoji">🪜</span><span class="hub-name">Daily Ladder</span>
+            <span class="hub-sub">15 steps a day — up to 23 ⚡</span>
+          </button>
+          <button class="hub-card" type="button" onclick="openInstantGame('coin')" style="--hub-accent:#eab308">
+            <span class="hub-emoji">🪙</span><span class="hub-name">Coin Flip</span>
+            <span class="hub-sub">30 ⚡ a flip — win 25, 30 or 35 ⚡, or nothing</span>
+          </button>
+          <button class="hub-card" type="button" onclick="showTab('tab-energygames')" style="--hub-accent:#a855f7">
+            <span class="hub-emoji">⚡</span><span class="hub-name">Instant Energy Games</span>
+            <span class="hub-sub">One-tap reveals — scratch, boxes, dice…</span>
+          </button>
+          <button class="hub-card" type="button" onclick="showTab('tab-arcade')" style="--hub-accent:#f59e0b">
+            <span class="hub-emoji">🕹️</span><span class="hub-name">Deltix Arcade</span>
+            <span class="hub-sub">Skill games — play &amp; earn $DLTX</span>
+          </button>
+          <button class="hub-card locked" type="button" disabled style="--hub-accent:#64748b">
+            <span class="hub-emoji">🔮</span><span class="hub-name">Future Games</span>
+            <span class="hub-sub">New games coming soon — stay tuned</span>
+          </button>
+        </div>
+        <p class="energy-disclaimer">Energy is a non-monetary status point. $DLTX prizes are capped by the daily allowance.</p>
+      </div>
+
+      <!-- Fortune Wheel — its own game page -->
+      <div class="tab" id="tab-game-wheel">
+        <div class="showcase-banner"><div class="showcase-title">Fortune Wheel 🎡</div><div class="showcase-sub">A free spin every 12 hours — land on 2, 5 or 8 ⚡.</div></div>
+        <button class="btn ghost hub-back-btn" type="button" onclick="showTab('tab-games')">← All games</button>
+        <div class="card reward-card">
+          <div class="reward-head"><span class="reward-emoji">🎡</span>
+            <div><div class="reward-title">Deltix Fortune Wheel</div>
+            <div class="reward-sub" id="spinSub">Free spin every 12 hours — win Energy.</div></div>
+          </div>
+          <div class="wheel-wrap">
+            <div class="wheel-buddy left" aria-hidden="true">🦊</div>
+            <div class="wheel-buddy right" aria-hidden="true">🤖</div>
+            <div class="wheel-pointer"></div>
+            <canvas id="spinWheel" width="300" height="300"></canvas>
+            <div class="wheel-hub">Δ</div>
+          </div>
+          <div class="reward-actions">
+            <button class="btn primary reward-btn" id="freeSpinBtn">Free spin</button>
+            <button class="btn gold reward-btn" id="paidSpinBtn">Spin for 1 $DLTX</button>
+          </div>
+          <div class="muted small-note" id="spinPool"></div>
+          <div class="wheel-locked-note" id="wheelLockedNote" hidden>🔒 The 5 $DLTX jackpot segment is a locked preview — it can't be won yet. It unlocks in a future update.</div>
+        </div>
+        <p class="energy-disclaimer">The wheel's outcome is decided by the server — the animation only shows it. Locked segments are display-only previews.</p>
+      </div>
+
+      <!-- Daily Ladder — its own game page -->
+      <div class="tab" id="tab-game-ladder">
+        <div class="showcase-banner"><div class="showcase-title">Daily Ladder 🪜</div><div class="showcase-sub">Climb 15 steps a day — steps pay 1 ⚡, bonus steps 10 and 15 pay 5 ⚡.</div></div>
+        <button class="btn ghost hub-back-btn" type="button" onclick="showTab('tab-games')">← All games</button>
+        <div class="card reward-card ladder-card">
+          <div class="reward-head">
+            <span class="reward-emoji">🪜</span>
+            <div>
+              <div class="reward-title">Daily Ladder</div>
+              <div class="reward-sub">Climb 15 steps a day — first step is free, later steps reward ad views.</div>
+            </div>
+          </div>
+          <div class="mini-progress"><div class="mini-progress-fill" id="ladderProgressFill"></div></div>
+          <div id="dailyLadder" class="ladder-grid"></div>
+        </div>
+        <p class="energy-disclaimer">Steps must be claimed in order and reset daily (UTC). Rewards are decided and enforced by the server.</p>
       </div>
 
       <!-- Deltix Shop -->
@@ -805,79 +868,20 @@
           <div class="pp-medals" id="ppMedalsGrid"></div>
           <div class="pp-section-label">Achievement stamps</div>
           <div class="pp-stamps" id="ppStampsGrid"></div>
+          <div class="pp-section-label">Achievement badges 🎖️ <span class="pp-hint" id="badgesCount">0/0</span></div>
+          <div class="pp-stamps" id="badgesGrid"></div>
           <p class="pp-note">Medals &amp; stamps are non-transferable recognitions — they carry no monetary value.</p>
         </div>
       </div>
 
-      <!-- FAQ -->
+      <!-- FAQ (data-driven from faq-data.js — searchable + category filters) -->
       <div class="tab" id="tab-faq">
-        <div class="showcase-banner"><div class="showcase-title">FAQ ❓</div><div class="showcase-sub">Quick answers about Energy, rewards, $DLTX supply, burning, and governance.</div></div>
+        <div class="showcase-banner"><div class="showcase-title">FAQ ❓</div><div class="showcase-sub">Search answers about Energy, games, $DLTX, mining, staking, P2P, burning and security.</div></div>
 
         <div class="card faq-card">
-          <div class="pp-section-label">⚡ Energy &amp; daily rewards</div>
-          <details class="faq-item">
-            <summary>How do I earn Energy?</summary>
-            <p>Watch rewarded ads (1 ⚡ each, up to 100/day), climb the Daily Ladder (up to 23 ⚡/day), and collect from Deltix Rain, the Weekly Calendar, the Spin Wheel, the Daily Chest, the Tree, missions, and puzzles. Free (non-ad) sources share a combined 50 ⚡ daily allowance.</p>
-          </details>
-          <details class="faq-item">
-            <summary>How much Energy does one ad give?</summary>
-            <p>Exactly 1 ⚡ per rewarded ad, up to 100 ⚡ per day. During 2× bonus hours, ad rewards are doubled — that's intentional.</p>
-          </details>
-          <details class="faq-item">
-            <summary>How does the Daily Ladder work?</summary>
-            <p>15 steps per day, claimed in order. Step 1 is free; each further step takes one optional ad. Every step pays 1 ⚡, and the starred bonus steps 10 and 15 pay 5 ⚡ each — up to 23 ⚡/day. Resets daily (UTC).</p>
-          </details>
-          <details class="faq-item">
-            <summary>How does the free Spin Wheel work?</summary>
-            <p>A free spin every 12 hours. The wheel holds 2 ⚡ / 5 ⚡ / 8 ⚡ segments, small $DLTX prizes, and a rare 5 $DLTX jackpot. Every prize on the wheel can genuinely be won — the jackpot is just rare.</p>
-          </details>
-          <details class="faq-item">
-            <summary>How does Flip the Coin work?</summary>
-            <p>Each flip costs 30 ⚡. A winning flip pays 25–35 ⚡; some flips pay nothing. It's a fun risk, not an Energy generator.</p>
-          </details>
-
-          <div class="pp-section-label">◆ $DLTX rewards</div>
-          <details class="faq-item">
-            <summary>How much $DLTX can I earn per day?</summary>
-            <p>Play &amp; Earn (arcade wins, check-in, box, spin, chest, puzzles, missions) shares a 10 $DLTX/day cap. Deltix Earn sessions can add up to another 10 $DLTX/day. Staking rewards accrue separately.</p>
-          </details>
-          <details class="faq-item">
-            <summary>Will rewards continue as the network grows?</summary>
-            <p>Yes. Deltix launched with 100,000,000 $DLTX and issues up to 5% of supply per year, which funds staking rewards. Game rewards are minted within strict daily caps. Both continue as designed.</p>
-          </details>
-          <details class="faq-item">
-            <summary>Can reward rates change?</summary>
-            <p>Reward rates, caps, and issuance are protocol parameters governed through the Deltix DAO. Changes only affect future earning — $DLTX already in your wallet is never taken away.</p>
-          </details>
-          <details class="faq-item">
-            <summary>Is the 5% issuance fixed forever?</summary>
-            <p>No — it's the current protocol parameter. It can be raised or lowered through a governance decision, transparently, never silently.</p>
-          </details>
-
-          <div class="pp-section-label">🔥 Burning &amp; supply</div>
-          <details class="faq-item">
-            <summary>How does burning work?</summary>
-            <p>EIP-1559-style: every P2P transfer burns a 0.1% fee (min 0.01 $DLTX) and unstaking burns 1% of principal — removed from supply forever. Net supply change = issuance − burns.</p>
-          </details>
-          <details class="faq-item">
-            <summary>Why does the burned total look small?</summary>
-            <p>Burns scale with network activity (transfers and unstaking), not with time. A young network burns little and burns more as usage grows — that's the design working, not a bug.</p>
-          </details>
-          <details class="faq-item">
-            <summary>Can the burn rate increase?</summary>
-            <p>Yes — fee rates are protocol parameters listed as governance surfaces in the whitepaper. The community can raise them through the DAO as the network matures.</p>
-          </details>
-
-          <div class="pp-section-label">🗳 Governance &amp; trust</div>
-          <details class="faq-item">
-            <summary>Who decides these numbers?</summary>
-            <p>The Deltix DAO — every staked $DLTX is one vote. Issuance, fees, reward rates, and caps are explicit governance surfaces, and every economic action is sealed into the public chain.</p>
-          </details>
-          <details class="faq-item">
-            <summary>Does $DLTX have monetary value?</summary>
-            <p>No. $DLTX is an in-app utility and reward token with no monetary value — not redeemable for currency or crypto, and not an investment. Rewards are variable incentives, never guaranteed.</p>
-          </details>
-
+          <input type="search" id="faqSearch" class="faq-search" placeholder="🔍 Search the FAQ…" autocomplete="off" />
+          <div class="faq-cats" id="faqCats"></div>
+          <div id="faqList"></div>
           <p class="pp-note">Have a question that isn't here? Email <a href="mailto:support@deltixllc.com">support@deltixllc.com</a> — popular questions get added to this page.</p>
         </div>
       </div>
@@ -888,7 +892,7 @@
       <button class="tabbtn active" data-tab="tab-wallet"><img src="assets/energy/38_wallet_nav.png" class="nav-3d-icon" alt="" /><span>Wallet</span></button>
       <button class="tabbtn" data-tab="tab-stake"><img src="assets/energy/39_stake_nav.png" class="nav-3d-icon" alt="" /><span>Stake</span></button>
       <button class="tabbtn" data-tab="tab-arcade"><img src="assets/energy/40_arcade_nav.png" class="nav-3d-icon" alt="" /><span>Arcade</span></button>
-      <button class="tabbtn" data-tab="tab-energygames"><span class="nav-3d-icon nav-emoji">⚡</span><span>Energy</span></button>
+      <button class="tabbtn" data-tab="tab-games"><span class="nav-3d-icon nav-emoji">🎮</span><span>Games</span></button>
       <button class="tabbtn" data-tab="tab-rewards"><img src="assets/energy/20_gift.png" class="nav-3d-icon" alt="" /><span>Rewards</span></button>
       <button class="tabbtn" data-tab="tab-shop"><span class="nav-3d-icon nav-emoji">🛒</span><span>Shop</span></button>
       <button class="tabbtn" data-tab="tab-missions"><span class="nav-3d-icon nav-emoji">🚀</span><span>Missions</span></button>
@@ -915,8 +919,8 @@
         <button class="sidenav-item" data-tab="tab-arcade">
           <img src="assets/energy/40_arcade_nav.png" class="nav-3d-icon" alt="" /><span>Arcade</span>
         </button>
-        <button class="sidenav-item" data-tab="tab-energygames">
-          <span class="nav-3d-icon nav-emoji">⚡</span><span>Energy Games</span>
+        <button class="sidenav-item" data-tab="tab-games">
+          <span class="nav-3d-icon nav-emoji">🎮</span><span>Games</span>
         </button>
         <button class="sidenav-item" data-tab="tab-rewards">
           <img src="assets/energy/20_gift.png" class="nav-3d-icon" alt="" /><span>Rewards</span>
@@ -1195,6 +1199,7 @@
     </div>
   </div>
 
+  <script src="faq-data.js"></script>
   <script src="arcade.js"></script>
   <script src="app.js"></script>
 </body>

@@ -3845,7 +3845,7 @@ const INSTANT_GAMES = {
     name: 'Flip the Coin',
     emoji: '🪙',
     cost: 30,
-    tagline: 'Call it — win bonus Energy. No cash on this one.',
+    tagline: 'Call it — win 25, 30 or 35 ⚡, or nothing.',
     accent: '#eab308',
     render: renderCoin,
   },

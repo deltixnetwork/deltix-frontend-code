@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.8.1';
+const APP_VERSION = '1.9.0';
 const $ = (id) => document.getElementById(id);
 const state = {
   token: localStorage.getItem('dltx_token') || null,
@@ -269,6 +269,8 @@ function showTab(id, { refresh = true } = {}) {
   if (id === 'tab-energy') {
     renderEnergy();
     if (state.token) loadEnergy();
+  } else if (id === 'tab-faq') {
+    if (typeof renderFaq === 'function') renderFaq();
   } else if (id === 'tab-missions') {
     renderMissions();
     if (state.token) loadMissions();
@@ -295,6 +297,13 @@ function refreshTabContent(id) {
   } else if (id === 'tab-energygames') {
     if (typeof renderInstantGames === 'function') renderInstantGames();
     loadEnergy().then(() => { if (typeof renderInstantGames === 'function') renderInstantGames(); }).catch(() => {});
+  } else if (id === 'tab-games') {
+    loadEnergy().catch(() => {});
+  } else if (id === 'tab-game-wheel') {
+    loadRewards().catch(() => {});
+  } else if (id === 'tab-game-ladder') {
+    renderDailyLadder();
+    loadEnergy().catch(() => {});
   } else if (id === 'tab-shop') {
     loadShop().catch(() => {});
   } else if (id === 'tab-leaderboard') {
@@ -337,6 +346,10 @@ async function refreshCurrentView({ isPull = false, silent = false } = {}) {
     tasks.push(loadEnergy());
   } else if (activeTab === 'tab-rewards') {
     tasks.push(loadRewards(), loadDailyChallenge());
+  } else if (activeTab === 'tab-game-wheel') {
+    tasks.push(loadRewards());
+  } else if (activeTab === 'tab-game-ladder' || activeTab === 'tab-games') {
+    tasks.push(loadEnergy());
   } else if (activeTab === 'tab-missions') {
     tasks.push(loadMissions());
   } else if (activeTab === 'tab-earn') {
@@ -1583,7 +1596,10 @@ $('confirmSend').addEventListener('click', async () => {
   }
   $('confirmSend').disabled = true;
   try {
-    const r = await api('POST', '/wallet/send', { toAddress, amount });
+    // One key per confirmed send — the server refuses accidental duplicates
+    // (double taps, network retries) carrying the same key.
+    const idempotencyKey = (window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const r = await api('POST', '/wallet/send', { toAddress, amount, idempotencyKey });
     $('sendModal').hidden = true;
     toast(`Sent ${fmt(r.amount)} $DLTX · ${fmt(r.feeBurned)} burned`);
     await Promise.all([loadWallet(), loadTx(), loadStats()]);
@@ -2635,7 +2651,10 @@ async function earnEnergy(btn) {
     if (earned) lastEnergyAdAt = Date.now();
     if (!earned) { toast('Ad not completed — no Energy earned.'); return; }
     // The account is the source of truth — the server credits and returns it.
-    const r = await api('POST', '/energy/earn');
+    // A fresh nonce per completed ad lets the server refuse duplicate credits
+    // (double SDK callbacks, network retries, replays).
+    const adNonce = (window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const r = await api('POST', '/energy/earn', { adNonce });
     state.energy = r;
     renderEnergy();
     const gained = Number(r.earned) || 1;
@@ -3389,6 +3408,8 @@ function renderRewards({ redrawWheel = true } = {}) {
   const psb = $('paidSpinBtn');
   if (psb) { psb.disabled = !d.paidSpin.canAfford || rewardState.spinning; psb.textContent = `Spin for ${fmt(d.paidSpin.cost)} $DLTX`; }
   setText('spinPool', `Community pool: ${fmt(d.pool)} $DLTX · paid-spin prizes are funded by the pool (never burned).`);
+  const lockedNote = $('wheelLockedNote');
+  if (lockedNote) lockedNote.hidden = !(sp.segments || []).some((s) => s.locked);
   if (redrawWheel && rewardState.wheelMode !== 'paid' && !rewardState.spinning) {
     rewardState.wheelSegs = sp.segments;
     drawWheel();
@@ -3414,7 +3435,8 @@ function startRewardTimer() {
   if (rewardTimer) return;
   rewardTimer = setInterval(() => {
     if (!state.token || rewardState.spinning) return;
-    if (!document.getElementById('tab-rewards')?.classList.contains('active')) return;
+    const active = document.querySelector('.tab.active')?.id;
+    if (active !== 'tab-rewards' && active !== 'tab-game-wheel') return;
     renderRewards({ redrawWheel: false });
   }, 1000);
 }
@@ -3426,6 +3448,53 @@ function resetRewardsUI() {
   if (rewardTimer) { clearInterval(rewardTimer); rewardTimer = null; }
   setText('rewardCapNote', 'Daily reward allowance: — / — $DLTX');
   setText('chestResult', '');
+}
+
+// ==================== FAQ (data-driven, searchable) ====================
+// Content lives in faq-data.js (window.DELTIX_FAQ) — one source shared with
+// the website. Supports live text search + category filtering.
+const faqState = { query: '', category: 'all', wired: false };
+
+function renderFaq() {
+  const list = $('faqList');
+  const cats = $('faqCats');
+  const data = window.DELTIX_FAQ || [];
+  if (!list || !cats) return;
+
+  if (!faqState.wired) {
+    faqState.wired = true;
+    $('faqSearch')?.addEventListener('input', (e) => {
+      faqState.query = String(e.target.value || '').trim().toLowerCase();
+      renderFaq();
+    });
+    cats.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-faq-cat]');
+      if (!btn) return;
+      faqState.category = btn.dataset.faqCat;
+      renderFaq();
+    });
+  }
+
+  cats.innerHTML = [{ id: 'all', name: 'All', icon: '📚' }, ...data]
+    .map((c) => `<button type="button" class="faq-cat${faqState.category === c.id ? ' active' : ''}" data-faq-cat="${c.id}">${c.icon} ${c.name}</button>`)
+    .join('');
+
+  const q = faqState.query;
+  const matches = (it) => !q || it.q.toLowerCase().includes(q) || it.a.toLowerCase().includes(q);
+  const sections = data
+    .filter((c) => faqState.category === 'all' || c.id === faqState.category)
+    .map((c) => ({ ...c, items: c.items.filter(matches) }))
+    .filter((c) => c.items.length > 0);
+
+  if (!sections.length) {
+    list.innerHTML = '<p class="muted small-note faq-empty">No answers match your search. Try different words, or email support@deltixllc.com.</p>';
+    return;
+  }
+  list.innerHTML = sections
+    .map((c) => `<div class="pp-section-label">${c.icon} ${escapeHtml(c.name)}</div>` + c.items
+      .map((it) => `<details class="faq-item"${q ? ' open' : ''}><summary>${escapeHtml(it.q)}</summary><p>${escapeHtml(it.a)}</p></details>`)
+      .join(''))
+    .join('');
 }
 
 // ==================== Deltix Earn (Path 2) ====================
@@ -3530,6 +3599,7 @@ $('dailyChallengeBtn')?.addEventListener('click', claimDailyChallenge);
 const WHEEL_PALETTE = ['#6366f1', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#0ea5e9'];
 
 function segLabel(s) {
+  if (s.locked) return `🔒${s.amount}Δ`;
   if (s.kind === 'energy') return `⚡${s.amount}`;
   if (s.kind === 'dltx') {
     if (typeof s.mult === 'number') return s.mult === 0 ? '✕' : `×${s.mult}`;
@@ -3551,11 +3621,14 @@ function drawWheel() {
   ctx.rotate(rewardState.wheelRot);
   for (let i = 0; i < N; i++) {
     const a0 = -Math.PI / 2 + i * seg, a1 = a0 + seg;
+    const locked = Boolean(segs[i].locked);
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.arc(0, 0, R, a0, a1);
     ctx.closePath();
-    ctx.fillStyle = WHEEL_PALETTE[i % WHEEL_PALETTE.length];
+    // Locked preview segments render visibly greyed-out — the wheel can never
+    // land on them and the UI must never suggest otherwise.
+    ctx.fillStyle = locked ? '#475569' : WHEEL_PALETTE[i % WHEEL_PALETTE.length];
     ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,.55)';
     ctx.lineWidth = 2;
@@ -3564,8 +3637,8 @@ function drawWheel() {
     ctx.rotate(a0 + seg / 2);
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 14px system-ui, sans-serif';
+    ctx.fillStyle = locked ? 'rgba(255,255,255,.7)' : '#fff';
+    ctx.font = locked ? 'bold 11px system-ui, sans-serif' : 'bold 14px system-ui, sans-serif';
     ctx.fillText(segLabel(segs[i]), R - 12, 0);
     ctx.restore();
   }
@@ -4335,6 +4408,24 @@ async function loadPassport() {
     communityState.passport = r;
     renderPassport();
   } catch { /* handled by api() */ }
+  loadBadges().catch(() => {});
+}
+
+// ---- Achievement badges (server-evaluated, placeholder art) ----
+async function loadBadges() {
+  if (!state.token) return;
+  const grid = $('badgesGrid');
+  if (!grid) return;
+  try {
+    const r = await api('GET', '/badges');
+    setText('badgesCount', `${r.unlockedCount}/${r.total}`);
+    grid.innerHTML = (r.badges || []).map((b) => `
+      <div class="pp-stamp${b.unlocked ? ' earned' : ''}" title="${escapeHtml(b.name)} — ${escapeHtml(b.condition)}">
+        <span class="pps-icon">${b.unlocked ? b.emoji : '🔒'}</span>
+        <span class="pps-name">${escapeHtml(b.name)}</span>
+        <span class="pps-prog">${b.unlocked ? (b.earnedAt ? new Date(b.earnedAt).toLocaleDateString() : 'Earned') : escapeHtml(b.rarity)}</span>
+      </div>`).join('');
+  } catch { /* handled by api() */ }
 }
 
 function renderPassport() {
@@ -4386,6 +4477,8 @@ function resetCommunityUI() {
   setText('ppStamps', '0/0'); setText('ppMedals', '0/0'); setText('ppStreak', '0');
   const mg = $('ppMedalsGrid'); if (mg) mg.innerHTML = '';
   const sg = $('ppStampsGrid'); if (sg) sg.innerHTML = '';
+  const bg = $('badgesGrid'); if (bg) bg.innerHTML = '';
+  setText('badgesCount', '0/0');
 }
 
 /** Opt-in rewarded ad. Resolves true only on the SDK's own reward callback.
