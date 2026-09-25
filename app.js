@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.9.2';
+const APP_VERSION = '1.10.0';
 const $ = (id) => document.getElementById(id);
 
 // Stable per-phone identifier sent with every request (X-Device-Id) — the
