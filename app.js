@@ -716,7 +716,7 @@ function setAuthMode(mode) {
   $('signupFields').hidden = !isSignup;
   $('authTitle').textContent = isSignup ? 'Create your account 🚀' : 'Welcome back 👋';
   $('authSub').textContent = isSignup
-    ? 'Enter your email — we’ll send a one-time code and create your wallet instantly.'
+    ? 'Enter your Gmail, Yahoo or Hotmail/Outlook email — we’ll send a one-time code and create your wallet instantly.'
     : 'Enter the email you signed up with — we’ll send a one-time code.';
   $('sendCodeBtn').textContent = isSignup ? 'Create account →' : 'Sign in →';
   $('authAlt').innerHTML = isSignup
