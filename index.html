@@ -165,6 +165,41 @@
         </ul>
       </div>
 
+      <!-- Deltix Energy Delegation -->
+      <div class="tab" id="tab-energy-delegation">
+        <h3 class="section-title">⚡ Deltix Energy</h3>
+        <p class="muted small-note">Delegate Energy to an Energy Validator to generate more Energy. Rewards accrue continuously and must be claimed — they never auto-compound.</p>
+
+        <div class="ed-summary">
+          <div class="ed-stat"><span class="ed-stat-label">Available</span><b id="edAvailable">–</b></div>
+          <div class="ed-stat"><span class="ed-stat-label">Delegated</span><b id="edDelegated">–</b></div>
+          <div class="ed-stat"><span class="ed-stat-label">Claimable</span><b id="edClaimable">–</b></div>
+          <div class="ed-stat"><span class="ed-stat-label">Generation</span><b id="edRate">–</b></div>
+        </div>
+        <button class="primary-btn" id="edClaimBtn" disabled>Claim Energy</button>
+
+        <div class="card ed-unlock-card" id="edUnlockCard" hidden>
+          <div class="ed-unlock-title">TRANSFER UNLOCK</div>
+          <div class="mini-progress"><div class="mini-progress-fill" id="edUnlockFill"></div></div>
+          <div class="ed-unlock-progress" id="edUnlockText">0 / 500 Claimed Energy</div>
+          <p class="hint" id="edUnlockHint">Claim Energy from delegation to unlock $DLTX transfers on this account.</p>
+        </div>
+
+        <h3 class="section-title">Energy Validators</h3>
+        <div id="edValidatorList" class="validator-list"><p class="muted center">Loading validators…</p></div>
+
+        <h3 class="section-title">Your Energy delegations</h3>
+        <div id="edMyDelegations"><p class="muted center">You have no active Energy delegations.</p></div>
+
+        <h3 class="section-title">How it works</h3>
+        <ul class="disclosure">
+          <li>Earn Energy → delegate it → generate more Energy → claim → use or delegate again.</li>
+          <li>Rewards go to Claimable Energy only — claim them to make them usable.</li>
+          <li>Undelegating early burns part of the principal: days 1–7: 40%, days 8–14: 25%, days 15–29: 10%, day 30+: no burn.</li>
+          <li>The generation rate is set by the protocol and can change; earned rewards are never recalculated.</li>
+        </ul>
+      </div>
+
       <!-- D-Browser -->
       <div class="tab" id="tab-browser">
         <div class="dbrowser-head-banner">
@@ -917,6 +952,9 @@
         <button class="sidenav-item" data-tab="tab-stake">
           <img src="assets/energy/39_stake_nav.png" class="nav-3d-icon" alt="" /><span>Stake</span>
         </button>
+        <button class="sidenav-item" data-tab="tab-energy-delegation">
+          <span class="nav-3d-icon nav-emoji">⚡</span><span>Deltix Energy</span>
+        </button>
         <button class="sidenav-item" data-tab="tab-arcade">
           <img src="assets/energy/40_arcade_nav.png" class="nav-3d-icon" alt="" /><span>Arcade</span>
         </button>
@@ -978,6 +1016,40 @@
       <div class="modal-actions">
         <button class="btn ghost" id="cancelStake">Cancel</button>
         <button class="btn primary" id="confirmStake">Confirm delegation</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Energy delegate modal -->
+  <div class="modal-backdrop" id="edDelegateModal" hidden>
+    <div class="modal">
+      <h3 id="edDelegateTitle">Delegate Energy</h3>
+      <div class="supply-list" id="edDelegateTerms"></div>
+      <label for="edDelegateAmount">Amount (⚡ Energy)</label>
+      <input id="edDelegateAmount" type="number" min="0" step="1" placeholder="0" />
+      <ul class="disclosure">
+        <li>Rewards accrue continuously into Claimable Energy — claim them any time.</li>
+        <li>Undelegating early burns part of the principal (40% / 25% / 10%, no burn from day 30).</li>
+      </ul>
+      <p class="hint" id="edDelegateHint"></p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="edCancelDelegate">Cancel</button>
+        <button class="btn primary" id="edConfirmDelegate">Confirm delegation</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Energy undelegate modal (server-computed preview + confirm) -->
+  <div class="modal-backdrop" id="edUndelegateModal" hidden>
+    <div class="modal">
+      <h3>Undelegate Energy</h3>
+      <label for="edUndelegateAmount">Amount (⚡ Energy)</label>
+      <input id="edUndelegateAmount" type="number" min="0" step="1" placeholder="0" />
+      <div class="supply-list" id="edUndelegatePreview"></div>
+      <p class="hint" id="edUndelegateHint"></p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="edCancelUndelegate">Cancel</button>
+        <button class="btn danger" id="edConfirmUndelegate">Confirm undelegation</button>
       </div>
     </div>
   </div>

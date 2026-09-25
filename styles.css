@@ -2718,3 +2718,16 @@ html[data-dark] .sidenav-item.active, html[data-dark] .sidenav-item:active { bac
 .faq-empty { padding: 14px 4px; }
 html[data-dark] .faq-search { background: #16233f; }
 html[data-dark] .faq-cat.active { background: #2563eb; border-color: #2563eb; }
+
+/* -- Deltix Energy Delegation -- */
+.ed-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 12px 0; }
+.ed-stat { background: #fff; border: 1px solid #e3e9f5; border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; box-shadow: 0 2px 8px rgba(11, 28, 63, 0.05); }
+.ed-stat-label { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px; }
+.ed-stat b { font-size: 17px; color: #0b1c3f; }
+#edClaimBtn { width: 100%; margin: 4px 0 14px; }
+#edClaimBtn:disabled { opacity: 0.55; }
+.ed-unlock-card { padding: 14px; margin-bottom: 14px; }
+.ed-unlock-title { font-size: 12px; font-weight: 800; letter-spacing: 0.8px; color: #64748b; margin-bottom: 8px; }
+.ed-unlock-progress { font-weight: 800; color: #0b1c3f; margin-top: 8px; }
+html[data-dark] .ed-stat { background: var(--card, #101a33); border-color: rgba(255,255,255,0.08); }
+html[data-dark] .ed-stat b, html[data-dark] .ed-unlock-progress { color: var(--text, #e7ecf7); }

@@ -334,6 +334,8 @@ function refreshTabContent(id) {
     loadPassport().catch(() => {});
   } else if (id === 'tab-earn') {
     loadEarn().catch(() => {});
+  } else if (id === 'tab-energy-delegation') {
+    loadEnergyDelegation();
   } else if (id === 'tab-assistant') {
     ensureBotGreeting();
     loadKycStatus().catch(() => {});
@@ -410,7 +412,7 @@ function initPullToRefresh() {
     if (!isMain || !state.token || isRefreshing) return false;
 
     // Must not have any modal/overlay open
-    const overlays = ['gameModal', 'instantModal', 'shopModal', 'puzzleModal', 'dbrowser', 'explorer', 'dappPage', 'stakeModal', 'sendModal', 'deleteModal', 'swapModal', 'dappModal'];
+    const overlays = ['gameModal', 'instantModal', 'shopModal', 'puzzleModal', 'dbrowser', 'explorer', 'dappPage', 'stakeModal', 'edDelegateModal', 'edUndelegateModal', 'sendModal', 'deleteModal', 'swapModal', 'dappModal'];
     for (const id of overlays) {
       const el = $(id);
       if (el && !el.hidden) return false;
@@ -1679,6 +1681,245 @@ $('confirmStake').addEventListener('click', async () => {
     hint.classList.add('error');
   } finally {
     $('confirmStake').disabled = false;
+  }
+});
+
+// ---------- Deltix Energy Delegation ----------
+// All numbers are server-authoritative: this UI only renders the status the
+// backend returns (rate, claimable, burn schedule, transfer-unlock progress).
+let edState = null;
+let edPendingValidator = null;
+let edPendingUndelegate = null;
+
+function renderEnergyDelegation(d) {
+  edState = d || edState;
+  if (!edState) return;
+  const s = edState;
+  const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+  set('edAvailable', `${fmt(s.available)} ⚡`);
+  set('edDelegated', `${fmt(s.delegated)} ⚡`);
+  set('edClaimable', `${fmt(s.claimable)} ⚡`);
+  set('edRate', `${Math.round(s.annualRate * 100)}% / year`);
+  const claimBtn = $('edClaimBtn');
+  if (claimBtn) {
+    claimBtn.disabled = !(s.claimable > 0);
+    claimBtn.textContent = s.claimable > 0 ? `Claim ${fmt(s.claimable)} ⚡ Energy` : 'Claim Energy';
+  }
+
+  // Transfer unlock progress (hidden for grandfathered accounts).
+  const unlockCard = $('edUnlockCard');
+  if (unlockCard) {
+    const u = s.transferUnlock || {};
+    unlockCard.hidden = Boolean(u.grandfathered);
+    if (!unlockCard.hidden) {
+      const pct = Math.min(100, (Number(u.claimed) / Math.max(1, Number(u.required))) * 100);
+      const fill = $('edUnlockFill');
+      if (fill) fill.style.width = pct + '%';
+      set('edUnlockText', u.claimed >= u.required
+        ? `${fmt(u.claimed)} / ${fmt(u.required)} — UNLOCKED ✅`
+        : `${fmt(u.claimed)} / ${fmt(u.required)} Claimed Energy`);
+      const hintEl = $('edUnlockHint');
+      if (hintEl) {
+        hintEl.textContent = u.claimed >= u.required
+          ? 'Transfers are unlocked on this account.'
+          : (u.active
+            ? 'Claim Energy from delegation to unlock $DLTX transfers on this account.'
+            : 'Preview — the transfer requirement is not enforced on this server yet.');
+      }
+    }
+  }
+
+  const vList = $('edValidatorList');
+  if (vList) {
+    vList.innerHTML = (s.validators || [])
+      .map((v, i) => {
+        const shield = getValidatorShield(v.name, i);
+        return `
+        <div class="validator-card-3d">
+          <div class="val-left">
+            <img src="${shield}" class="val-3d-shield" alt="Shield"/>
+            <div class="val-info">
+              <div class="val-title-row">
+                <span class="val-name ${v.name.toLowerCase().includes('genesis') ? 'genesis-txt' : ''}">${v.name}</span>
+                <span class="timer-badge">● ${v.uptime}% uptime</span>
+              </div>
+              <div class="meta">Energy Validator · generation ${Math.round(s.annualRate * 100)}% / year</div>
+            </div>
+          </div>
+          <div class="val-actions-col">
+            <span class="apy-badge-red">⚡ ${Math.round(s.annualRate * 100)}%</span>
+            <button class="delegate-btn-red" data-ed-validator="${v.id}" data-name="${v.name}">Delegate</button>
+          </div>
+        </div>`;
+      })
+      .join('') || '<p class="muted center">No Energy Validators available.</p>';
+    vList.querySelectorAll('[data-ed-validator]').forEach((btn) =>
+      btn.addEventListener('click', () => openEdDelegateModal(btn.dataset.edValidator, btn.dataset.name))
+    );
+  }
+
+  const mine = $('edMyDelegations');
+  if (mine) {
+    const rows = s.delegations || [];
+    if (!rows.length) {
+      mine.innerHTML = '<p class="muted center">You have no active Energy delegations.</p>';
+    } else {
+      mine.innerHTML = rows
+        .map((dg, i) => {
+          const shield = getValidatorShield(dg.validator, i);
+          const burnTxt = dg.burnRate > 0
+            ? `Current burn ${Math.round(dg.burnRate * 100)}% · drops in ${dg.nextBurnDropInDays}d`
+            : 'No undelegation burn (30+ days)';
+          return `
+        <div class="stake-card-3d">
+          <div class="stake-card-top">
+            <img src="${shield}" class="stake-3d-shield" alt="Shield"/>
+            <div class="stake-info">
+              <div class="stake-title-row">
+                <span class="stake-val-name">${dg.validator}</span>
+                <span class="timer-badge">Day ${dg.ageDays}</span>
+              </div>
+              <div class="meta">${fmt(dg.amount)} ⚡ delegated · ${Math.round(dg.rate * 100)}% / year</div>
+              <div class="stake-rewards-txt">Generated: ${fmt(dg.claimable)} ⚡</div>
+              <div class="meta">${burnTxt}</div>
+            </div>
+          </div>
+          <div class="stake-actions-row">
+            <button class="stake-action-btn primary" data-ed-undelegate="${dg.id}">Undelegate</button>
+          </div>
+        </div>`;
+        })
+        .join('');
+      mine.querySelectorAll('[data-ed-undelegate]').forEach((b) =>
+        b.addEventListener('click', () => openEdUndelegateModal(b.dataset.edUndelegate))
+      );
+    }
+  }
+}
+
+async function loadEnergyDelegation() {
+  try {
+    const d = await api('GET', '/energy-delegation');
+    renderEnergyDelegation(d);
+  } catch (e) {
+    /* non-critical; ignore */
+  }
+}
+
+function openEdDelegateModal(id, name) {
+  edPendingValidator = id;
+  $('edDelegateTitle').textContent = `Delegate Energy to ${name}`;
+  const rate = edState ? Math.round(edState.annualRate * 100) : 50;
+  const terms = [
+    ['Available Energy', edState ? `${fmt(edState.available)} ⚡` : '–'],
+    ['Generation rate', `${rate}% / year`],
+    ['Rewards', 'Go to Claimable Energy — claim manually'],
+    ['Early undelegation burn', '40% → 25% → 10% → 0% (day 30+)'],
+  ];
+  $('edDelegateTerms').innerHTML = terms
+    .map(([k, v]) => `<div class="supply-row"><span class="k">${k}</span><span class="v">${v}</span></div>`)
+    .join('');
+  $('edDelegateAmount').value = '';
+  $('edDelegateHint').textContent = '';
+  $('edDelegateModal').hidden = false;
+}
+$('edCancelDelegate').addEventListener('click', () => ($('edDelegateModal').hidden = true));
+$('edConfirmDelegate').addEventListener('click', async () => {
+  const amount = Number($('edDelegateAmount').value);
+  const hint = $('edDelegateHint');
+  hint.className = 'hint';
+  if (!Number.isFinite(amount) || amount <= 0) {
+    hint.textContent = 'Enter a positive amount.';
+    hint.classList.add('error');
+    return;
+  }
+  $('edConfirmDelegate').disabled = true;
+  try {
+    const r = await api('POST', '/energy-delegation/delegate', { validatorId: edPendingValidator, amount });
+    $('edDelegateModal').hidden = true;
+    renderEnergyDelegation(r.status);
+    toast(r.message || 'Energy delegated');
+    loadEnergy().catch(() => {});
+  } catch (e) {
+    hint.textContent = e.message;
+    hint.classList.add('error');
+  } finally {
+    $('edConfirmDelegate').disabled = false;
+  }
+});
+
+let edClaiming = false;
+$('edClaimBtn').addEventListener('click', async () => {
+  if (edClaiming) return; // double-tap guard (server is idempotent anyway)
+  edClaiming = true;
+  $('edClaimBtn').disabled = true;
+  try {
+    const r = await api('POST', '/energy-delegation/claim');
+    renderEnergyDelegation(r.status);
+    celebrate({ amount: r.claimed, unit: '⚡ Energy', title: 'Energy Claimed!', message: `You now have ${fmt(r.energy)} ⚡ available.` });
+    loadEnergy().catch(() => {});
+  } catch (e) {
+    toast(e.message || 'Nothing to claim yet');
+  } finally {
+    edClaiming = false;
+    $('edClaimBtn').disabled = false;
+  }
+});
+
+function edRenderUndelegatePreview() {
+  const dg = edPendingUndelegate;
+  if (!dg) return;
+  const amount = Math.min(Number($('edUndelegateAmount').value) || dg.amount, dg.amount);
+  // Display-only estimate from the server-reported burn rate; the server
+  // recomputes everything at confirmation time.
+  const burned = Math.round(amount * dg.burnRate * 1e8) / 1e8;
+  const rows = [
+    ['Undelegating', `${fmt(amount)} ⚡`],
+    ['Delegation age', `Day ${dg.ageDays}`],
+    ['Burn rate', `${Math.round(dg.burnRate * 100)}%`],
+    ['Energy burned', `${fmt(burned)} ⚡`],
+    ['Energy returned', `${fmt(Math.round((amount - burned) * 1e8) / 1e8)} ⚡`],
+  ];
+  if (dg.burnRate > 0) rows.push(['Burn drops', `in ${dg.nextBurnDropInDays} day(s)`]);
+  $('edUndelegatePreview').innerHTML = rows
+    .map(([k, v]) => `<div class="supply-row"><span class="k">${k}</span><span class="v">${v}</span></div>`)
+    .join('');
+}
+function openEdUndelegateModal(id) {
+  const dg = (edState?.delegations || []).find((x) => String(x.id) === String(id));
+  if (!dg) return;
+  edPendingUndelegate = dg;
+  $('edUndelegateAmount').value = dg.amount;
+  $('edUndelegateAmount').max = dg.amount;
+  $('edUndelegateHint').textContent = '';
+  edRenderUndelegatePreview();
+  $('edUndelegateModal').hidden = false;
+}
+$('edUndelegateAmount').addEventListener('input', edRenderUndelegatePreview);
+$('edCancelUndelegate').addEventListener('click', () => ($('edUndelegateModal').hidden = true));
+$('edConfirmUndelegate').addEventListener('click', async () => {
+  const dg = edPendingUndelegate;
+  if (!dg) return;
+  const amount = Number($('edUndelegateAmount').value);
+  const hint = $('edUndelegateHint');
+  hint.className = 'hint';
+  if (!Number.isFinite(amount) || amount <= 0 || amount > dg.amount) {
+    hint.textContent = `Enter an amount between 0 and ${dg.amount}.`;
+    hint.classList.add('error');
+    return;
+  }
+  $('edConfirmUndelegate').disabled = true;
+  try {
+    const r = await api('POST', `/energy-delegation/${dg.id}/undelegate`, { amount });
+    $('edUndelegateModal').hidden = true;
+    renderEnergyDelegation(r.status);
+    toast(r.message);
+    loadEnergy().catch(() => {});
+  } catch (e) {
+    hint.textContent = e.message;
+    hint.classList.add('error');
+  } finally {
+    $('edConfirmUndelegate').disabled = false;
   }
 });
 
@@ -4369,7 +4610,9 @@ function renderGlobe() {
   setText('globeTotal', fmtInt(d.totalUsers));
   // Show the top countries, then roll everyone else (untruncated + not-yet-located)
   // into a single "Other regions" row so the breakdown always sums to the total.
-  const rows = (d.countries || []).slice(0, 12).map((c) => ({
+  // Count is server-driven (expanded 12 → 20; adjustable without a release).
+  const maxCountries = Number(d.maxCountries) || 20;
+  const rows = (d.countries || []).slice(0, maxCountries).map((c) => ({
     flag: flagEmoji(c.country),
     name: COUNTRY_NAME[c.country] || c.country,
     users: Number(c.users) || 0,
@@ -4698,7 +4941,7 @@ function playRewardedAd() {
 const BACK_SENTINEL = { deltix: true };
 let exitArmed = false;
 function closeTopOverlay() {
-  for (const id of ['swapModal', 'dappModal', 'stakeModal', 'sendModal', 'deleteModal']) {
+  for (const id of ['swapModal', 'dappModal', 'stakeModal', 'edDelegateModal', 'edUndelegateModal', 'sendModal', 'deleteModal']) {
     const el = document.getElementById(id);
     if (el && !el.hidden) { el.hidden = true; return true; }
   }
