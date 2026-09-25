@@ -2876,3 +2876,20 @@ html[data-dark] .ed-stat b, html[data-dark] .ed-unlock-progress { color: var(--t
 /* Keep action buttons compact inside P2P flex rows (global modal .btn is full-width) */
 .p2p-deposit-row .btn, .p2p-bid-row .btn { width: auto; flex: none; }
 .p2p-contact-val a.p2p-wabtn { color: #fff; }
+
+/* Professional order chat */
+.p2p-chat-note { font-size: 10.5px; opacity: .65; margin: 2px 0 6px; line-height: 1.45; }
+.p2p-chat { max-height: 240px; }
+.p2p-chat-day { display: flex; align-items: center; gap: 8px; margin: 4px 0; align-self: stretch; }
+.p2p-chat-day::before, .p2p-chat-day::after { content: ''; flex: 1; height: 1px; background: rgba(128,128,148,.25); }
+.p2p-chat-day span { font-size: 10px; font-weight: 700; opacity: .6; text-transform: uppercase; letter-spacing: .5px; }
+.p2p-msg-sys { align-self: center; text-align: center; font-size: 10.5px; font-weight: 600; opacity: .78; background: rgba(128,128,148,.12); border-radius: 999px; padding: 4px 12px; max-width: 95%; }
+.p2p-msg { box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.p2p-msg.grouped { margin-top: -2px; }
+.p2p-role-buyer { color: var(--p2p-green); }
+.p2p-role-seller { color: var(--p2p-red); }
+.p2p-role-moderator { color: #4f7cff; }
+
+/* Chat must never collapse when the order modal is content-heavy (flex-column shrink) */
+.p2p-chat { min-height: 150px; flex: none; }
+.p2p-quickrow { flex: none; }

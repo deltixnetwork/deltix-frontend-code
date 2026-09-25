@@ -4083,6 +4083,9 @@ async function openP2pOrder(id, { moderator = false } = {}) {
     const r = await api('GET', `/p2p/orders/${id}`);
     const o = r.order;
     p2p.order = o;
+    p2p.orderEvents = r.events || [];
+    p2p.chatSig = null;
+    p2p.chatTick = 0;
     $('p2pOrderTitle').textContent = `Order #${o.id} ${o.simulation ? '· SIMULATION' : ''}`;
     p2pRenderSteps(o.status);
     $('p2pOrderDetails').innerHTML = `
@@ -4143,29 +4146,93 @@ async function openP2pOrder(id, { moderator = false } = {}) {
     p2p.chatTimer = setInterval(() => loadP2pChat(o.id).catch(() => {}), 5000);
     if (payable && o.status === 'awaiting_usdt') p2pStartPayTimer(o);
     $('p2pOrderModal').hidden = false;
+    // Chat rendered while the modal was hidden (zero heights) — snap to latest now.
+    const chatList = $('p2pChatList');
+    chatList.scrollTop = chatList.scrollHeight;
   } catch (e) {
     toast(e.message, { tone: 'error' });
   }
 }
 
+// Order milestones rendered inline in the chat (OKX-style system messages).
+const P2P_SYS_EVENTS = {
+  created: '📝 Order created — terms locked',
+  dltx_locked: '🔒 Seller\u2019s DLTX locked in escrow',
+  usdt_submitted: '🧾 Buyer submitted the USDT transaction',
+  usdt_verified: '✅ USDT verified at the platform wallet',
+  awaiting_moderator_approval: '🛡 Queued for moderator release approval',
+  completed: '🎉 DLTX released — order completed',
+  disputed: '⚠️ Dispute opened — escrow frozen',
+  cancelled: '↩️ Order cancelled — escrow refunded',
+  refunded: '↩️ Escrow refunded to the seller',
+  escalated: '⬆️ Escalated to a senior moderator',
+  security_hold: '🛑 Security hold placed',
+};
+
+function p2pDayLabel(d) {
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return 'Today';
+  if (d.toDateString() === new Date(now.getTime() - 86400000).toDateString()) return 'Yesterday';
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
 async function loadP2pChat(orderId) {
   const r = await api('GET', `/p2p/orders/${orderId}/messages`);
+  // Every ~30s the poll also refreshes status so the timeline + tracker stay live.
+  p2p.chatTick = (p2p.chatTick || 0) + 1;
+  if (p2p.chatTick % 6 === 0) {
+    try {
+      const d = await api('GET', `/p2p/orders/${orderId}`);
+      p2p.order = d.order;
+      p2p.orderEvents = d.events || [];
+      p2pRenderSteps(d.order.status);
+    } catch { /* keep last known state */ }
+  }
+  const msgs = r.messages || [];
+  const sys = (p2p.orderEvents || [])
+    .filter((e) => P2P_SYS_EVENTS[e.to])
+    .map((e) => ({ sys: true, at: e.at, label: P2P_SYS_EVENTS[e.to] }));
+  const timeline = [...msgs, ...sys].sort((a, b) => new Date(a.at) - new Date(b.at));
   const list = $('p2pChatList');
+  // Re-render only when the timeline actually changed — no 5s flicker.
+  const sig = `${timeline.length}:${msgs.length ? msgs[msgs.length - 1].id : '0'}:${sys.length}`;
+  if (p2p.chatSig === sig && list.childElementCount) return;
+  p2p.chatSig = sig;
   const myId = myUserId();
-  list.innerHTML = (r.messages || []).map((m) => {
+  const nearBottom = !list.childElementCount || (list.scrollHeight - list.scrollTop - list.clientHeight < 80);
+  let lastDay = '';
+  let lastSender = null;
+  list.innerHTML = timeline.map((m) => {
+    const d = new Date(m.at);
+    const parts = [];
+    if (d.toDateString() !== lastDay) {
+      lastDay = d.toDateString();
+      lastSender = null;
+      parts.push(`<div class="p2p-chat-day"><span>${p2pDayLabel(d)}</span></div>`);
+    }
+    const when = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (m.sys) {
+      lastSender = null;
+      parts.push(`<div class="p2p-msg-sys">${m.label} · ${when}</div>`);
+      return parts.join('');
+    }
+    const role = p2pRoleName(m.senderId);
+    const mine = String(m.senderId) === myId;
+    const grouped = lastSender === m.senderId;
+    lastSender = m.senderId;
     const img = m.attachment && m.attachment.startsWith('data:image/')
       ? `<img class="p2p-msg-img" src="${m.attachment}" alt="screenshot" loading="lazy" />` : '';
-    const when = new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    return `
-    <div class="p2p-msg ${String(m.senderId) === myId ? 'mine' : ''}">
-      <span class="p2p-msg-who">${p2pRoleName(m.senderId)}</span>
+    parts.push(`
+    <div class="p2p-msg ${mine ? 'mine' : ''}${grouped ? ' grouped' : ''}">
+      ${grouped ? '' : `<span class="p2p-msg-who p2p-role-${role.toLowerCase()}">${mine ? 'You · ' : ''}${role}</span>`}
       ${img}${m.body ? `<span class="p2p-msg-body">${escapeHtml(m.body)}</span>` : ''}
       <span class="p2p-msg-time">${when}</span>
-    </div>`;
-  }).join('') || '<p class="muted center small-note">No messages yet — coordinate here. Attach payment screenshots with 📷.</p>';
+    </div>`);
+    return parts.join('');
+  }).join('') || '<p class="muted center small-note">No messages yet — say hello and coordinate the payment here. Attach payment screenshots with 📷.</p>';
   list.querySelectorAll('.p2p-msg-img').forEach((im) =>
     im.addEventListener('click', () => { $('p2pImgFull').src = im.src; $('p2pImgModal').hidden = false; }));
-  list.scrollTop = list.scrollHeight;
+  if (nearBottom) list.scrollTop = list.scrollHeight;
 }
 
 // Screenshot attach: downscale to ≤1280px JPEG so it always fits the server cap.
@@ -4258,15 +4325,27 @@ $('p2pOrderDispute')?.addEventListener('click', async () => {
     openP2pOrder(p2p.order.id);
   } catch (e) { toast(e.message, { tone: 'error' }); }
 });
-$('p2pChatSend')?.addEventListener('click', async () => {
+async function p2pSendChat() {
   if (!p2p.order) return;
-  const body = $('p2pChatInput').value.trim();
+  const input = $('p2pChatInput');
+  const body = input.value.trim();
   if (!body) return;
+  const btn = $('p2pChatSend');
+  btn.disabled = true;
   try {
     await api('POST', `/p2p/orders/${p2p.order.id}/messages`, { body });
-    $('p2pChatInput').value = '';
-    loadP2pChat(p2p.order.id);
-  } catch (e) { toast(e.message, { tone: 'error' }); }
+    input.value = '';
+    await loadP2pChat(p2p.order.id);
+  } catch (e) {
+    toast(e.message, { tone: 'error' });
+  } finally {
+    btn.disabled = false;
+    input.focus();
+  }
+}
+$('p2pChatSend')?.addEventListener('click', p2pSendChat);
+$('p2pChatInput')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); p2pSendChat(); }
 });
 
 // ── Moderator actions ──
