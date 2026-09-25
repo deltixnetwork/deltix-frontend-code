@@ -2765,3 +2765,33 @@ html[data-dark] .faq-cat.active { background: #2563eb; border-color: #2563eb; }
 .ed-unlock-progress { font-weight: 800; color: #0b1c3f; margin-top: 8px; }
 html[data-dark] .ed-stat { background: var(--card, #101a33); border-color: rgba(255,255,255,0.08); }
 html[data-dark] .ed-stat b, html[data-dark] .ed-unlock-progress { color: var(--text, #e7ecf7); }
+
+/* ==================== P2P Marketplace ==================== */
+.p2p-subtabs { display: flex; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
+.p2p-subtab { flex: 1; min-width: 72px; padding: 9px 6px; border-radius: 12px; border: 1px solid var(--border, #2a2f45); background: transparent; color: inherit; font-weight: 700; font-size: 13px; }
+.p2p-subtab.active { background: linear-gradient(135deg, #4f7cff, #7b5cff); color: #fff; border-color: transparent; }
+.p2p-offer-card { cursor: pointer; margin-bottom: 10px; }
+.p2p-offer-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.p2p-price { font-weight: 800; color: #4f7cff; white-space: nowrap; }
+.p2p-chip { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.p2p-chip-ok { background: rgba(46, 204, 113, .16); color: #2ecc71; }
+.p2p-chip-warn { background: rgba(241, 196, 15, .16); color: #d8a80c; }
+.p2p-chip-bad { background: rgba(231, 76, 60, .16); color: #e74c3c; }
+.p2p-chip-muted { background: rgba(128, 128, 148, .16); color: #8a8fa8; }
+.p2p-side-pick { display: flex; gap: 8px; margin-bottom: 10px; }
+.p2p-side-pick .btn { flex: 1; }
+.p2p-side-pick .btn.active { background: linear-gradient(135deg, #4f7cff, #7b5cff); color: #fff; border-color: transparent; }
+.p2p-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.p2p-bid-row { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+.p2p-bid-row input { flex: 1; min-width: 0; }
+.p2p-bid-card { margin: 8px 0; }
+.p2p-deposit-row { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+.p2p-addr { flex: 1; font-size: 11px; word-break: break-all; background: rgba(128,128,148,.12); padding: 8px; border-radius: 10px; }
+.p2p-chat { max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--border, #2a2f45); border-radius: 12px; margin-bottom: 6px; }
+.p2p-msg { font-size: 13px; background: rgba(128,128,148,.12); border-radius: 10px; padding: 6px 10px; align-self: flex-start; max-width: 85%; }
+.p2p-msg.mine { align-self: flex-end; background: rgba(79,124,255,.18); }
+.p2p-msg-who { font-weight: 700; font-size: 11px; opacity: .7; margin-right: 4px; }
+.p2p-mod-actions { flex-wrap: wrap; }
+.p2p-order-modal { max-height: 88vh; overflow-y: auto; }
+.p2p-kyc-card { text-align: center; }
+#p2pSimPill { background: rgba(241,196,15,.2); color: #d8a80c; }

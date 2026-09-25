@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.10.0';
+const APP_VERSION = '1.11.0';
 const $ = (id) => document.getElementById(id);
 
 // Stable per-phone identifier sent with every request (X-Device-Id) — the
@@ -336,6 +336,8 @@ function refreshTabContent(id) {
     loadEarn().catch(() => {});
   } else if (id === 'tab-energy-delegation') {
     loadEnergyDelegation();
+  } else if (id === 'tab-p2p') {
+    loadP2p().catch(() => {});
   } else if (id === 'tab-assistant') {
     ensureBotGreeting();
     loadKycStatus().catch(() => {});
@@ -378,6 +380,8 @@ async function refreshCurrentView({ isPull = false, silent = false } = {}) {
     tasks.push(loadMissions());
   } else if (activeTab === 'tab-earn') {
     tasks.push(loadEarn());
+  } else if (activeTab === 'tab-p2p') {
+    tasks.push(loadP2p());
   } else if (activeTab === 'tab-assistant') {
     tasks.push(loadKycStatus());
   }
@@ -412,7 +416,7 @@ function initPullToRefresh() {
     if (!isMain || !state.token || isRefreshing) return false;
 
     // Must not have any modal/overlay open
-    const overlays = ['gameModal', 'instantModal', 'shopModal', 'puzzleModal', 'dbrowser', 'explorer', 'dappPage', 'stakeModal', 'edDelegateModal', 'edUndelegateModal', 'sendModal', 'deleteModal', 'swapModal', 'dappModal'];
+    const overlays = ['gameModal', 'instantModal', 'shopModal', 'puzzleModal', 'dbrowser', 'explorer', 'dappPage', 'stakeModal', 'edDelegateModal', 'edUndelegateModal', 'sendModal', 'deleteModal', 'swapModal', 'dappModal', 'p2pCreateModal', 'p2pOfferModal', 'p2pOrderModal'];
     for (const id of overlays) {
       const el = $(id);
       if (el && !el.hidden) return false;
@@ -991,6 +995,7 @@ async function enterApp() {
   // against data already needed elsewhere, no dedicated notification backend).
   Promise.allSettled([loadRewards(), loadTree()]).then(() => setTimeout(checkBotNudge, 1500));
   loadKycStatus();
+  loadP2pStatus().catch(() => {});
 }
 
 /** Extracts the email claim from the JWT payload (no verification needed). */
@@ -3572,6 +3577,541 @@ $('homeEarnBtn')?.addEventListener('click', () => {
   if (state.token) loadEarn().catch(() => {});
 });
 
+// ==================== Deltix P2P Marketplace (server-gated) ====================
+// Everything here only MIRRORS backend state — every rule (KYC, escrow,
+// moderator release, fees) is enforced server-side. The tab stays hidden
+// until /p2p/status reports the marketplace enabled.
+const p2p = {
+  status: null,
+  kyc: 'none',
+  view: 'buy',
+  isModerator: false,
+  offer: null,
+  order: null,
+  createSide: 'sell',
+  chatTimer: null,
+  lastAdAt: 0,
+};
+
+// The JWT `sub` claim is this account's immutable user id (no verification
+// needed client-side — only used to render "mine" states).
+function myUserId() {
+  try {
+    const part = state.token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return String(JSON.parse(atob(part)).sub || '');
+  } catch { return ''; }
+}
+
+// Interstitial at natural P2P transition points, capped to one per 2 minutes.
+function p2pMaybeAd() {
+  if (Date.now() - p2p.lastAdAt < 120000) return;
+  p2p.lastAdAt = Date.now();
+  if (typeof showPreloadedInterstitial === 'function') showPreloadedInterstitial();
+}
+
+async function loadP2pStatus() {
+  if (!state.token) return null;
+  try {
+    p2p.status = await api('GET', '/p2p/status');
+    const nav = $('navP2p');
+    if (nav) nav.hidden = !p2p.status.enabled;
+    return p2p.status;
+  } catch {
+    return null;
+  }
+}
+
+async function loadP2p() {
+  if (!state.token) return;
+  if (!p2p.status) await loadP2pStatus();
+  const simPill = $('p2pSimPill');
+  if (simPill) simPill.hidden = !p2p.status?.simulationMode;
+  // KYC gate mirrors the server rule (the server enforces it regardless).
+  try {
+    const k = await api('GET', '/kyc/status');
+    p2p.kyc = k.status || 'none';
+    const gate = Boolean(p2p.status?.kycRequired) && p2p.kyc !== 'approved';
+    $('p2pKycCard').hidden = !gate;
+    $('p2pMain').hidden = gate;
+    const kycBtn = $('p2pKycBtn');
+    if (kycBtn) {
+      kycBtn.onclick = () => {
+        if (k.enabled && k.hostedFlowUrl) window.open(k.hostedFlowUrl, '_blank', 'noopener');
+        else toast('Identity verification opens here soon — not available yet.', { tone: 'info' });
+      };
+    }
+    if (gate) return;
+  } catch { /* keep last state */ }
+  const ref = $('p2pRefRate');
+  if (ref) {
+    ref.hidden = !p2p.status?.referenceRateUsdt;
+    if (p2p.status?.referenceRateUsdt) ref.textContent = `Official reference rate: ${p2p.status.referenceRateUsdt} USDT/DLTX (guidance — you set your own price)`;
+  }
+  // Moderator probe: the queue answers 200 only for moderator roles.
+  try {
+    const q = await api('GET', '/p2p/moderation/queue');
+    p2p.isModerator = true;
+    p2p.modQueue = q.queue || [];
+  } catch {
+    p2p.isModerator = false;
+    p2p.modQueue = [];
+  }
+  $('p2pModTab').hidden = !p2p.isModerator;
+  renderP2pView();
+}
+
+function p2pStatusChip(s) {
+  const map = {
+    awaiting_usdt: ['Pay now', 'warn'],
+    usdt_submitted: ['Verifying', 'warn'],
+    usdt_verifying: ['Verifying', 'warn'],
+    usdt_verified: ['Verified', 'ok'],
+    awaiting_moderator_approval: ['Moderator review', 'warn'],
+    completed: ['Completed', 'ok'],
+    cancelled: ['Cancelled', 'muted'],
+    refunded: ['Refunded', 'muted'],
+    under_review: ['Dispute review', 'bad'],
+    disputed: ['Disputed', 'bad'],
+    escalated: ['Escalated', 'bad'],
+    security_hold: ['Security hold', 'bad'],
+  };
+  const [label, tone] = map[s] || [s.replace(/_/g, ' '), 'muted'];
+  return `<span class="p2p-chip p2p-chip-${tone}">${label}</span>`;
+}
+
+async function renderP2pView() {
+  const list = $('p2pList');
+  if (!list) return;
+  document.querySelectorAll('.p2p-subtab').forEach((b) => b.classList.toggle('active', b.dataset.view === p2p.view));
+  $('p2pCreateBtn').hidden = p2p.view === 'orders' || p2p.view === 'mod' || !p2p.status?.newOrdersEnabled;
+  list.innerHTML = '<p class="muted center">Loading…</p>';
+  try {
+    if (p2p.view === 'buy' || p2p.view === 'sell') {
+      // BUY tab shows people SELLING (you buy from them) and vice versa.
+      const side = p2p.view === 'buy' ? 'sell' : 'buy';
+      const r = await api('GET', `/p2p/offers?side=${side}`);
+      const offers = r.offers || [];
+      if (!offers.length) {
+        list.innerHTML = `<p class="muted center">No ${side === 'sell' ? 'sellers' : 'buyers'} right now. Create the first offer!</p>`;
+        return;
+      }
+      list.innerHTML = offers.map((o) => `
+        <div class="card p2p-offer-card" data-offer="${o.id}">
+          <div class="p2p-offer-top">
+            <b>${o.trader ? o.trader.displayName : 'Trader'} ${o.trader?.kycVerified ? '✅' : ''}${o.simulation ? ' <span class="pill">SIM</span>' : ''}</b>
+            <span class="p2p-price">${o.priceUsdt} <small>USDT/DLTX</small></span>
+          </div>
+          <div class="muted small-note">
+            ${fmt(o.remainingDltx)} DLTX available · limits ${fmt(o.minDltx)}–${fmt(o.maxDltx)} ·
+            ${o.trader ? `${o.trader.completedTrades} trades · ${o.trader.completionRate}%` : ''}
+          </div>
+          ${o.terms ? `<div class="hint">${o.terms.slice(0, 120)}</div>` : ''}
+        </div>`).join('');
+      list.querySelectorAll('[data-offer]').forEach((el) =>
+        el.addEventListener('click', () => openP2pOffer(el.dataset.offer)));
+    } else if (p2p.view === 'orders') {
+      const r = await api('GET', '/p2p/orders');
+      const orders = r.orders || [];
+      if (!orders.length) { list.innerHTML = '<p class="muted center">No P2P orders yet.</p>'; return; }
+      list.innerHTML = orders.map((o) => `
+        <div class="card p2p-offer-card" data-order="${o.id}">
+          <div class="p2p-offer-top">
+            <b>#${o.id} · ${o.role === 'buyer' ? 'Buying' : 'Selling'} ${fmt(o.amountDltx)} DLTX</b>
+            ${p2pStatusChip(o.status)}
+          </div>
+          <div class="muted small-note">${o.priceUsdt} USDT/DLTX · total ${fmt(o.totalUsdt)} USDT${o.simulation ? ' · SIMULATION' : ''}</div>
+        </div>`).join('');
+      list.querySelectorAll('[data-order]').forEach((el) =>
+        el.addEventListener('click', () => openP2pOrder(el.dataset.order)));
+    } else if (p2p.view === 'mod') {
+      const r = await api('GET', '/p2p/moderation/queue');
+      const queue = r.queue || [];
+      if (!queue.length) { list.innerHTML = '<p class="muted center">Nothing awaiting your review. 🎉</p>'; return; }
+      list.innerHTML = queue.map((o) => `
+        <div class="card p2p-offer-card" data-mod="${o.id}">
+          <div class="p2p-offer-top"><b>#${o.id} · ${fmt(o.amountDltx)} DLTX ↔ ${fmt(o.totalUsdt)} USDT</b> ${p2pStatusChip(o.status)}</div>
+          <div class="muted small-note">buyer #${o.buyerId} · seller #${o.sellerId}${o.simulation ? ' · SIMULATION' : ''}</div>
+        </div>`).join('');
+      list.querySelectorAll('[data-mod]').forEach((el) =>
+        el.addEventListener('click', () => openP2pOrder(el.dataset.mod, { moderator: true })));
+    }
+  } catch (e) {
+    list.innerHTML = `<p class="muted center">${e.message}</p>`;
+  }
+}
+
+document.querySelectorAll('.p2p-subtab').forEach((b) =>
+  b.addEventListener('click', () => { p2p.view = b.dataset.view; renderP2pView(); }));
+
+// ── Create offer ──
+function p2pQuoteRows(amount, price) {
+  const s = p2p.status || { feePercent: 1, usdtFeePercent: 1 };
+  const total = amount * price;
+  const feeD = (amount * s.feePercent) / 100;
+  const feeU = (total * s.usdtFeePercent) / 100;
+  return `
+    <div class="row"><span>Total value</span><b>${fmt(total)} USDT</b></div>
+    <div class="row"><span>Buyer receives</span><b>${fmt(amount - feeD)} DLTX (after ${s.feePercent}% fee)</b></div>
+    <div class="row"><span>Seller receives</span><b>${fmt(total - feeU)} USDT (after ${s.usdtFeePercent}% fee)</b></div>`;
+}
+
+function openP2pCreate() {
+  p2p.createSide = 'sell';
+  $('p2pSideSell').classList.add('active');
+  $('p2pSideBuy').classList.remove('active');
+  $('p2pCreateQuote').innerHTML = '';
+  $('p2pCreateHint').textContent = '';
+  $('p2pPayoutWalletWrap').hidden = false;
+  $('p2pCreateModal').hidden = false;
+}
+$('p2pCreateBtn')?.addEventListener('click', openP2pCreate);
+$('p2pCreateCancel')?.addEventListener('click', () => { $('p2pCreateModal').hidden = true; });
+$('p2pSideSell')?.addEventListener('click', () => {
+  p2p.createSide = 'sell';
+  $('p2pSideSell').classList.add('active');
+  $('p2pSideBuy').classList.remove('active');
+  $('p2pPayoutWalletWrap').hidden = false;
+});
+$('p2pSideBuy')?.addEventListener('click', () => {
+  p2p.createSide = 'buy';
+  $('p2pSideBuy').classList.add('active');
+  $('p2pSideSell').classList.remove('active');
+  $('p2pPayoutWalletWrap').hidden = true;
+});
+['p2pCreateAmount', 'p2pCreatePrice'].forEach((id) =>
+  $(id)?.addEventListener('input', () => {
+    const a = Number($('p2pCreateAmount').value);
+    const p = Number($('p2pCreatePrice').value);
+    $('p2pCreateQuote').innerHTML = a > 0 && p > 0 ? p2pQuoteRows(a, p) : '';
+  }));
+$('p2pCreateConfirm')?.addEventListener('click', async () => {
+  const hint = $('p2pCreateHint');
+  const amount = Number($('p2pCreateAmount').value);
+  const price = Number($('p2pCreatePrice').value);
+  const network = (p2p.status?.networks || [])[0]?.id || 'bep20';
+  try {
+    const payout = $('p2pPayoutWallet').value.trim();
+    if (p2p.createSide === 'sell' && payout) {
+      await api('POST', '/p2p/wallets', { network, address: payout });
+    }
+    const r = await api('POST', '/p2p/offers', {
+      side: p2p.createSide,
+      amountDltx: amount,
+      priceUsdt: price,
+      minDltx: Number($('p2pCreateMin').value) || undefined,
+      maxDltx: Number($('p2pCreateMax').value) || amount,
+      usdtNetwork: network,
+      terms: $('p2pCreateTerms').value.trim(),
+    });
+    $('p2pCreateModal').hidden = true;
+    toast(`Offer #${r.offer.id} is live`, { tone: 'success', title: 'Offer posted' });
+    p2p.view = p2p.createSide === 'sell' ? 'buy' : 'sell';
+    renderP2pView();
+    p2pMaybeAd();
+  } catch (e) {
+    hint.textContent = e.message;
+  }
+});
+
+// ── Offer detail + negotiation ──
+async function openP2pOffer(id) {
+  try {
+    const r = await api('GET', `/p2p/offers/${id}`);
+    p2p.offer = r.offer;
+    const o = r.offer;
+    $('p2pOfferTitle').textContent = `${o.side === 'sell' ? 'Buy DLTX from' : 'Sell DLTX to'} ${o.trader ? o.trader.displayName : 'trader'}`;
+    $('p2pOfferInfo').innerHTML = `
+      <div class="row"><span>Price</span><b>${o.priceUsdt} USDT/DLTX${o.simulation ? ' · SIMULATION' : ''}</b></div>
+      <div class="row"><span>Available</span><b>${fmt(o.remainingDltx)} DLTX</b></div>
+      <div class="row"><span>Limits</span><b>${fmt(o.minDltx)} – ${fmt(o.maxDltx)} DLTX</b></div>
+      <div class="row"><span>Network</span><b>USDT · BNB Chain (BEP-20)</b></div>
+      ${o.trader ? `<div class="row"><span>Trader</span><b>${o.trader.completedTrades} trades · ${o.trader.completionRate}% completion ${o.trader.kycVerified ? '· KYC ✅' : ''}</b></div>` : ''}
+      ${o.terms ? `<div class="row"><span>Terms</span><b>${o.terms.slice(0, 140)}</b></div>` : ''}`;
+    $('p2pTradeAmount').value = Math.min(o.maxDltx, o.remainingDltx);
+    $('p2pOfferQuote').innerHTML = p2pQuoteRows(Number($('p2pTradeAmount').value), o.priceUsdt);
+    $('p2pOfferHint').textContent = '';
+    $('p2pBidPrice').value = '';
+    $('p2pOfferCancelOffer').hidden = !o.mine;
+    $('p2pAcceptBtn').textContent = o.mine ? 'Your offer' : `${o.side === 'sell' ? 'Buy now' : 'Sell now'} @ ${o.priceUsdt}`;
+    $('p2pAcceptBtn').disabled = Boolean(o.mine);
+    renderP2pBids(r.bids || []);
+    $('p2pOfferModal').hidden = false;
+  } catch (e) {
+    toast(e.message, { tone: 'error' });
+  }
+}
+
+function renderP2pBids(bids) {
+  const el = $('p2pBidList');
+  const open = bids.filter((b) => ['proposed', 'countered'].includes(b.status));
+  if (!open.length) { el.innerHTML = ''; return; }
+  const myId = myUserId();
+  el.innerHTML = '<h3 class="section-title">Negotiation</h3>' + open.map((b) => {
+    const myTurn = String(b.lastActorId) !== myId;
+    return `
+      <div class="card p2p-bid-card">
+        <div class="p2p-offer-top">
+          <b>${fmt(b.amountDltx)} DLTX @ ${b.priceUsdt} USDT</b>
+          <span class="p2p-chip p2p-chip-${b.status === 'countered' ? 'warn' : 'muted'}">${b.status}</span>
+        </div>
+        ${myTurn
+          ? `<div class="modal-actions">
+              <button class="btn primary" data-bid-accept="${b.id}">Accept</button>
+              <button class="btn ghost" data-bid-counter="${b.id}">Counter</button>
+              <button class="btn ghost" data-bid-reject="${b.id}">Reject</button>
+            </div>`
+          : '<p class="hint">Waiting for the other party to respond…</p>'}
+      </div>`;
+  }).join('');
+  el.querySelectorAll('[data-bid-accept]').forEach((btn) =>
+    btn.addEventListener('click', () => p2pAcceptBid(btn.dataset.bidAccept)));
+  el.querySelectorAll('[data-bid-counter]').forEach((btn) =>
+    btn.addEventListener('click', () => p2pCounterBid(btn.dataset.bidCounter)));
+  el.querySelectorAll('[data-bid-reject]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      try { await api('POST', `/p2p/bids/${btn.dataset.bidReject}/reject`, {}); openP2pOffer(p2p.offer.id); } catch (e) { toast(e.message, { tone: 'error' }); }
+    }));
+}
+
+$('p2pTradeAmount')?.addEventListener('input', () => {
+  if (p2p.offer) $('p2pOfferQuote').innerHTML = p2pQuoteRows(Number($('p2pTradeAmount').value) || 0, p2p.offer.priceUsdt);
+});
+$('p2pOfferClose')?.addEventListener('click', () => { $('p2pOfferModal').hidden = true; });
+$('p2pOfferCancelOffer')?.addEventListener('click', async () => {
+  if (!p2p.offer) return;
+  const okGo = await askConfirm({ title: 'Cancel offer?', message: 'Your offer will be removed from the marketplace.', confirmText: 'Cancel offer', danger: true });
+  if (!okGo) return;
+  try {
+    await api('POST', `/p2p/offers/${p2p.offer.id}/cancel`, {});
+    $('p2pOfferModal').hidden = true;
+    toast('Offer cancelled', { tone: 'success' });
+    renderP2pView();
+  } catch (e) { toast(e.message, { tone: 'error' }); }
+});
+
+$('p2pAcceptBtn')?.addEventListener('click', async () => {
+  if (!p2p.offer || p2p.offer.mine) return;
+  const amount = Number($('p2pTradeAmount').value);
+  const okGo = await askConfirm({
+    title: 'Accept this price?',
+    message: 'Terms freeze when both sides agree — review the numbers.',
+    rows: [
+      ['Amount', `${fmt(amount)} DLTX`],
+      ['Price', `${p2p.offer.priceUsdt} USDT/DLTX`],
+      ['Total', `${fmt(amount * p2p.offer.priceUsdt)} USDT`],
+    ],
+    confirmText: 'Accept & create order',
+  });
+  if (!okGo) return;
+  try {
+    const r = await api('POST', `/p2p/offers/${p2p.offer.id}/accept`, { amountDltx: amount, idempotencyKey: crypto.randomUUID() });
+    $('p2pOfferModal').hidden = true;
+    toast(`Order #${r.order.id} created`, { tone: 'success', title: 'Escrow locked' });
+    openP2pOrder(r.order.id);
+  } catch (e) {
+    $('p2pOfferHint').textContent = e.message;
+  }
+});
+
+$('p2pBidBtn')?.addEventListener('click', async () => {
+  if (!p2p.offer) return;
+  try {
+    await api('POST', `/p2p/offers/${p2p.offer.id}/bids`, {
+      amountDltx: Number($('p2pTradeAmount').value),
+      priceUsdt: Number($('p2pBidPrice').value),
+    });
+    toast('Bid sent — the trader can accept, counter or reject.', { tone: 'success', title: 'Bid placed' });
+    openP2pOffer(p2p.offer.id);
+  } catch (e) {
+    $('p2pOfferHint').textContent = e.message;
+  }
+});
+
+async function p2pAcceptBid(bidId) {
+  try {
+    const r = await api('POST', `/p2p/bids/${bidId}/accept`, { idempotencyKey: crypto.randomUUID() });
+    $('p2pOfferModal').hidden = true;
+    toast(`Order #${r.order.id} created`, { tone: 'success', title: 'Escrow locked' });
+    openP2pOrder(r.order.id);
+  } catch (e) { toast(e.message, { tone: 'error' }); }
+}
+async function p2pCounterBid(bidId) {
+  const price = Number($('p2pBidPrice').value);
+  if (!price) { $('p2pOfferHint').textContent = 'Enter your counter price in the price field first.'; return; }
+  try {
+    await api('POST', `/p2p/bids/${bidId}/counter`, { priceUsdt: price });
+    toast('Counter-offer sent', { tone: 'success' });
+    openP2pOffer(p2p.offer.id);
+  } catch (e) { toast(e.message, { tone: 'error' }); }
+}
+
+// ── Order room ──
+function stopP2pChatPoll() {
+  if (p2p.chatTimer) { clearInterval(p2p.chatTimer); p2p.chatTimer = null; }
+}
+window.stopP2pChatPoll = stopP2pChatPoll;
+
+async function openP2pOrder(id, { moderator = false } = {}) {
+  try {
+    const r = await api('GET', `/p2p/orders/${id}`);
+    const o = r.order;
+    p2p.order = o;
+    $('p2pOrderTitle').textContent = `Order #${o.id} ${o.simulation ? '· SIMULATION' : ''}`;
+    $('p2pOrderDetails').innerHTML = `
+      <div class="row"><span>Status</span><b>${p2pStatusChip(o.status)}</b></div>
+      <div class="row"><span>Amount</span><b>${fmt(o.amountDltx)} DLTX @ ${o.priceUsdt}</b></div>
+      <div class="row"><span>Total</span><b>${fmt(o.totalUsdt)} USDT</b></div>
+      <div class="row"><span>Buyer receives</span><b>${fmt(o.buyerReceivesDltx)} DLTX (−${o.feePercent}%)</b></div>
+      <div class="row"><span>Seller receives</span><b>${fmt(o.sellerReceivesUsdt)} USDT (−1%)</b></div>
+      <div class="row"><span>USDT payment</span><b>${o.usdtVerified ? 'Verified ✅' : (o.usdtTxHash ? 'Submitted ⏳' : 'Awaiting')}</b></div>
+      <div class="row"><span>Moderator</span><b>${o.moderatorAssigned ? (o.moderatorApproved ? 'Approved ✅' : 'Assigned') : 'Pending assignment'}</b></div>
+      ${o.status === 'completed' ? `<div class="row"><span>Seller payout</span><b>${o.sellerPayoutRecorded ? 'Paid ✅' : 'Processing ⏳'}</b></div>` : ''}`;
+    const payable = o.role === 'buyer' && ['awaiting_usdt', 'usdt_submitted'].includes(o.status);
+    $('p2pPaySection').hidden = !payable;
+    if (payable) {
+      $('p2pDepositAddr').textContent = o.usdtDepositAddress || '';
+      $('p2pTxHash').value = o.usdtTxHash || '';
+    }
+    $('p2pOrderCancel').hidden = !(o.role !== 'moderator' && ['dltx_locked', 'awaiting_usdt'].includes(o.status));
+    $('p2pOrderDispute').hidden = !(o.role !== 'moderator' && !['completed', 'cancelled', 'refunded', 'disputed', 'under_review', 'escalated'].includes(o.status));
+    $('p2pOrderHint').textContent = r.dispute ? `Dispute open: ${r.dispute.reason}` : '';
+    // Moderator controls load their richer review endpoint.
+    $('p2pModBlock').hidden = true;
+    if (moderator || o.role === 'moderator') {
+      try {
+        const m = await api('GET', `/p2p/moderation/orders/${o.id}`);
+        $('p2pModBlock').hidden = false;
+        $('p2pModInfo').innerHTML = `
+          <div class="row"><span>Buyer KYC</span><b>${m.buyer.kycVerified ? '✅' : '❌'}</b></div>
+          <div class="row"><span>Seller KYC</span><b>${m.seller.kycVerified ? '✅' : '❌'}</b></div>
+          <div class="row"><span>USDT tx</span><b>${m.usdt.txHash ? m.usdt.txHash.slice(0, 18) + '…' : '—'}</b></div>
+          <div class="row"><span>Payout due</span><b>${fmt(m.usdt.sellerPayoutDue)} USDT → ${m.usdt.sellerPayoutAddress ? m.usdt.sellerPayoutAddress.slice(0, 12) + '…' : 'no wallet!'}</b></div>`;
+        $('p2pModBlockers').innerHTML = m.releaseBlockers.length
+          ? '<ul class="disclosure">' + m.releaseBlockers.map((b) => `<li>⛔ ${b}</li>`).join('') + '</ul>'
+          : '<p class="hint">✅ All release conditions satisfied.</p>';
+        $('p2pModApprove').disabled = m.releaseBlockers.length > 0;
+        $('p2pPayoutRow').hidden = !(o.status === 'completed' && !o.sellerPayoutRecorded);
+      } catch { /* not the assigned moderator */ }
+    }
+    await loadP2pChat(o.id);
+    stopP2pChatPoll();
+    p2p.chatTimer = setInterval(() => loadP2pChat(o.id).catch(() => {}), 5000);
+    $('p2pOrderModal').hidden = false;
+  } catch (e) {
+    toast(e.message, { tone: 'error' });
+  }
+}
+
+async function loadP2pChat(orderId) {
+  const r = await api('GET', `/p2p/orders/${orderId}/messages`);
+  const list = $('p2pChatList');
+  const myId = myUserId();
+  list.innerHTML = (r.messages || []).map((m) => `
+    <div class="p2p-msg ${String(m.senderId) === myId ? 'mine' : ''}">
+      <span class="p2p-msg-who">#${m.senderId}</span> ${m.body}
+    </div>`).join('') || '<p class="muted center small-note">No messages yet.</p>';
+  list.scrollTop = list.scrollHeight;
+}
+
+$('p2pOrderClose')?.addEventListener('click', () => {
+  $('p2pOrderModal').hidden = true;
+  stopP2pChatPoll();
+  p2pMaybeAd();
+  renderP2pView();
+});
+$('p2pCopyAddr')?.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText($('p2pDepositAddr').textContent);
+    toast('Platform wallet address copied', { tone: 'success' });
+  } catch { toast('Copy failed — long-press the address instead', { tone: 'error' }); }
+});
+$('p2pSubmitTx')?.addEventListener('click', async () => {
+  if (!p2p.order) return;
+  const txHash = $('p2pTxHash').value.trim();
+  try {
+    const r = await api('POST', `/p2p/orders/${p2p.order.id}/usdt`, { txHash });
+    toast(r.note || 'Payment verified', { tone: 'success', title: 'USDT verified' });
+    openP2pOrder(p2p.order.id);
+  } catch (e) {
+    $('p2pOrderHint').textContent = e.message;
+  }
+});
+$('p2pOrderCancel')?.addEventListener('click', async () => {
+  if (!p2p.order) return;
+  const okGo = await askConfirm({ title: 'Cancel order?', message: 'The escrowed DLTX returns to the seller. This cannot be undone.', confirmText: 'Cancel order', danger: true });
+  if (!okGo) return;
+  try {
+    await api('POST', `/p2p/orders/${p2p.order.id}/cancel`, {});
+    toast('Order cancelled — escrow refunded', { tone: 'success' });
+    openP2pOrder(p2p.order.id);
+  } catch (e) { toast(e.message, { tone: 'error' }); }
+});
+$('p2pOrderDispute')?.addEventListener('click', async () => {
+  if (!p2p.order) return;
+  const reason = $('p2pChatInput').value.trim();
+  if (reason.length < 5) {
+    $('p2pOrderHint').textContent = 'Type the dispute reason into the chat box first, then press Open dispute.';
+    return;
+  }
+  const okGo = await askConfirm({ title: 'Open dispute?', message: 'The escrow freezes until a moderator resolves it.', rows: [['Reason', reason.slice(0, 80)]], confirmText: 'Open dispute', danger: true });
+  if (!okGo) return;
+  try {
+    await api('POST', `/p2p/orders/${p2p.order.id}/dispute`, { reason });
+    $('p2pChatInput').value = '';
+    toast('Dispute opened — a moderator will review.', { tone: 'info', title: 'Escrow frozen' });
+    openP2pOrder(p2p.order.id);
+  } catch (e) { toast(e.message, { tone: 'error' }); }
+});
+$('p2pChatSend')?.addEventListener('click', async () => {
+  if (!p2p.order) return;
+  const body = $('p2pChatInput').value.trim();
+  if (!body) return;
+  try {
+    await api('POST', `/p2p/orders/${p2p.order.id}/messages`, { body });
+    $('p2pChatInput').value = '';
+    loadP2pChat(p2p.order.id);
+  } catch (e) { toast(e.message, { tone: 'error' }); }
+});
+
+// ── Moderator actions ──
+$('p2pModApprove')?.addEventListener('click', async () => {
+  if (!p2p.order) return;
+  const okGo = await askConfirm({
+    title: 'APPROVE DLTX RELEASE?',
+    message: 'This releases the escrowed DLTX to the buyer. Only approve after verifying the USDT arrived at the platform wallet.',
+    rows: [['Order', `#${p2p.order.id}`], ['Release', `${fmt(p2p.order.amountDltx)} DLTX`], ['Buyer gets', `${fmt(p2p.order.buyerReceivesDltx)} DLTX`]],
+    confirmText: 'APPROVE RELEASE',
+    danger: true,
+  });
+  if (!okGo) return;
+  try {
+    await api('POST', `/p2p/orders/${p2p.order.id}/approve-release`, {});
+    toast('Escrow released — order completed. Now pay the seller and record the payout hash.', { tone: 'success', title: 'Released' });
+    openP2pOrder(p2p.order.id, { moderator: true });
+  } catch (e) { toast(e.message, { tone: 'error' }); }
+});
+async function p2pResolve(resolution) {
+  if (!p2p.order) return;
+  const reason = $('p2pModReason').value.trim();
+  if (reason.length < 5) { toast('Enter a resolution reason first', { tone: 'error' }); return; }
+  try {
+    await api('POST', `/p2p/orders/${p2p.order.id}/resolve`, { resolution, reason });
+    toast(`Resolution recorded: ${resolution.replace(/_/g, ' ')}`, { tone: 'success' });
+    openP2pOrder(p2p.order.id, { moderator: true });
+  } catch (e) { toast(e.message, { tone: 'error' }); }
+}
+$('p2pModRefund')?.addEventListener('click', () => p2pResolve('refund_to_seller'));
+$('p2pModToBuyer')?.addEventListener('click', () => p2pResolve('release_to_buyer'));
+$('p2pModEscalate')?.addEventListener('click', () => p2pResolve('escalate'));
+$('p2pPayoutBtn')?.addEventListener('click', async () => {
+  if (!p2p.order) return;
+  try {
+    await api('POST', `/p2p/moderation/orders/${p2p.order.id}/payout`, { txHash: $('p2pPayoutHash').value.trim() });
+    toast('Seller payout recorded', { tone: 'success' });
+    openP2pOrder(p2p.order.id, { moderator: true });
+  } catch (e) { toast(e.message, { tone: 'error' }); }
+});
+
 // ---------- Deltix Shop ----------
 const SHOP_CAT_LABELS = { avatar: 'Avatars', theme: 'Themes', energy: 'Energy Packs', boost: 'Arcade Boosts' };
 const SHOP_CAT_ORDER = ['avatar', 'theme', 'energy', 'boost'];
@@ -5030,9 +5570,13 @@ function playRewardedAd() {
 const BACK_SENTINEL = { deltix: true };
 let exitArmed = false;
 function closeTopOverlay() {
-  for (const id of ['swapModal', 'dappModal', 'stakeModal', 'edDelegateModal', 'edUndelegateModal', 'sendModal', 'deleteModal']) {
+  for (const id of ['swapModal', 'dappModal', 'stakeModal', 'edDelegateModal', 'edUndelegateModal', 'sendModal', 'deleteModal', 'p2pCreateModal', 'p2pOfferModal', 'p2pOrderModal']) {
     const el = document.getElementById(id);
-    if (el && !el.hidden) { el.hidden = true; return true; }
+    if (el && !el.hidden) {
+      el.hidden = true;
+      if (id === 'p2pOrderModal' && typeof stopP2pChatPoll === 'function') stopP2pChatPoll();
+      return true;
+    }
   }
   const game = document.getElementById('gameModal');
   if (game && !game.hidden) { window.closeGame?.(); return true; }

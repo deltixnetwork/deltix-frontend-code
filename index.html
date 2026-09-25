@@ -200,6 +200,39 @@
         </ul>
       </div>
 
+      <!-- P2P Marketplace (server-gated — hidden unless the backend enables it) -->
+      <div class="tab" id="tab-p2p">
+        <h3 class="section-title">💱 P2P Market <span class="pill" id="p2pSimPill" hidden>SIMULATION / TEST</span></h3>
+        <p class="muted small-note">Trade $DLTX for USDT (BNB Chain) with other users at prices you set. Every trade is escrow-protected and released only by a Deltix moderator. 1% fee on each side — no hidden charges.</p>
+
+        <div class="card p2p-kyc-card" id="p2pKycCard" hidden>
+          <b>Identity verification required</b>
+          <p class="muted small-note">P2P trading requires a verified identity (KYC). This keeps every counterparty accountable.</p>
+          <button class="btn primary" id="p2pKycBtn">Verify identity</button>
+        </div>
+
+        <div id="p2pMain" hidden>
+          <div class="p2p-subtabs">
+            <button class="p2p-subtab active" data-view="buy">Buy</button>
+            <button class="p2p-subtab" data-view="sell">Sell</button>
+            <button class="p2p-subtab" data-view="orders">My Orders</button>
+            <button class="p2p-subtab" data-view="mod" id="p2pModTab" hidden>Moderation</button>
+          </div>
+          <p class="hint" id="p2pRefRate" hidden></p>
+          <button class="primary-btn" id="p2pCreateBtn">+ Create offer</button>
+          <div id="p2pList"><p class="muted center">Loading…</p></div>
+        </div>
+
+        <h3 class="section-title">How it works</h3>
+        <ul class="disclosure">
+          <li>The seller’s $DLTX locks in escrow the moment terms are accepted — it cannot be spent or sold twice.</li>
+          <li>The buyer pays USDT to the <b>Deltix platform wallet</b>, never to the seller directly.</li>
+          <li>A moderator verifies everything and releases the $DLTX; the platform then pays the seller’s USDT.</li>
+          <li>Fees: 1% $DLTX (buyer side) + 1% USDT (seller side), always shown before you accept.</li>
+          <li>Prices are set by users — Deltix does not set the market price.</li>
+        </ul>
+      </div>
+
       <!-- D-Browser -->
       <div class="tab" id="tab-browser">
         <div class="dbrowser-head-banner">
@@ -955,6 +988,9 @@
         <button class="sidenav-item" data-tab="tab-energy-delegation">
           <span class="nav-3d-icon nav-emoji">⚡</span><span>Deltix Energy</span>
         </button>
+        <button class="sidenav-item" data-tab="tab-p2p" id="navP2p" hidden>
+          <span class="nav-3d-icon nav-emoji">💱</span><span>P2P Market</span>
+        </button>
         <button class="sidenav-item" data-tab="tab-arcade">
           <img src="assets/energy/40_arcade_nav.png" class="nav-3d-icon" alt="" /><span>Arcade</span>
         </button>
@@ -1050,6 +1086,112 @@
       <div class="modal-actions">
         <button class="btn ghost" id="edCancelUndelegate">Cancel</button>
         <button class="btn danger" id="edConfirmUndelegate">Confirm undelegation</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- P2P: create offer -->
+  <div class="modal-backdrop" id="p2pCreateModal" hidden>
+    <div class="modal">
+      <h3>Create P2P offer</h3>
+      <div class="p2p-side-pick">
+        <button class="btn ghost active" id="p2pSideSell">SELL $DLTX</button>
+        <button class="btn ghost" id="p2pSideBuy">BUY $DLTX</button>
+      </div>
+      <label for="p2pCreateAmount">Amount ($DLTX)</label>
+      <input id="p2pCreateAmount" type="number" min="0" step="1" placeholder="1000" />
+      <label for="p2pCreatePrice">Your price (USDT per DLTX)</label>
+      <input id="p2pCreatePrice" type="number" min="0" step="0.0001" placeholder="0.05" />
+      <div class="p2p-two-col">
+        <div><label for="p2pCreateMin">Min order</label><input id="p2pCreateMin" type="number" min="0" step="1" placeholder="10" /></div>
+        <div><label for="p2pCreateMax">Max order</label><input id="p2pCreateMax" type="number" min="0" step="1" placeholder="1000" /></div>
+      </div>
+      <label for="p2pCreateTerms">Terms (optional)</label>
+      <input id="p2pCreateTerms" type="text" maxlength="200" placeholder="e.g. Payment within 30 minutes" />
+      <div id="p2pPayoutWalletWrap">
+        <label for="p2pPayoutWallet">Your USDT payout wallet (BEP-20)</label>
+        <input id="p2pPayoutWallet" type="text" maxlength="64" placeholder="0x… (where the platform pays you)" />
+        <p class="hint">Public address only — never enter a seed phrase or private key.</p>
+      </div>
+      <div class="supply-list" id="p2pCreateQuote"></div>
+      <p class="hint" id="p2pCreateHint"></p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="p2pCreateCancel">Cancel</button>
+        <button class="btn primary" id="p2pCreateConfirm">Post offer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- P2P: offer detail / negotiate -->
+  <div class="modal-backdrop" id="p2pOfferModal" hidden>
+    <div class="modal">
+      <h3 id="p2pOfferTitle">Offer</h3>
+      <div class="supply-list" id="p2pOfferInfo"></div>
+      <label for="p2pTradeAmount">Amount ($DLTX)</label>
+      <input id="p2pTradeAmount" type="number" min="0" step="1" placeholder="0" />
+      <div class="supply-list" id="p2pOfferQuote"></div>
+      <div class="modal-actions">
+        <button class="btn primary" id="p2pAcceptBtn">Accept price</button>
+      </div>
+      <label for="p2pBidPrice">…or negotiate (your price, USDT/DLTX)</label>
+      <div class="p2p-bid-row">
+        <input id="p2pBidPrice" type="number" min="0" step="0.0001" placeholder="0.047" />
+        <button class="btn ghost" id="p2pBidBtn">Place bid</button>
+      </div>
+      <div id="p2pBidList"></div>
+      <p class="hint" id="p2pOfferHint"></p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="p2pOfferClose">Close</button>
+        <button class="btn danger" id="p2pOfferCancelOffer" hidden>Cancel offer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- P2P: order room -->
+  <div class="modal-backdrop" id="p2pOrderModal" hidden>
+    <div class="modal p2p-order-modal">
+      <h3 id="p2pOrderTitle">Order</h3>
+      <div class="supply-list" id="p2pOrderDetails"></div>
+      <div id="p2pPaySection" hidden>
+        <p class="muted small-note"><b>Send the USDT to the Deltix platform escrow wallet (BNB Chain):</b></p>
+        <div class="p2p-deposit-row">
+          <code id="p2pDepositAddr" class="p2p-addr"></code>
+          <button class="btn ghost" id="p2pCopyAddr">Copy</button>
+        </div>
+        <label for="p2pTxHash">Transaction hash (after sending)</label>
+        <div class="p2p-bid-row">
+          <input id="p2pTxHash" type="text" maxlength="128" placeholder="0x…" />
+          <button class="btn primary" id="p2pSubmitTx">Submit</button>
+        </div>
+      </div>
+      <div id="p2pModBlock" hidden>
+        <h3 class="section-title">Moderator review</h3>
+        <div class="supply-list" id="p2pModInfo"></div>
+        <div id="p2pModBlockers"></div>
+        <label for="p2pModReason">Reason (for disputes / resolutions)</label>
+        <input id="p2pModReason" type="text" maxlength="200" placeholder="Required for resolutions" />
+        <div class="modal-actions p2p-mod-actions">
+          <button class="btn primary" id="p2pModApprove">APPROVE RELEASE</button>
+          <button class="btn ghost" id="p2pModRefund">Refund seller</button>
+          <button class="btn ghost" id="p2pModToBuyer">Release to buyer</button>
+          <button class="btn ghost" id="p2pModEscalate">Escalate</button>
+        </div>
+        <div class="p2p-bid-row" id="p2pPayoutRow" hidden>
+          <input id="p2pPayoutHash" type="text" maxlength="128" placeholder="USDT payout tx hash (0x…)" />
+          <button class="btn primary" id="p2pPayoutBtn">Record payout</button>
+        </div>
+      </div>
+      <h3 class="section-title">Order chat</h3>
+      <div id="p2pChatList" class="p2p-chat"></div>
+      <div class="p2p-bid-row">
+        <input id="p2pChatInput" type="text" maxlength="500" placeholder="Message buyer / seller / moderator…" />
+        <button class="btn ghost" id="p2pChatSend">Send</button>
+      </div>
+      <p class="hint" id="p2pOrderHint"></p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="p2pOrderClose">Close</button>
+        <button class="btn ghost" id="p2pOrderCancel" hidden>Cancel order</button>
+        <button class="btn danger" id="p2pOrderDispute" hidden>Open dispute</button>
       </div>
     </div>
   </div>
