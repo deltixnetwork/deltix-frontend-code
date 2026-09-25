@@ -515,15 +515,88 @@ function initPullToRefresh() {
 }
 
 $('refreshBtn')?.addEventListener('click', () => refreshCurrentView());
+
+// ---------- Professional notification toasts ----------
+// Every quick notification renders as a branded card (icon badge + ◆ DELTIX
+// label + message) instead of a plain text pill. The tone drives the badge:
+// success (✓ green), error (⚠ red), warning (⚠ amber), info (◆ blue). When a
+// call site doesn't pass a tone it is inferred from the message so the ~100
+// existing toast() calls (including arcade.js) upgrade automatically.
+const TOAST_TONE_ICONS = { success: '✓', error: '⚠', warning: '⚠', info: '◆' };
+const TOAST_ERROR_RE = /fail|error|invalid|insufficient|not enough|unavailable|try again|wrong|cannot|can[’']?t\b|denied|blocked|locked|expired|too many|too fast|missing|unauthori[sz]|not found|no longer|paused|rejected|already|nothing to|\bneed(s|ed)?\b|unable|not permitted|not available|no connection|offline/i;
+const TOAST_SUCCESS_RE = /copied|sent\b|saved|created|claimed|delegated|undelegated|unstaked|unlocked|recovered|success|complete|watered|redeemed|purchased|activated|updated|joined|submitted|confirmed|staked|applied|added|welcome|verified|granted|equipped|planted|deleted|restored|refreshed/i;
+function toastTone(msg) {
+  if (TOAST_ERROR_RE.test(msg)) return 'error';
+  if (TOAST_SUCCESS_RE.test(msg)) return 'success';
+  return 'info';
+}
 let toastTimer;
-function toast(msg) {
+function toast(msg, opts = {}) {
   const t = $('toast');
-  t.textContent = msg;
+  if (!t) return;
+  const message = String(msg || '');
+  const tone = opts.tone || toastTone(message);
+  const icon = opts.icon || TOAST_TONE_ICONS[tone] || TOAST_TONE_ICONS.info;
+  t.className = `toast t-${tone}`;
+  t.setAttribute('role', 'status');
+  t.setAttribute('aria-live', 'polite');
+  t.innerHTML = `
+    <div class="tn-icon">${icon}</div>
+    <div class="tn-body">
+      <div class="tn-app">◆ Deltix${opts.title ? ` · <span class="tn-title">${opts.title}</span>` : ''}</div>
+      <div class="tn-msg"></div>
+    </div>`;
+  t.querySelector('.tn-msg').textContent = message;
   t.hidden = false;
+  requestAnimationFrame(() => t.classList.add('show'));
+  t.onclick = () => { clearTimeout(toastTimer); t.classList.remove('show'); setTimeout(() => (t.hidden = true), 200); };
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.hidden = true), 2600);
+  toastTimer = setTimeout(() => {
+    t.classList.remove('show');
+    setTimeout(() => (t.hidden = true), 200);
+  }, opts.duration || (message.length > 70 ? 4200 : 3000));
 }
 const fmt = (n) => Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 4 });
+
+// ---------- Branded confirmation dialog ----------
+// Replaces native window.confirm() everywhere — same modal design language as
+// the rest of the app, with an optional term-breakdown list. Resolves boolean.
+function askConfirm({ title = 'Are you sure?', message = '', rows = [], confirmText = 'Confirm', cancelText = 'Cancel', danger = false } = {}) {
+  return new Promise((resolve) => {
+    document.getElementById('confirmDialog')?.remove();
+    const wrap = document.createElement('div');
+    wrap.className = 'modal-backdrop';
+    wrap.id = 'confirmDialog';
+    const rowsHtml = rows.length
+      ? `<div class="supply-list">${rows.map(([k, v]) => `<div class="supply-row"><span class="k"></span><span class="v"></span></div>`).join('')}</div>`
+      : '';
+    wrap.innerHTML = `
+      <div class="modal" role="alertdialog" aria-modal="true">
+        <h3></h3>
+        <p class="hint"${message ? '' : ' hidden'}></p>
+        ${rowsHtml}
+        <div class="modal-actions">
+          <button class="btn ghost" type="button"></button>
+          <button class="btn ${danger ? 'danger' : 'primary'}" type="button"></button>
+        </div>
+      </div>`;
+    wrap.querySelector('h3').textContent = title;
+    if (message) wrap.querySelector('p.hint').textContent = message;
+    wrap.querySelectorAll('.supply-row').forEach((rowEl, i) => {
+      rowEl.querySelector('.k').textContent = rows[i][0];
+      rowEl.querySelector('.v').textContent = rows[i][1];
+    });
+    const [cancelBtn, okBtn] = wrap.querySelectorAll('.modal-actions .btn');
+    cancelBtn.textContent = cancelText;
+    okBtn.textContent = confirmText;
+    const done = (val) => { wrap.remove(); resolve(val); };
+    cancelBtn.addEventListener('click', () => done(false));
+    okBtn.addEventListener('click', () => done(true));
+    wrap.addEventListener('click', (e) => { if (e.target === wrap) done(false); });
+    document.body.appendChild(wrap);
+    okBtn.focus();
+  });
+}
 
 // ---------- Reward celebration popup ----------
 // A branded, animated confetti popup used for claims and wins instead of a raw
@@ -1002,7 +1075,7 @@ function renderThemeGrid() {
           return;
         }
         // Clear opt-in disclosure before the rewarded ad (AdMob requirement).
-        if (!window.confirm('▶ Watch a short ad to unlock this theme?')) return;
+        if (!(await askConfirm({ title: 'Unlock with an ad', message: 'Watch a short rewarded ad to unlock this theme — free, no Energy spent.', confirmText: '▶ Watch ad' }))) return;
         b.disabled = true;
         const earned = await playRewardedAd();
         if (!earned) {
@@ -1063,7 +1136,7 @@ function openAvatarPicker() {
           return;
         }
         // Clear opt-in disclosure before the rewarded ad (AdMob requirement).
-        if (!window.confirm('▶ Watch a short ad to unlock this premium avatar?')) return;
+        if (!(await askConfirm({ title: 'Unlock with an ad', message: 'Watch a short rewarded ad to unlock this premium avatar — free, no Energy spent.', confirmText: '▶ Watch ad' }))) return;
         b.disabled = true;
         const earned = await playRewardedAd();
         if (!earned) {
@@ -1943,7 +2016,19 @@ async function unstake(id) {
     if (stake) {
       const fee = Number(stake.amount) * 0.01;
       const returned = Number(stake.amount) - fee;
-      if (!window.confirm(`Unstake ${fmt(stake.amount)} $DLTX?\n\nBurn fee: ${fmt(fee)} $DLTX\nYou receive: ${fmt(returned)} $DLTX + ${fmt(stake.pendingRewards)} rewards`)) return;
+      const okd = await askConfirm({
+        title: `Unstake ${fmt(stake.amount)} $DLTX?`,
+        message: 'The 1% unstake fee is burned from principal before funds return to your liquid balance.',
+        rows: [
+          ['Unstaking', `${fmt(stake.amount)} $DLTX`],
+          ['Burn fee (1%)', `${fmt(fee)} $DLTX`],
+          ['Pending rewards', `${fmt(stake.pendingRewards)} $DLTX`],
+          ['You receive', `${fmt(returned + Number(stake.pendingRewards))} $DLTX`],
+        ],
+        confirmText: 'Unstake',
+        danger: true,
+      });
+      if (!okd) return;
     }
     const r = await api('POST', `/staking/${id}/unstake`);
     toast(`Unstaked ${fmt(r.returnedPrincipal)} $DLTX · burned ${fmt(r.feeBurned)} fee`);
@@ -3355,11 +3440,11 @@ $('botInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendB
  * own dismiss control; a step up in polish from the plain toast pill.
  */
 let appNoticeTimer;
-function notify({ icon = '◆', title = 'Deltix', message = '', tab = null, duration = 6500 } = {}) {
+function notify({ icon = '◆', title = 'Deltix', message = '', tab = null, duration = 6500, tone = 'info' } = {}) {
   document.getElementById('appNotice')?.remove();
   clearTimeout(appNoticeTimer);
   const el = document.createElement('div');
-  el.className = 'app-notice';
+  el.className = `app-notice an-${tone}`;
   el.id = 'appNotice';
   el.setAttribute('role', 'status');
   el.setAttribute('aria-live', 'polite');
@@ -4928,10 +5013,14 @@ function playRewardedAd() {
       return;
     }
     // Web / dev fallback — disclosed simulated ad so the flow is testable.
-    if (!confirm('▶ Simulated rewarded ad (web preview)\n\nOn a real device this plays a full AdMob rewarded video. Continue?')) {
-      return resolve(false);
-    }
-    setTimeout(() => resolve(true), 600);
+    askConfirm({
+      title: 'Simulated rewarded ad',
+      message: 'Web preview — on a real device this plays a full AdMob rewarded video.',
+      confirmText: '▶ Continue',
+    }).then((okd) => {
+      if (!okd) return resolve(false);
+      setTimeout(() => resolve(true), 600);
+    });
   });
 }
 
