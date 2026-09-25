@@ -3,8 +3,29 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.9.1';
+const APP_VERSION = '1.9.2';
 const $ = (id) => document.getElementById(id);
+
+// Stable per-phone identifier sent with every request (X-Device-Id) — the
+// server caps how many accounts one device can create. Prefers the native
+// hardware-backed id when a Device plugin is available; otherwise a UUID
+// persisted for the lifetime of the install.
+function getDeviceId() {
+  let id = localStorage.getItem('dltx_device_id');
+  if (!id) {
+    id = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    localStorage.setItem('dltx_device_id', id);
+  }
+  return id;
+}
+try {
+  // Upgrade to the hardware-backed identifier once, if the plugin exists.
+  window.Capacitor?.Plugins?.Device?.getId?.().then((r) => {
+    const nativeId = r && (r.identifier || r.uuid);
+    if (nativeId) localStorage.setItem('dltx_device_id', String(nativeId).slice(0, 64));
+  }).catch(() => {});
+} catch { /* device id stays the local UUID */ }
+
 const state = {
   token: localStorage.getItem('dltx_token') || null,
   email: localStorage.getItem('dltx_email') || null,
@@ -48,6 +69,7 @@ async function api(method, path, body, { retries = method === 'GET' ? 3 : 0 } = 
           'Content-Type': 'application/json',
           'X-Deltix-Client': 'deltix-app',
           'X-App-Version': APP_VERSION,
+          'X-Device-Id': getDeviceId(),
           ...(state.token ? { Authorization: 'Bearer ' + state.token } : {}),
         },
         body: body ? JSON.stringify(body) : undefined,
@@ -1569,7 +1591,8 @@ $('sendBtn').addEventListener('click', () => {
   const s = state.balances || {};
   const sendable = s.sendableBalance != null ? s.sendableBalance : s.balance;
   $('sendHint').textContent = `Transferable: ${fmt(sendable)} $DLTX`
-    + (s.bonusLocked > 0 ? ` · ${fmt(s.bonusLocked)} welcome bonus locked (stake/use only)` : '');
+    + (s.bonusLocked > 0 ? ` · ${fmt(s.bonusLocked)} welcome bonus locked (stake/use only)` : '')
+    + (s.timeLocked > 0 ? ` · ${fmt(s.timeLocked)} referral rewards locked for 6 months (use in-app only)` : '');
   $('sendModal').hidden = false;
 });
 $('receiveBtn').addEventListener('click', () => {
