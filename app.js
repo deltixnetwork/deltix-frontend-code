@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.11.2';
+const APP_VERSION = '1.11.3';
 const $ = (id) => document.getElementById(id);
 
 // Stable per-phone identifier sent with every request (X-Device-Id) — the
@@ -51,19 +51,50 @@ const RETRY_BACKOFF_MS = 600;
 // A single request must never hang the UI — a stalled server is retried, not waited on.
 const REQUEST_TIMEOUT_MS = 20000;
 
-function friendlyError(status, json) {
-  if (json && json.error) return json.error;
-  if (status === 429) return 'You are going a little fast. Please wait a moment and try again.';
-  if (status >= 500) return 'Deltix is busy right now. Please try again in a moment.';
-  if (status === 404) return 'That is not available right now.';
-  return 'Something went wrong. Please try again.';
+// ── Centralized error classification ──
+// The category decides the wording. "No internet" is ONLY claimed when the
+// device reports itself offline; any HTTP status means the server was reached.
+const ERROR_CATEGORY = {
+  OFFLINE: 'offline', CONNECT: 'connect', TIMEOUT: 'timeout', AUTH: 'auth', FORBIDDEN: 'forbidden',
+  RATE_LIMIT: 'rate_limit', NOT_FOUND: 'not_found', CLIENT: 'client', SERVER: 'server', UNAVAILABLE: 'unavailable',
+};
+function classifyHttp(status) {
+  if (status === 401) return ERROR_CATEGORY.AUTH;
+  if (status === 403 || status === 423) return ERROR_CATEGORY.FORBIDDEN;
+  if (status === 429) return ERROR_CATEGORY.RATE_LIMIT;
+  if (status === 404) return ERROR_CATEGORY.NOT_FOUND;
+  if (status === 502 || status === 503 || status === 504) return ERROR_CATEGORY.UNAVAILABLE;
+  if (status >= 500) return ERROR_CATEGORY.SERVER;
+  return ERROR_CATEGORY.CLIENT;
 }
+const GENERIC_BY_CATEGORY = {
+  [ERROR_CATEGORY.OFFLINE]: 'You\u2019re offline. Check your internet connection and try again.',
+  [ERROR_CATEGORY.CONNECT]: 'Deltix couldn\u2019t connect to the server. Please try again.',
+  [ERROR_CATEGORY.TIMEOUT]: 'Deltix is taking longer than expected. Please try again.',
+  [ERROR_CATEGORY.AUTH]: 'Your session has expired — please sign in again.',
+  [ERROR_CATEGORY.FORBIDDEN]: 'This action isn\u2019t available for this account.',
+  [ERROR_CATEGORY.RATE_LIMIT]: 'Too many requests. Please wait a moment and try again.',
+  [ERROR_CATEGORY.NOT_FOUND]: 'That is not available right now.',
+  [ERROR_CATEGORY.CLIENT]: 'Something went wrong. Please try again.',
+  [ERROR_CATEGORY.SERVER]: 'Something went wrong on our side. Please try again.',
+  [ERROR_CATEGORY.UNAVAILABLE]: 'Deltix is temporarily unavailable. Please try again shortly.',
+};
+// Server messages are already user-facing (device limit, KYC, restrictions…)
+// and take precedence; the `ref` lets support find the exact server log line.
+function friendlyError(status, json) {
+  const base = (json && json.error) || GENERIC_BY_CATEGORY[classifyHttp(status)];
+  return json && json.ref ? `${base} (Ref: ${json.ref})` : base;
+}
+// Bounded backoff with jitter so a fleet of phones never retries in lockstep.
+const backoffMs = (attempt) => RETRY_BACKOFF_MS * (attempt + 1) + Math.floor(Math.random() * 300);
+const newRequestId = () => 'DLX-' + Math.random().toString(16).slice(2, 8).toUpperCase();
 
 async function api(method, path, body, { retries = method === 'GET' ? 3 : 0 } = {}) {
   let res = null;
-  let offline = false;
+  let failure = null; // ERROR_CATEGORY when fetch itself rejected
+  const requestId = newRequestId();
   for (let attempt = 0; ; attempt++) {
-    offline = false;
+    failure = null;
     const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
     const timer = ctrl ? setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS) : null;
     try {
@@ -74,28 +105,29 @@ async function api(method, path, body, { retries = method === 'GET' ? 3 : 0 } = 
           'X-Deltix-Client': 'deltix-app',
           'X-App-Version': APP_VERSION,
           'X-Device-Id': getDeviceId(),
+          'X-Request-Id': requestId,
           ...(state.token ? { Authorization: 'Bearer ' + state.token } : {}),
         },
         body: body ? JSON.stringify(body) : undefined,
         ...(ctrl ? { signal: ctrl.signal } : {}),
       });
-    } catch {
-      offline = true; // DNS failure, dropped connection, timeout, airplane mode…
+    } catch (e) {
+      const offlineNow = typeof navigator !== 'undefined' && navigator.onLine === false;
+      failure = offlineNow ? ERROR_CATEGORY.OFFLINE
+        : (e && e.name === 'AbortError') ? ERROR_CATEGORY.TIMEOUT
+        : ERROR_CATEGORY.CONNECT; // DNS / TLS / reset — the server was NOT reached
     } finally {
       if (timer) clearTimeout(timer);
     }
-    const transient = offline || RETRY_STATUSES.has(res.status);
+    const transient = failure !== null || RETRY_STATUSES.has(res.status);
     if (!transient || attempt >= retries) break;
-    await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS * (attempt + 1)));
+    await new Promise((r) => setTimeout(r, backoffMs(attempt)));
   }
-  if (offline) {
-    // navigator.onLine false = genuinely offline. Otherwise the connection was
-    // dropped/timed out by the server side — say so instead of blaming the user's internet.
-    const reallyOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
-    const err = new Error(reallyOffline
-      ? 'No connection. Check your internet and try again.'
-      : 'Deltix is taking too long to respond. Please try again in a moment.');
-    err.offline = true;
+  if (failure) {
+    const err = new Error(`${GENERIC_BY_CATEGORY[failure]} (Ref: ${requestId})`);
+    err.offline = failure === ERROR_CATEGORY.OFFLINE;
+    err.category = failure;
+    err.ref = requestId;
     throw err;
   }
 
@@ -129,6 +161,8 @@ async function api(method, path, body, { retries = method === 'GET' ? 3 : 0 } = 
     }
     const err = new Error(friendlyError(res.status, json));
     err.status = res.status;
+    err.category = classifyHttp(res.status);
+    err.ref = (json && json.ref) || requestId;
     err.data = json;
     throw err;
   }
