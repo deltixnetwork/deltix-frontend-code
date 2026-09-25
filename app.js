@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.11.1';
+const APP_VERSION = '1.11.2';
 const $ = (id) => document.getElementById(id);
 
 // Stable per-phone identifier sent with every request (X-Device-Id) — the
@@ -48,6 +48,8 @@ const state = {
 // retried briefly before the user ever sees an error.
 const RETRY_STATUSES = new Set([502, 503, 504]);
 const RETRY_BACKOFF_MS = 600;
+// A single request must never hang the UI — a stalled server is retried, not waited on.
+const REQUEST_TIMEOUT_MS = 20000;
 
 function friendlyError(status, json) {
   if (json && json.error) return json.error;
@@ -62,6 +64,8 @@ async function api(method, path, body, { retries = method === 'GET' ? 3 : 0 } = 
   let offline = false;
   for (let attempt = 0; ; attempt++) {
     offline = false;
+    const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS) : null;
     try {
       res = await fetch(API + path, {
         method,
@@ -73,16 +77,24 @@ async function api(method, path, body, { retries = method === 'GET' ? 3 : 0 } = 
           ...(state.token ? { Authorization: 'Bearer ' + state.token } : {}),
         },
         body: body ? JSON.stringify(body) : undefined,
+        ...(ctrl ? { signal: ctrl.signal } : {}),
       });
     } catch {
-      offline = true; // DNS failure, dropped connection, airplane mode…
+      offline = true; // DNS failure, dropped connection, timeout, airplane mode…
+    } finally {
+      if (timer) clearTimeout(timer);
     }
     const transient = offline || RETRY_STATUSES.has(res.status);
     if (!transient || attempt >= retries) break;
     await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS * (attempt + 1)));
   }
   if (offline) {
-    const err = new Error('No connection. Check your internet and try again.');
+    // navigator.onLine false = genuinely offline. Otherwise the connection was
+    // dropped/timed out by the server side — say so instead of blaming the user's internet.
+    const reallyOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    const err = new Error(reallyOffline
+      ? 'No connection. Check your internet and try again.'
+      : 'Deltix is taking too long to respond. Please try again in a moment.');
     err.offline = true;
     throw err;
   }
@@ -759,12 +771,13 @@ $('sendCodeBtn').addEventListener('click', async () => {
   try {
     const referralCode = isSignup ? $('refCodeInput').value.trim().toUpperCase() : '';
     const integrityPayload = await getIntegrityPayload();
+    // Safe to retry: the server de-duplicates OTP sends per email (30s cooldown).
     const r = await api('POST', '/auth/register', {
       email,
       mode: authMode,
       ...(referralCode ? { referralCode } : {}),
       ...integrityPayload,
-    });
+    }, { retries: 3 });
     state.email = email;
     $('otpSubtitle').textContent = `We sent a code to ${email}`;
     const dev = $('devBanner');
@@ -859,7 +872,8 @@ $('verifyBtn').addEventListener('click', async () => {
   }
   $('verifyBtn').disabled = true;
   try {
-    const r = await api('POST', '/auth/verify', { email: state.email, code });
+    // Safe to retry: a code is consumed exactly once; a repeat just gets "invalid".
+    const r = await api('POST', '/auth/verify', { email: state.email, code }, { retries: 3 });
     state.token = r.token;
     localStorage.setItem('dltx_token', r.token);
     if (r.user && r.user.email) state.email = r.user.email;
