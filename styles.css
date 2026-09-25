@@ -2865,3 +2865,14 @@ html[data-dark] .ed-stat b, html[data-dark] .ed-unlock-progress { color: var(--t
 .p2p-order-modal { max-height: 88vh; overflow-y: auto; }
 .p2p-kyc-card { text-align: center; }
 #p2pSimPill { background: rgba(241,196,15,.2); color: #d8a80c; }
+
+.p2p-contact-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%; }
+.p2p-contact-line + .p2p-contact-line { margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(14,203,129,.25); }
+.p2p-wabtn { background: #25d366; text-decoration: none; display: inline-flex; align-items: center; }
+
+.p2p-mycontact { margin-top: 12px; }
+.p2p-mycontact label { font-size: 12px; font-weight: 700; }
+
+/* Keep action buttons compact inside P2P flex rows (global modal .btn is full-width) */
+.p2p-deposit-row .btn, .p2p-bid-row .btn { width: auto; flex: none; }
+.p2p-contact-val a.p2p-wabtn { color: #fff; }

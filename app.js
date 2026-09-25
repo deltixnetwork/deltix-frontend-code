@@ -3648,6 +3648,8 @@ async function loadP2p() {
     ref.hidden = !p2p.status?.referenceRateUsdt;
     if (p2p.status?.referenceRateUsdt) ref.textContent = `Official reference rate: ${p2p.status.referenceRateUsdt} USDT/DLTX (guidance — you set your own price)`;
   }
+  const myC = $('p2pMyContact');
+  if (myC && !myC.matches(':focus')) myC.value = p2p.status?.myContact || '';
   // Moderator probe: the queue answers 200 only for moderator roles.
   try {
     const q = await api('GET', '/p2p/moderation/queue');
@@ -3765,6 +3767,14 @@ async function renderP2pView() {
 
 document.querySelectorAll('#tab-p2p [data-view]').forEach((b) =>
   b.addEventListener('click', () => { p2p.view = b.dataset.view; renderP2pView(); }));
+
+$('p2pMyContactSave')?.addEventListener('click', async () => {
+  try {
+    const r = await api('POST', '/p2p/contact', { contact: $('p2pMyContact').value.trim() });
+    if (p2p.status) p2p.status.myContact = r.contact;
+    toast(r.contact ? 'Contact saved — your trade partners can now call you' : 'Contact removed', { tone: 'success' });
+  } catch (e) { toast(e.message, { tone: 'error' }); }
+});
 
 // ── Trader profile (OKX-style advertiser page) ──
 async function openP2pTrader(userId) {
@@ -4053,7 +4063,10 @@ function p2pContactLink(raw) {
   if (/^@\w{3,}$/.test(c)) return `<a href="https://t.me/${escapeHtml(c.slice(1))}" target="_blank" rel="noopener">${escapeHtml(c)} · Telegram</a>`;
   const phone = c.replace(/[\s\-()]/g, '');
   if (/^\+?\d{7,15}$/.test(phone)) {
-    return `<a href="tel:${phone}">${escapeHtml(c)}</a><button class="p2p-callbtn" data-call="${phone}">📞 Call</button>`;
+    const waDigits = phone.replace(/\D/g, '');
+    return `<a href="tel:${phone}">${escapeHtml(c)}</a>` +
+      `<button class="p2p-callbtn" data-call="${phone}">📞 Call</button>` +
+      `<a class="p2p-callbtn p2p-wabtn" href="https://wa.me/${waDigits}" target="_blank" rel="noopener">WhatsApp</a>`;
   }
   return escapeHtml(c);
 }
@@ -4081,14 +4094,22 @@ async function openP2pOrder(id, { moderator = false } = {}) {
       <div class="row"><span>USDT payment</span><b>${o.usdtVerified ? 'Verified ✅' : (o.usdtTxHash ? 'Submitted ⏳' : 'Awaiting')}</b></div>
       <div class="row"><span>Moderator</span><b>${o.moderatorAssigned ? (o.moderatorApproved ? 'Approved ✅' : 'Assigned') : 'Pending assignment'}</b></div>
       ${o.status === 'completed' ? `<div class="row"><span>Seller payout</span><b>${o.sellerPayoutRecorded ? 'Paid ✅' : 'Processing ⏳'}</b></div>` : ''}`;
-    // Counterparty contact (the ad owner's optional phone/Telegram).
+    // Contact block: official Deltix support first, then the counterparty.
     const contactEl = $('p2pContactRow');
-    if (r.makerContact && String(r.makerId) !== myUserId()) {
-      contactEl.hidden = false;
-      contactEl.innerHTML = `<span class="p2p-contact-label">📞 Counterparty contact</span><span class="p2p-contact-val">${p2pContactLink(r.makerContact)}</span>`;
-      contactEl.querySelectorAll('[data-call]').forEach((btn) =>
-        btn.addEventListener('click', () => { window.open(`tel:${btn.dataset.call}`); }));
-    } else { contactEl.hidden = true; contactEl.innerHTML = ''; }
+    const contactLines = [];
+    if (r.supportContact) {
+      contactLines.push(`<span class="p2p-contact-line"><span class="p2p-contact-label">🛡 Deltix support (official)</span><span class="p2p-contact-val">${p2pContactLink(r.supportContact)}</span></span>`);
+    }
+    if (o.role === 'moderator') {
+      if (r.buyerContact) contactLines.push(`<span class="p2p-contact-line"><span class="p2p-contact-label">📞 Buyer</span><span class="p2p-contact-val">${p2pContactLink(r.buyerContact)}</span></span>`);
+      if (r.sellerContact) contactLines.push(`<span class="p2p-contact-line"><span class="p2p-contact-label">📞 Seller</span><span class="p2p-contact-val">${p2pContactLink(r.sellerContact)}</span></span>`);
+    } else if (r.counterpartyContact) {
+      contactLines.push(`<span class="p2p-contact-line"><span class="p2p-contact-label">📞 ${o.role === 'buyer' ? 'Seller' : 'Buyer'} contact</span><span class="p2p-contact-val">${p2pContactLink(r.counterpartyContact)}</span></span>`);
+    }
+    contactEl.hidden = contactLines.length === 0;
+    contactEl.innerHTML = contactLines.join('');
+    contactEl.querySelectorAll('[data-call]').forEach((btn) =>
+      btn.addEventListener('click', () => { window.open(`tel:${btn.dataset.call}`); }));
     const payable = o.role === 'buyer' && ['awaiting_usdt', 'usdt_submitted'].includes(o.status);
     $('p2pPaySection').hidden = !payable;
     $('p2pPayTimer').hidden = true;
