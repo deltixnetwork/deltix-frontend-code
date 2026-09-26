@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.11.3';
+const APP_VERSION = '1.11.4';
 const $ = (id) => document.getElementById(id);
 
 // Stable per-phone identifier sent with every request (X-Device-Id) — the
@@ -1257,6 +1257,20 @@ function renderBalances() {
   const hide = state.hideBalances;
   $('totalBalance').innerHTML = hide ? `${MASK} <small>$DLTX</small>` : `${fmt(w.totalValue)} <small>$DLTX</small>`;
   $('liquidBalance').textContent = hide ? MASK : fmt(w.balance);
+  // Display parity with the backend: if part of "Liquid" is not transferable
+  // (welcome bonus / time-locked rewards still on the liquid slice, P2P
+  // escrow), say so right under the number so the tile never over-promises.
+  const lockedNote = $('liquidLockedNote');
+  if (lockedNote) {
+    const transferable = w.availableTransferableBalance != null ? w.availableTransferableBalance : w.balance;
+    const locked = w.liquidLocked != null ? w.liquidLocked : Math.max(0, (w.balance || 0) - transferable);
+    if (!hide && locked > 0.000000005) {
+      lockedNote.textContent = `${fmt(transferable)} transferable · ${fmt(locked)} locked`;
+      lockedNote.hidden = false;
+    } else {
+      lockedNote.hidden = true;
+    }
+  }
   $('stakedBalance').textContent = hide ? MASK : fmt(w.stakedBalance);
   $('pendingRewards').textContent = hide ? MASK : fmt(w.pendingRewards);
   const addrTxt = $('walletAddressTxt');
@@ -1694,6 +1708,23 @@ setInterval(() => {
 const BASE_FEE_RATE = 0.001;
 const MIN_BASE_FEE = 0.01;
 
+function currentSendable() {
+  const s = state.balances || {};
+  if (s.availableTransferableBalance != null) return Number(s.availableTransferableBalance) || 0;
+  if (s.sendableBalance != null) return Number(s.sendableBalance) || 0;
+  return Number(s.balance) || 0;
+}
+/** Largest amount such that amount + fee(amount) <= sendable, floored to 8dp. */
+function maxSendable(sendable) {
+  if (!(sendable > MIN_BASE_FEE)) return 0;
+  let amt = sendable / (1 + BASE_FEE_RATE);
+  if (amt * BASE_FEE_RATE < MIN_BASE_FEE) amt = sendable - MIN_BASE_FEE;
+  amt = Math.floor(amt * 1e8) / 1e8;
+  // guard float dust: step down one satoshi until it fits
+  while (amt > 0 && Math.round((amt + Math.max(MIN_BASE_FEE, amt * BASE_FEE_RATE)) * 1e8) / 1e8 > sendable) amt = Math.round((amt - 1e-8) * 1e8) / 1e8;
+  return Math.max(0, amt);
+}
+
 function updateSendPreview() {
   const amount = Number($('sendAmount').value);
   const el = $('sendPreview');
@@ -1717,11 +1748,21 @@ $('sendBtn').addEventListener('click', () => {
   $('sendPreview').innerHTML = '';
   $('sendHint').className = 'hint';
   const s = state.balances || {};
-  const sendable = s.sendableBalance != null ? s.sendableBalance : s.balance;
-  $('sendHint').textContent = `Transferable: ${fmt(sendable)} $DLTX`
-    + (s.bonusLocked > 0 ? ` · ${fmt(s.bonusLocked)} welcome bonus locked (stake/use only)` : '')
-    + (s.timeLocked > 0 ? ` · ${fmt(s.timeLocked)} referral rewards locked for 6 months (use in-app only)` : '');
+  const sendable = currentSendable();
+  const u = s.transferUnlock || {};
+  const gated = u.active && !u.unlocked;
+  $('sendHint').textContent = gated
+    ? `Transfers unlock after claiming ${fmt(u.required)} Energy from delegation (${fmt(u.claimed || 0)} / ${fmt(u.required)} so far).`
+    : `Transferable: ${fmt(sendable)} $DLTX`
+      + (s.bonusLocked > 0 && s.liquidLocked > 0 ? ` · ${fmt(Math.min(s.bonusLocked, s.liquidLocked))} welcome bonus locked (stake/use only)` : '')
+      + (s.timeLocked > 0 ? ` · ${fmt(s.timeLocked)} referral rewards locked for 6 months (use in-app only)` : '')
+      + (s.p2pLocked > 0 ? ` · ${fmt(s.p2pLocked)} reserved in P2P escrow` : '');
   $('sendModal').hidden = false;
+});
+$('sendMaxBtn')?.addEventListener('click', () => {
+  const amt = maxSendable(currentSendable());
+  $('sendAmount').value = amt > 0 ? String(amt) : '';
+  updateSendPreview();
 });
 $('receiveBtn').addEventListener('click', () => {
   if (!state.address) return;
@@ -1757,6 +1798,9 @@ $('confirmSend').addEventListener('click', async () => {
   } catch (e) {
     hint.textContent = e.message;
     hint.classList.add('error');
+    // A refused/duplicate/failed transfer never moved funds — refresh so the
+    // shown balance is the server's truth and the Max button is accurate.
+    loadWallet().catch(() => {});
   } finally {
     $('confirmSend').disabled = false;
   }

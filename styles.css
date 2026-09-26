@@ -309,6 +309,11 @@ input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px
   font-weight: 800;
   color: #ffffff;
 }
+.bal-col .bal-sub {
+  font-size: 10px;
+  line-height: 1.2;
+  color: rgba(255,255,255,.7);
+}
 
 /* Action buttons & Faucet card */
 .action-row {

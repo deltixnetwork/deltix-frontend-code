@@ -113,6 +113,7 @@
               <img src="assets/icon-liquid-drop.svg" class="bal-3d-icon" alt="Liquid"/>
               <span class="muted">Liquid</span>
               <b id="liquidBalance">0</b>
+              <small class="bal-sub" id="liquidLockedNote" hidden></small>
             </div>
             <div class="bal-col">
               <img src="assets/icon-staked-coins.svg" class="bal-3d-icon" alt="Staked"/>
@@ -1285,10 +1286,13 @@
       <label for="sendTo">Recipient address</label>
       <input id="sendTo" type="text" placeholder="0x…" autocomplete="off" spellcheck="false" />
       <label for="sendAmount">Amount ($DLTX)</label>
-      <input id="sendAmount" type="number" min="0" step="any" placeholder="0" />
+      <div class="bot-input-row">
+        <input id="sendAmount" type="number" min="0" step="any" placeholder="0" />
+        <button class="btn ghost" id="sendMaxBtn" type="button" title="Send everything transferable (fee included)">Max</button>
+      </div>
       <div class="supply-list" id="sendPreview"></div>
       <ul class="disclosure">
-        <li>Only liquid balance can be sent — staked $DLTX stays locked.</li>
+        <li>Only your <b>transferable</b> balance can be sent — staked $DLTX, the welcome bonus, time-locked referral rewards and P2P escrow stay locked.</li>
         <li>The base fee is burned permanently (whitepaper §12.4).</li>
         <li>Transfers are final. Verify the address before confirming.</li>
       </ul>
