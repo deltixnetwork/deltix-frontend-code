@@ -235,7 +235,7 @@
               <input id="p2pMyContact" type="text" maxlength="140" placeholder="+92 3xx xxxxxxx (required to trade)" />
               <button class="btn ghost" id="p2pMyContactSave">Save</button>
             </div>
-            <p class="hint">Required to post ads or trade. Shown to your trade partner and to moderators for every order — never in public listings.</p>
+            <p class="hint">Required to post ads or trade. Visible ONLY to Deltix moderators so they can reach you about an order — never to other traders and never in public listings.</p>
             <label for="p2pMyWallet" class="p2p-settings-gap">💵 USDT payout wallet <span class="pill" id="p2pMyWalletNet">BNB Chain · BEP-20</span></label>
             <p class="hint" id="p2pMyWalletCurrent">No payout address saved yet.</p>
             <div class="p2p-bid-row">
@@ -1143,8 +1143,7 @@
       </div>
       <label for="p2pCreateTerms">Terms (optional)</label>
       <input id="p2pCreateTerms" type="text" maxlength="200" placeholder="e.g. Payment within 30 minutes" />
-      <label for="p2pCreateContact">Contact (optional — phone / WhatsApp / Telegram)</label>
-      <input id="p2pCreateContact" type="text" maxlength="140" placeholder="e.g. +63 917… or @telegram — shown only inside your orders" />
+      <input id="p2pCreateContact" type="hidden" value="" />
       <div id="p2pPayoutWalletWrap">
         <label for="p2pPayoutWallet">Your USDT payout wallet (BEP-20)</label>
         <input id="p2pPayoutWallet" type="text" maxlength="64" placeholder="0x… (where the platform pays you)" />
@@ -1229,7 +1228,7 @@
         </div>
       </div>
       <h3 class="section-title">💬 Order chat</h3>
-      <p class="p2p-chat-note">🛡 Keep all trade communication in this chat — the history is your evidence if a dispute is opened. Deltix staff will never ask for your password or verification codes.</p>
+      <p class="p2p-chat-note">🛡 Keep ALL trade communication in this chat — it is your evidence if a dispute is opened. Phone numbers and messenger handles cannot be shared here; traders never see each other's numbers. Need help? Use the official Deltix support line above. Deltix staff will never ask for your password or verification codes.</p>
       <div id="p2pChatList" class="p2p-chat"></div>
       <div class="p2p-quickrow" id="p2pQuickReplies">
         <button class="p2p-qr">✅ I've paid</button>
@@ -1287,8 +1286,7 @@
       </div>
       <label for="p2pEditTerms">Terms (optional)</label>
       <input id="p2pEditTerms" type="text" maxlength="200" />
-      <label for="p2pEditContact">Contact for this ad (optional)</label>
-      <input id="p2pEditContact" type="text" maxlength="140" />
+      <input id="p2pEditContact" type="hidden" value="" />
       <p class="hint" id="p2pEditHint"></p>
       <div class="modal-actions">
         <button class="btn ghost" id="p2pEditCancel">Cancel</button>

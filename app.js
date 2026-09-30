@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.12.1';
+const APP_VERSION = '1.12.2';
 const $ = (id) => document.getElementById(id);
 
 // Stable per-phone identifier sent with every request (X-Device-Id) — the
@@ -4459,8 +4459,9 @@ async function openP2pOrder(id, { moderator = false } = {}) {
     if (o.role === 'moderator') {
       if (r.buyerContact) contactLines.push(`<span class="p2p-contact-line"><span class="p2p-contact-label">📞 Buyer</span><span class="p2p-contact-val">${p2pContactLink(r.buyerContact)}</span></span>`);
       if (r.sellerContact) contactLines.push(`<span class="p2p-contact-line"><span class="p2p-contact-label">📞 Seller</span><span class="p2p-contact-val">${p2pContactLink(r.sellerContact)}</span></span>`);
-    } else if (r.counterpartyContact) {
-      contactLines.push(`<span class="p2p-contact-line"><span class="p2p-contact-label">📞 ${o.role === 'buyer' ? 'Seller' : 'Buyer'} contact</span><span class="p2p-contact-val">${p2pContactLink(r.counterpartyContact)}</span></span>`);
+    } else {
+      // Traders never see each other's numbers — all contact goes through chat + support.
+      contactLines.push('<span class="p2p-contact-line"><span class="p2p-contact-label muted">🔒 Your trade partner\'s number is held by Deltix moderators only. Use the chat below; for help, contact support.</span></span>');
     }
     contactEl.hidden = contactLines.length === 0;
     contactEl.innerHTML = contactLines.join('');
