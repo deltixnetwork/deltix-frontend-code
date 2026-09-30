@@ -3809,6 +3809,14 @@ GAME_IMPL.flash = (mount, diff, finish, status) => {
 // registering them in INSTANT_GAMES with a matching backend config entry.
 
 const INSTANT_GAMES = {
+  wire: {
+    name: 'Deltix Energy Wire',
+    emoji: '◆',
+    cost: 1,
+    tagline: 'Time your HOLD at 5 checkpoints — collect early or push for ⚡8.',
+    accent: '#3b82f6',
+    render: renderWire,
+  },
   smash: {
     name: 'Smash the Diamond',
     emoji: '💎',
@@ -4600,6 +4608,344 @@ function renderWhichKey(mount, g) {
     instruction: 'Pick a key to try the chest 🧰', againText: 'Pick another key to try again',
   });
 }
+
+// ---- Game 13: Deltix Energy Wire (timing run; server owns entry/state/rewards) ----
+// The pulse is animated locally from the moment the server launches a segment;
+// the client judges the press against the checkpoint window and reports
+// hit/miss, while the server independently refuses presses that arrive before
+// the pulse could physically be there (and everything with value: entry,
+// banked reward, reconnects, daily limits).
+function renderWire(mount, g) {
+  const wrap = document.createElement('div');
+  wrap.className = 'instant-play wire-wrap';
+  wrap.innerHTML = `
+    <div class="wire-hud">
+      <span>Banked <b class="wire-banked">⚡0</b></span>
+      <span class="wire-next">Next ⚡1 · 1.0s window</span>
+      <span class="wire-rounds">—</span>
+    </div>
+    <div class="wire-stage">
+      <div class="wire-track">
+        <div class="wire-line"></div>
+        <div class="wire-line wire-line-lit"></div>
+        <div class="wire-node wire-start"><span>START</span></div>
+        ${[0, 1, 2, 3, 4].map((i) => `<div class="wire-node wire-cp" data-cp="${i}" style="left:${wireNodeLeft(i)}%"><span>◆</span><small></small></div>`).join('')}
+        <div class="wire-pulse"></div>
+      </div>
+      <div class="wire-msg" hidden></div>
+    </div>
+    <button class="btn primary ig-action wire-hold">⚡ START — ⚡${g.cost}</button>
+    <div class="wire-choices" hidden>
+      <button class="btn gold wire-collect">💰 COLLECT ⚡0</button>
+      <button class="btn primary wire-continue">▶ CONTINUE → ⚡0</button>
+    </div>
+    <div class="wire-broken" hidden>
+      <div class="wire-broken-title">⚠️ CIRCUIT BROKEN</div>
+      <div class="wire-broken-sub">Connection lost.</div>
+      <div class="wire-broken-actions">
+        <button class="btn primary wire-reconnect">🎬 WATCH AD TO RECONNECT</button>
+        <button class="btn ghost wire-end">END RUN</button>
+      </div>
+    </div>
+    <p class="wire-note">⚡${g.cost} to start · max ⚡8 per run · windows shrink 1.0s → 0.6s · <span class="wire-limits"></span></p>`;
+  mount.appendChild(wrap);
+
+  const $w = (s) => wrap.querySelector(s);
+  const pulse = $w('.wire-pulse');
+  const lit = $w('.wire-line-lit');
+  const holdBtn = $w('.wire-hold');
+  const choices = $w('.wire-choices');
+  const broken = $w('.wire-broken');
+  const msg = $w('.wire-msg');
+  const nodes = [...wrap.querySelectorAll('.wire-cp')];
+
+  let cfg = null;      // server config (travelMs, checkpoints, limits)
+  let run = null;      // server run snapshot
+  let phase = 'idle';  // idle | moving | awaiting | checkpoint | broken | done
+  let segStart = 0;    // performance.now() when the current segment launched
+  let raf = null;
+  let lateTimer = null;
+
+  function setPulse(pct) {
+    pulse.style.left = `${pct}%`;
+    lit.style.width = `${Math.max(0, pct - 4)}%`;
+  }
+  function showMsg(html, cls) {
+    msg.className = `wire-msg ${cls || ''}`;
+    msg.innerHTML = html;
+    msg.hidden = false;
+  }
+  function hud() {
+    $w('.wire-banked').textContent = `⚡${run ? run.banked : 0}`;
+    const cpIdx = run && ['active', 'checkpoint', 'broken'].includes(run.status) ? run.checkpoint : 0;
+    const nxt = cfg && cfg.checkpoints[cpIdx];
+    $w('.wire-next').textContent = nxt ? `Next ⚡${nxt.reward} · ${(nxt.windowMs / 1000).toFixed(1)}s window` : 'Wire complete';
+    if (cfg) {
+      $w('.wire-rounds').textContent = `${cfg.roundsLeft} round${cfg.roundsLeft === 1 ? '' : 's'} left today`;
+      $w('.wire-limits').textContent = `${cfg.maxRoundsPerDay} rounds/day · ⚡${cfg.dailyEnergyCap}/day from this game`;
+      nodes.forEach((n, i) => {
+        n.querySelector('small').textContent = `⚡${cfg.checkpoints[i].reward}`;
+        n.classList.toggle('done', Boolean(run) && i < run.checkpoint && run.status !== 'ended');
+        n.classList.toggle('next', Boolean(run) && i === run.checkpoint && ['active', 'checkpoint', 'broken'].includes(run.status));
+      });
+    }
+  }
+  function stopMotion() {
+    if (raf) cancelAnimationFrame(raf);
+    raf = null;
+    if (lateTimer) clearTimeout(lateTimer);
+    lateTimer = null;
+    holdBtn.classList.remove('hot');
+  }
+  function showPanels() {
+    choices.hidden = phase !== 'checkpoint';
+    broken.hidden = phase !== 'broken';
+    holdBtn.hidden = phase === 'checkpoint' || phase === 'broken';
+    if (phase === 'idle' || phase === 'done') {
+      holdBtn.disabled = false;
+      holdBtn.textContent = phase === 'done' ? `↻ PLAY AGAIN — ⚡${cfg ? cfg.entryCost : g.cost}` : `⚡ START — ⚡${cfg ? cfg.entryCost : g.cost}`;
+    } else if (phase === 'moving') {
+      holdBtn.disabled = false;
+      holdBtn.textContent = '✋ HOLD';
+    } else if (phase === 'awaiting') {
+      holdBtn.disabled = true;
+    }
+    if (phase === 'checkpoint' && run && cfg) {
+      const nxt = cfg.checkpoints[run.checkpoint];
+      $w('.wire-collect').textContent = `💰 COLLECT ⚡${run.banked}`;
+      $w('.wire-continue').textContent = nxt ? `▶ CONTINUE → ⚡${nxt.reward} (${(nxt.windowMs / 1000).toFixed(1)}s)` : '▶ CONTINUE';
+    }
+    if (phase === 'broken' && run) {
+      const left = run.reconnectsLeft;
+      const rb = $w('.wire-reconnect');
+      rb.disabled = left <= 0;
+      rb.textContent = left > 0 ? `🎬 WATCH AD TO RECONNECT (${left} left)` : 'No reconnects left this round';
+      $w('.wire-broken-sub').textContent = run.lastFail === 'early' ? 'Too early — connection lost.' : run.lastFail === 'late' ? 'Too late — connection lost.' : 'Connection lost.';
+    }
+  }
+
+  // Segment animation: START/previous node → next node over cfg.travelMs.
+  function launchSegment(fromServerIso) {
+    stopMotion();
+    msg.hidden = true;
+    phase = 'moving';
+    showPanels();
+    hud();
+    const cp = run.checkpoint;
+    const from = cp === 0 ? 4 : wireNodeLeft(cp - 1);
+    const to = wireNodeLeft(cp);
+    const win = cfg.checkpoints[cp].windowMs;
+    // Sync to the server launch time when it is recent (resume), else now.
+    const serverAge = fromServerIso ? Date.now() - new Date(fromServerIso).getTime() : 0;
+    segStart = performance.now() - Math.max(0, Math.min(serverAge, cfg.travelMs));
+    const tick = () => {
+      if (phase !== 'moving' || !wrap.isConnected) return;
+      const t = performance.now() - segStart;
+      const p = Math.min(1, t / cfg.travelMs);
+      setPulse(from + (to - from) * p);
+      const inWindow = Math.abs(t - cfg.travelMs) <= win / 2;
+      holdBtn.classList.toggle('hot', inWindow);
+      nodes[cp].classList.toggle('hot', inWindow);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    // Nobody pressed in time → the circuit breaks.
+    lateTimer = setTimeout(() => { if (phase === 'moving') fail('late'); }, Math.max(0, cfg.travelMs + win / 2 + 120 - (performance.now() - segStart)));
+  }
+
+  async function call(path, body) {
+    return api('POST', `/rewards/wire/${path}`, { runId: run ? run.id : undefined, ...(body || {}) });
+  }
+  function syncEnergy(energy) {
+    if (typeof energy === 'number') {
+      if (typeof state !== 'undefined' && state.energy) state.energy.energy = energy;
+      updateInstantBal();
+      if (window.renderEnergy) window.renderEnergy();
+    }
+  }
+  function applyRun(r) {
+    run = r.run || run;
+    if (typeof r.roundsLeft === 'number' && cfg) cfg.roundsLeft = r.roundsLeft;
+    syncEnergy(r.energy);
+  }
+
+  async function fail(reason) {
+    if (phase !== 'moving') return;
+    stopMotion();
+    nodes.forEach((n) => n.classList.remove('hot'));
+    phase = 'awaiting';
+    showPanels();
+    pulse.classList.add('zap');
+    try { ArcadeSound.lose(); } catch {}
+    try {
+      const r = await call('break', { reason });
+      applyRun(r);
+    } catch (e) { if (e.status !== 401) toast(e.message); }
+    setTimeout(() => pulse.classList.remove('zap'), 500);
+    phase = 'broken';
+    showMsg('⚠️ CIRCUIT BROKEN', 'bad');
+    showPanels();
+    hud();
+  }
+
+  async function press() {
+    if (phase === 'idle' || phase === 'done') return startRun();
+    if (phase !== 'moving') return;
+    const t = performance.now() - segStart;
+    const cp = run.checkpoint;
+    const win = cfg.checkpoints[cp].windowMs;
+    const outcome = Math.abs(t - cfg.travelMs) <= win / 2 ? 'hit' : 'miss';
+    stopMotion();
+    nodes.forEach((n) => n.classList.remove('hot'));
+    phase = 'awaiting';
+    showPanels();
+    try { ArcadeSound.tap(); } catch {}
+    let r;
+    try {
+      r = await call('hit', { outcome });
+    } catch (e) {
+      if (e.status !== 401) toast(e.message);
+      // Server refused (no run / stale) — reload the truth.
+      return load();
+    }
+    applyRun(r);
+    if (r.result === 'broken') {
+      pulse.classList.add('zap');
+      try { ArcadeSound.lose(); } catch {}
+      setTimeout(() => pulse.classList.remove('zap'), 500);
+      phase = 'broken';
+      showMsg('⚠️ CIRCUIT BROKEN', 'bad');
+    } else if (r.result === 'checkpoint') {
+      setPulse(wireNodeLeft(cp));
+      nodes[cp].classList.add('done');
+      burstShards($w('.wire-track'), g.accent, 10);
+      try { ArcadeSound.coin?.(); } catch {}
+      phase = 'checkpoint';
+      showMsg(`✅ CONNECTED · ⚡${r.banked} secured`, 'ok');
+    } else if (r.result === 'complete') {
+      setPulse(wireNodeLeft(4));
+      nodes.forEach((n) => n.classList.add('done'));
+      burstShards($w('.wire-track'), '#fbbf24', 18);
+      phase = 'done';
+      showMsg(`◆ PERFECT CONNECTION ◆<br>⚡ +${r.energyAwarded} ENERGY`, 'ok');
+      (window.celebrate || toast)({ amount: r.energyAwarded, unit: '⚡ Energy', title: '◆ Perfect Connection ◆', subtitle: r.capped ? `Daily Energy Wire cap reached — ${r.energyAwarded} of ${r.banked} paid.` : `You now have ${r.energy} ⚡ total.`, icon: '◆', duration: 2600 });
+      if (cfg) cfg.roundsLeft = Math.max(0, cfg.roundsLeft);
+    }
+    showPanels();
+    hud();
+  }
+
+  async function startRun() {
+    if (phase !== 'idle' && phase !== 'done') return;
+    if (cfg && cfg.roundsLeft <= 0) { toast(`Daily limit reached — ${cfg.maxRoundsPerDay} rounds per day. Come back tomorrow!`); return; }
+    const have = instantEnergy();
+    if (have < (cfg ? cfg.entryCost : g.cost)) { toast(`Not enough Energy — ⚡${cfg ? cfg.entryCost : g.cost} needed to start.`); return; }
+    phase = 'awaiting';
+    showPanels();
+    nodes.forEach((n) => n.classList.remove('done', 'hot', 'next'));
+    setPulse(4);
+    try {
+      const r = await api('POST', '/rewards/wire/start', {});
+      applyRun(r);
+      if (!r.resumed && cfg) cfg.roundsLeft = typeof r.roundsLeft === 'number' ? r.roundsLeft : Math.max(0, cfg.roundsLeft - 1);
+      resumeFromRun();
+    } catch (e) {
+      phase = 'idle';
+      showPanels();
+      if (e.status !== 401) toast(e.message);
+    }
+  }
+
+  // Put the UI wherever the server says the run is.
+  function resumeFromRun() {
+    if (!run) { phase = 'idle'; showPanels(); hud(); return; }
+    if (run.status === 'active') {
+      const age = Date.now() - new Date(run.segmentStartedAt).getTime();
+      const win = cfg.checkpoints[run.checkpoint].windowMs;
+      if (age > cfg.travelMs + win / 2) { phase = 'moving'; fail('late'); return; }
+      launchSegment(run.segmentStartedAt);
+    } else if (run.status === 'checkpoint') {
+      setPulse(wireNodeLeft(run.checkpoint - 1));
+      phase = 'checkpoint';
+      showMsg(`✅ CONNECTED · ⚡${run.banked} secured`, 'ok');
+      showPanels(); hud();
+    } else if (run.status === 'broken') {
+      setPulse(run.checkpoint === 0 ? 4 : wireNodeLeft(run.checkpoint - 1));
+      phase = 'broken';
+      showMsg('⚠️ CIRCUIT BROKEN', 'bad');
+      showPanels(); hud();
+    } else {
+      phase = 'idle'; showPanels(); hud();
+    }
+  }
+
+  async function load() {
+    stopMotion();
+    try {
+      const s = await api('GET', '/rewards/wire');
+      cfg = s;
+      run = s.run;
+      syncEnergy(s.energy);
+      if (!s.enabled) { showMsg('Energy Wire is paused right now.', 'bad'); holdBtn.disabled = true; return; }
+      resumeFromRun();
+    } catch (e) {
+      if (e.status !== 401) showMsg(e.message, 'bad');
+    }
+  }
+
+  holdBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); press(); });
+  $w('.wire-collect').addEventListener('click', async () => {
+    if (phase !== 'checkpoint') return;
+    phase = 'awaiting'; showPanels();
+    try {
+      const r = await call('collect');
+      applyRun(r);
+      phase = 'done';
+      showMsg(`💰 COLLECTED ⚡${r.energyAwarded}`, 'ok');
+      (window.celebrate || toast)({ amount: r.energyAwarded, unit: '⚡ Energy', title: 'Energy collected!', subtitle: r.capped ? `Daily Energy Wire cap reached — ${r.energyAwarded} of ${r.banked} paid.` : `You now have ${r.energy} ⚡ total.`, icon: '⚡', duration: 2400 });
+    } catch (e) { if (e.status !== 401) toast(e.message); return load(); }
+    showPanels(); hud();
+  });
+  $w('.wire-continue').addEventListener('click', async () => {
+    if (phase !== 'checkpoint') return;
+    phase = 'awaiting'; showPanels();
+    try {
+      const r = await call('continue');
+      applyRun(r);
+      launchSegment(null);
+    } catch (e) { if (e.status !== 401) toast(e.message); return load(); }
+  });
+  $w('.wire-reconnect').addEventListener('click', async () => {
+    if (phase !== 'broken' || !run || run.reconnectsLeft <= 0) return;
+    const rb = $w('.wire-reconnect');
+    rb.disabled = true;
+    const watched = typeof playRewardedAd === 'function' ? await playRewardedAd() : false;
+    if (!watched) { rb.disabled = false; toast('Ad not completed — the circuit stays broken.'); return; }
+    try {
+      const r = await call('reconnect');
+      applyRun(r);
+      showMsg('⚡ CONNECTION RESTORED', 'ok');
+      setTimeout(() => { if (wrap.isConnected && run && run.status === 'active') launchSegment(null); }, 700);
+    } catch (e) { rb.disabled = false; if (e.status !== 401) toast(e.message); return load(); }
+  });
+  $w('.wire-end').addEventListener('click', async () => {
+    if (phase !== 'broken') return;
+    phase = 'awaiting'; showPanels();
+    try {
+      const r = await call('end');
+      applyRun(r);
+      run = null;
+      phase = 'idle';
+      nodes.forEach((n) => n.classList.remove('done', 'hot', 'next'));
+      setPulse(4);
+      showMsg(r.forfeited > 0 ? `Run ended — ⚡${r.forfeited} lost.` : 'Run ended.', 'muted');
+    } catch (e) { if (e.status !== 401) toast(e.message); return load(); }
+    showPanels(); hud();
+  });
+
+  load();
+}
+function wireNodeLeft(i) { return 4 + (i + 1) * 18.4; }
 
 // ---- Game 12: Deltix Egg (choose one, tap 3 times to crack) ----
 function renderEgg(mount, g) {
