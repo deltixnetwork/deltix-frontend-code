@@ -2903,6 +2903,10 @@ html[data-dark] .ed-stat b, html[data-dark] .ed-unlock-progress { color: var(--t
 .p2p-dim { opacity: .55; cursor: default; }
 .p2p-timeline { font-size: 11px; font-weight: 600; text-align: right; line-height: 1.5; }
 .p2p-minmax { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.p2p-cta.mine { background: rgba(128,128,148,.18); color: inherit; }
+.p2p-escrow-row { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; opacity: .9; margin: 4px 0; }
+.p2p-escrow-row b { font-weight: 800; }
+.p2p-more { width: 100%; margin-top: 6px; }
 
 /* Professional order chat */
 .p2p-chat-note { font-size: 10.5px; opacity: .65; margin: 2px 0 6px; line-height: 1.45; }

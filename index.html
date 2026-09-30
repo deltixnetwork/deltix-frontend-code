@@ -232,10 +232,10 @@
             <h4 class="p2p-settings-title">⚙️ P2P settings</h4>
             <label for="p2pMyContact">📞 My contact for trades (phone / WhatsApp / Telegram)</label>
             <div class="p2p-bid-row">
-              <input id="p2pMyContact" type="text" maxlength="140" placeholder="+92 3xx xxxxxxx or @telegram" />
+              <input id="p2pMyContact" type="text" maxlength="140" placeholder="+92 3xx xxxxxxx (required to trade)" />
               <button class="btn ghost" id="p2pMyContactSave">Save</button>
             </div>
-            <p class="hint">Shown only to people you trade with — never in public listings.</p>
+            <p class="hint">Required to post ads or trade. Shown to your trade partner and to moderators for every order — never in public listings.</p>
             <label for="p2pMyWallet" class="p2p-settings-gap">💵 USDT payout wallet <span class="pill" id="p2pMyWalletNet">BNB Chain · BEP-20</span></label>
             <p class="hint" id="p2pMyWalletCurrent">No payout address saved yet.</p>
             <div class="p2p-bid-row">
@@ -243,6 +243,17 @@
               <button class="btn ghost" id="p2pMyWalletSave">Update</button>
             </div>
             <p class="hint">The platform pays your USDT here after release. Trades already open keep the address they started with. Never enter a seed phrase or private key.</p>
+            <label class="p2p-settings-gap">🔒 Locked in P2P escrow</label>
+            <div class="p2p-escrow-row" id="p2pEscrowRow"><span class="muted">Loading…</span></div>
+            <div class="p2p-bid-row"><button class="btn ghost" id="p2pEscrowRelease" hidden>Release to transferable</button></div>
+            <p class="hint">DLTX backing an open trade stays locked until that trade completes or is cancelled. Anything left over from a finished trade is released here — straight back to your transferable balance.</p>
+            <label class="p2p-settings-gap">◆ DLTX official wallet <span class="pill">Deltix Network</span></label>
+            <div class="p2p-deposit-row">
+              <code id="p2pDltxOfficial" class="p2p-addr"></code>
+              <button class="btn ghost" id="p2pDltxCopy">Copy</button>
+              <button class="btn ghost" id="p2pDltxSend">Send</button>
+            </div>
+            <p class="hint">The official Deltix P2P wallet. Only send DLTX here when a moderator asks you to inside an order — never to any other address claiming to be Deltix.</p>
             <p class="hint" id="p2pMyCode"></p>
           </div>
         </div>
@@ -1205,6 +1216,13 @@
           <button class="btn ghost" id="p2pModToBuyer">Release to buyer</button>
           <button class="btn ghost" id="p2pModEscalate">Escalate</button>
         </div>
+        <h4 class="p2p-modsearch-h">Order controls</h4>
+        <div class="modal-actions p2p-mod-actions" id="p2pModControls">
+          <button class="btn ghost p2p-danger-t" id="p2pModCancel">Cancel order</button>
+          <button class="btn ghost" id="p2pModComplete">Order completed</button>
+          <button class="btn ghost" id="p2pModReleaseLock">Release locked coins</button>
+        </div>
+        <p class="hint" id="p2pModEscrowHint"></p>
         <div class="p2p-bid-row" id="p2pPayoutRow" hidden>
           <input id="p2pPayoutHash" type="text" maxlength="128" placeholder="USDT payout tx hash (0x…)" />
           <button class="btn primary" id="p2pPayoutBtn">Record payout</button>

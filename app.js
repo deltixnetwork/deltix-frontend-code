@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.12.0';
+const APP_VERSION = '1.12.1';
 const $ = (id) => document.getElementById(id);
 
 // Stable per-phone identifier sent with every request (X-Device-Id) — the
@@ -3810,7 +3810,49 @@ async function loadP2pWalletSettings() {
     const codeEl = $('p2pMyCode');
     if (codeEl && state.refCode) codeEl.innerHTML = `🆔 Your public trader ID: <b>${escapeHtml(state.refCode)}</b> — shown on your ads so partners and moderators can identify you.`;
   } catch { /* keep last state */ }
+  loadP2pEscrow();
+  const dltx = $('p2pDltxOfficial');
+  if (dltx) dltx.textContent = p2p.status?.platformDltxAddress || '';
 }
+
+// Escrow position: what is locked vs what open trades need; the difference is
+// releasable (server decides — coins backing a live trade are never freed).
+async function loadP2pEscrow() {
+  const row = $('p2pEscrowRow');
+  if (!row) return;
+  try {
+    const e = await api('GET', '/p2p/escrow');
+    p2p.escrow = e;
+    row.innerHTML = `<span>Locked <b>${fmt(e.locked)} DLTX</b></span><span>Backing <b>${e.openOrders} open trade${e.openOrders === 1 ? '' : 's'} (${fmt(e.obligations)})</b></span><span class="${e.releasable > 0 ? 'p2p-green-t' : ''}">Releasable <b>${fmt(e.releasable)} DLTX</b></span>`;
+    const btn = $('p2pEscrowRelease');
+    btn.hidden = !(e.locked > 0);
+    btn.disabled = !(e.releasable > 0);
+    btn.textContent = e.releasable > 0 ? `Release ${fmt(e.releasable)} DLTX to transferable` : 'Nothing to release';
+  } catch (err) { row.innerHTML = `<span class="muted">${escapeHtml(err.message)}</span>`; }
+}
+$('p2pEscrowRelease')?.addEventListener('click', async () => {
+  const e = p2p.escrow;
+  if (!e || !(e.releasable > 0)) return;
+  const okGo = await askConfirm({ title: 'Release locked coins?', message: 'Returns DLTX left over from finished trades to your transferable balance. Coins backing open trades stay locked.', rows: [['Release', `${fmt(e.releasable)} DLTX`], ['Stays locked', `${fmt(e.obligations)} DLTX`]], confirmText: 'Release' });
+  if (!okGo) return;
+  try {
+    const r = await api('POST', '/p2p/escrow/release', {});
+    toast(r.message, { tone: r.released > 0 ? 'success' : 'info', title: r.released > 0 ? 'Released' : undefined });
+    loadP2pEscrow();
+    loadWallet();
+  } catch (err) { toast(err.message, { tone: 'error' }); }
+});
+$('p2pDltxCopy')?.addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('p2pDltxOfficial').textContent); toast('Official DLTX wallet address copied', { tone: 'success' }); }
+  catch { toast('Copy failed — long-press the address instead', { tone: 'error' }); }
+});
+$('p2pDltxSend')?.addEventListener('click', () => {
+  const addr = $('p2pDltxOfficial').textContent.trim();
+  if (!addr) return;
+  $('sendBtn').click();
+  $('sendTo').value = addr;
+  $('sendHint').textContent = `Sending to the OFFICIAL Deltix P2P wallet · ${$('sendHint').textContent}`;
+});
 
 $('p2pMyWalletSave')?.addEventListener('click', async () => {
   const input = $('p2pMyWallet');
@@ -3866,7 +3908,7 @@ async function renderP2pView() {
           <div class="p2p-adv-substats">${t ? `${t.completedTrades} trades · ${t.completionRate}% completion` : ''}${t?.referralCode ? ` · ${p2pCodeChip(t.referralCode, side === 'sell' ? 'Seller' : 'Buyer')}` : ''}</div>
           <div class="p2p-adv-mid">
             <div class="p2p-adv-price">${o.priceUsdt} <small>USDT</small></div>
-            <button class="p2p-cta ${p2p.view}" data-offer-open="${o.id}">${cta} DLTX</button>
+            ${o.mine ? `<button class="p2p-cta mine" data-manage="${o.id}">Manage</button>` : `<button class="p2p-cta ${p2p.view}" data-offer-open="${o.id}">${cta} DLTX</button>`}
           </div>
           <div class="p2p-adv-meta">
             <span>Available <b>${fmt(o.remainingDltx)} DLTX</b></span>
@@ -3881,15 +3923,17 @@ async function renderP2pView() {
         }).join('');
       list.querySelectorAll('[data-offer-open]').forEach((el) =>
         el.addEventListener('click', (e) => { e.stopPropagation(); openP2pOffer(el.dataset.offerOpen); }));
+      list.querySelectorAll('[data-manage]').forEach((el) =>
+        el.addEventListener('click', (e) => { e.stopPropagation(); p2p.view = 'mine'; renderP2pView(); }));
       list.querySelectorAll('.p2p-adv').forEach((el) =>
         el.addEventListener('click', () => openP2pOffer(el.dataset.offer)));
       list.querySelectorAll('[data-trader]').forEach((el) =>
         el.addEventListener('click', (e) => { e.stopPropagation(); if (el.dataset.trader) openP2pTrader(el.dataset.trader); }));
     } else if (p2p.view === 'orders') {
-      const r = await api('GET', '/p2p/orders');
+      const r = await api('GET', '/p2p/orders?limit=50');
       const orders = r.orders || [];
       if (!orders.length) { list.innerHTML = '<p class="muted center">No P2P orders yet.</p>'; return; }
-      list.innerHTML = orders.map((o) => `
+      const orderCard = (o) => `
         <div class="card p2p-offer-card" data-order="${o.id}">
           <div class="p2p-offer-top">
             <b>#${o.id} · ${o.role === 'buyer' ? 'Buying' : 'Selling'} ${fmt(o.amountDltx)} DLTX</b>
@@ -3897,9 +3941,25 @@ async function renderP2pView() {
           </div>
           <div class="muted small-note">${o.priceUsdt} USDT/DLTX · total ${fmt(o.totalUsdt)} USDT${o.simulation ? ' · SIMULATION' : ''}</div>
           <div class="muted small-note">${p2pCodeChip(o.role === 'buyer' ? o.sellerCode : o.buyerCode, o.role === 'buyer' ? 'Seller' : 'Buyer')} · ${p2pWhen(o.createdAt)}</div>
-        </div>`).join('');
-      list.querySelectorAll('[data-order]').forEach((el) =>
+        </div>`;
+      list.innerHTML = `<div class="p2p-listhead"><span>${r.total ?? orders.length} order${(r.total ?? orders.length) === 1 ? '' : 's'} · full history kept</span><span></span></div>` +
+        `<div id="p2pOrderList">${orders.map(orderCard).join('')}</div>` +
+        (r.hasMore ? `<button class="btn ghost p2p-more" id="p2pOrdersMore" data-before="${r.nextBefore}">Load older orders</button>` : '');
+      const bind = (root) => root.querySelectorAll('[data-order]').forEach((el) =>
         el.addEventListener('click', () => openP2pOrder(el.dataset.order)));
+      bind(list);
+      $('p2pOrdersMore')?.addEventListener('click', async () => {
+        const btn = $('p2pOrdersMore');
+        btn.disabled = true;
+        try {
+          const more = await api('GET', `/p2p/orders?limit=50&before=${btn.dataset.before}`);
+          const frag = document.createElement('div');
+          frag.innerHTML = (more.orders || []).map(orderCard).join('');
+          bind(frag);
+          $('p2pOrderList').append(...frag.childNodes);
+          if (more.hasMore) { btn.dataset.before = more.nextBefore; btn.disabled = false; } else btn.remove();
+        } catch (e) { btn.disabled = false; toast(e.message, { tone: 'error' }); }
+      });
     } else if (p2p.view === 'mine') {
       await renderP2pMyAds(list);
     } else if (p2p.view === 'mod') {
@@ -4055,7 +4115,7 @@ $('p2pMyContactSave')?.addEventListener('click', async () => {
   try {
     const r = await api('POST', '/p2p/contact', { contact: $('p2pMyContact').value.trim() });
     if (p2p.status) p2p.status.myContact = r.contact;
-    toast(r.contact ? 'Contact saved — your trade partners can now call you' : 'Contact removed', { tone: 'success' });
+    toast(r.contact ? 'Contact saved — your trade partners and moderators can now reach you' : 'Contact removed — you must add one again before trading', { tone: r.contact ? 'success' : 'info' });
   } catch (e) { toast(e.message, { tone: 'error' }); }
 });
 
@@ -4437,7 +4497,19 @@ async function openP2pOrder(id, { moderator = false } = {}) {
           <div class="row"><span>Timeline</span><b class="p2p-timeline">created ${p2pWhen(m.timeline.createdAt)}${m.timeline.paymentMarkedAt ? ` · paid ${p2pWhen(m.timeline.paymentMarkedAt)}` : ` · pay by ${p2pWhen(m.timeline.paymentDeadlineAt)}`}${m.timeline.usdtVerifiedAt ? ` · verified ${p2pWhen(m.timeline.usdtVerifiedAt)}` : ''}${m.timeline.disputedAt ? ` · disputed ${p2pWhen(m.timeline.disputedAt)}` : ''}${m.timeline.closedAt ? ` · closed ${p2pWhen(m.timeline.closedAt)}` : ''}</b></div>
           <div class="row"><span>USDT tx</span><b>${m.usdt.txHash ? m.usdt.txHash.slice(0, 18) + '…' : '—'}</b></div>
           <div class="row"><span>Payout due</span><b>${fmt(m.usdt.sellerPayoutDue)} USDT → ${m.usdt.sellerPayoutAddress ? escapeHtml(m.usdt.sellerPayoutAddress.slice(0, 12)) + '…' : 'no wallet!'} ${m.usdt.sellerPayoutAddressSource === 'snapshot' ? '🔒 locked at trade time' : (m.usdt.sellerPayoutAddressSource === 'live' ? '⚠️ live wallet (legacy order)' : '')}</b></div>
-          ${m.usdt.sellerCurrentAddress && m.usdt.sellerCurrentAddress !== m.usdt.sellerPayoutAddress ? `<div class="row"><span>⚠️ Seller changed wallet</span><b>now ${escapeHtml(m.usdt.sellerCurrentAddress.slice(0, 12))}… — pay the LOCKED address above</b></div>` : ''}`;
+          ${m.usdt.sellerCurrentAddress && m.usdt.sellerCurrentAddress !== m.usdt.sellerPayoutAddress ? `<div class="row"><span>⚠️ Seller changed wallet</span><b>now ${escapeHtml(m.usdt.sellerCurrentAddress.slice(0, 12))}… — pay the LOCKED address above</b></div>` : ''}
+          <div class="row"><span>📞 Buyer contact</span><b>${m.contacts?.buyer ? p2pContactLink(m.contacts.buyer) : '<span class="p2p-chip p2p-chip-bad">missing</span>'}</b></div>
+          <div class="row"><span>📞 Seller contact</span><b>${m.contacts?.seller ? p2pContactLink(m.contacts.seller) : '<span class="p2p-chip p2p-chip-bad">missing</span>'}</b></div>`;
+        $('p2pModInfo').querySelectorAll('[data-call]').forEach((btn) =>
+          btn.addEventListener('click', () => { window.open(`tel:${btn.dataset.call}`); }));
+        p2p.modControls = m.controls || {};
+        p2p.modOrderVerified = Boolean(m.order.usdtVerified);
+        $('p2pModCancel').hidden = !m.controls?.canCancel;
+        $('p2pModComplete').hidden = !m.controls?.canComplete;
+        $('p2pModReleaseLock').hidden = !m.controls?.canReleaseLock;
+        $('p2pModControls').hidden = !(m.controls?.canCancel || m.controls?.canComplete || m.controls?.canReleaseLock);
+        const se = m.sellerEscrow || {};
+        $('p2pModEscrowHint').textContent = `Seller escrow: ${fmt(se.locked || 0)} locked · ${fmt(se.obligations || 0)} backing ${se.openOrders || 0} open trade(s) · ${fmt(se.releasable || 0)} releasable`;
         $('p2pModBlockers').innerHTML = m.releaseBlockers.length
           ? '<ul class="disclosure">' + m.releaseBlockers.map((b) => `<li>⛔ ${escapeHtml(b)}</li>`).join('') + '</ul>'
           : '<p class="hint">✅ All release conditions satisfied.</p>';
@@ -4691,6 +4763,57 @@ async function p2pResolve(resolution) {
 $('p2pModRefund')?.addEventListener('click', () => p2pResolve('refund_to_seller'));
 $('p2pModToBuyer')?.addEventListener('click', () => p2pResolve('release_to_buyer'));
 $('p2pModEscalate')?.addEventListener('click', () => p2pResolve('escalate'));
+
+// ── Moderator order controls: Cancel / Order completed / Release locked coins ──
+$('p2pModCancel')?.addEventListener('click', async () => {
+  if (!p2p.order) return;
+  const reason = $('p2pModReason').value.trim();
+  if (reason.length < 5) { toast('Enter a reason first (5+ characters)', { tone: 'error' }); return; }
+  const verified = p2p.modOrderVerified;
+  const okGo = await askConfirm({
+    title: 'Cancel this order?',
+    message: verified
+      ? 'The buyer\'s USDT was VERIFIED at the platform wallet. Cancelling returns the DLTX to the seller — you must refund the buyer\'s USDT from the platform wallet yourself.'
+      : 'The escrowed DLTX returns to the seller and the ad amount is restored (ad stays paused if it had filled).',
+    rows: [['Order', `#${p2p.order.id}`], ['Escrow', `${fmt(p2p.order.amountDltx)} DLTX → seller`], ['Reason', reason.slice(0, 60)]],
+    confirmText: verified ? 'I will refund the buyer — cancel' : 'Cancel order',
+    danger: true,
+  });
+  if (!okGo) return;
+  try {
+    const r = await api('POST', `/p2p/moderation/orders/${p2p.order.id}/cancel`, { reason, acknowledgeUsdtRefund: verified });
+    toast(r.code === 'ALREADY_CANCELLED' ? 'Order was already cancelled' : 'Order cancelled — escrow returned to the seller', { tone: 'success' });
+    openP2pOrder(p2p.order.id, { moderator: true });
+  } catch (e) { toast(e.message, { tone: 'error' }); }
+});
+$('p2pModComplete')?.addEventListener('click', async () => {
+  if (!p2p.order) return;
+  const reason = $('p2pModReason').value.trim();
+  if (reason.length < 5) { toast('Enter a reason first (e.g. how the payment was confirmed)', { tone: 'error' }); return; }
+  const okGo = await askConfirm({
+    title: 'Mark order COMPLETED?',
+    message: 'Releases the escrowed DLTX to the buyer WITHOUT on-chain USDT verification. Only do this after confirming the buyer\'s payment yourself.',
+    rows: [['Order', `#${p2p.order.id}`], ['Buyer gets', `${fmt(p2p.order.buyerReceivesDltx)} DLTX`], ['Reason', reason.slice(0, 60)]],
+    confirmText: 'COMPLETE ORDER',
+    danger: true,
+  });
+  if (!okGo) return;
+  try {
+    const r = await api('POST', `/p2p/moderation/orders/${p2p.order.id}/complete`, { reason, confirm: 'COMPLETE' });
+    toast(r.code === 'ALREADY_PROCESSED' ? 'Order was already completed' : 'Order completed — DLTX released to the buyer. Now pay the seller and record the payout hash.', { tone: 'success', title: 'Completed' });
+    openP2pOrder(p2p.order.id, { moderator: true });
+  } catch (e) { toast(e.message, { tone: 'error' }); }
+});
+$('p2pModReleaseLock')?.addEventListener('click', async () => {
+  if (!p2p.order) return;
+  const okGo = await askConfirm({ title: 'Release seller\'s locked coins?', message: 'Frees only DLTX that no open trade requires (left over from finished trades). Coins backing live trades are never touched.', confirmText: 'Release' });
+  if (!okGo) return;
+  try {
+    const r = await api('POST', `/p2p/moderation/orders/${p2p.order.id}/release-lock`, {});
+    toast(r.message, { tone: r.released > 0 ? 'success' : 'info' });
+    openP2pOrder(p2p.order.id, { moderator: true });
+  } catch (e) { toast(e.message, { tone: 'error' }); }
+});
 $('p2pPayoutBtn')?.addEventListener('click', async () => {
   if (!p2p.order) return;
   try {
