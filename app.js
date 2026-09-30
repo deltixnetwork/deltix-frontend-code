@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.11.4';
+const APP_VERSION = '1.12.0';
 const $ = (id) => document.getElementById(id);
 
 // Stable per-phone identifier sent with every request (X-Device-Id) — the
@@ -163,6 +163,7 @@ async function api(method, path, body, { retries = method === 'GET' ? 3 : 0 } = 
     err.status = res.status;
     err.category = classifyHttp(res.status);
     err.ref = (json && json.ref) || requestId;
+    err.code = (json && json.code) || null;
     err.data = json;
     throw err;
   }
@@ -462,7 +463,7 @@ function initPullToRefresh() {
     if (!isMain || !state.token || isRefreshing) return false;
 
     // Must not have any modal/overlay open
-    const overlays = ['gameModal', 'instantModal', 'shopModal', 'puzzleModal', 'dbrowser', 'explorer', 'dappPage', 'stakeModal', 'edDelegateModal', 'edUndelegateModal', 'sendModal', 'deleteModal', 'swapModal', 'dappModal', 'p2pCreateModal', 'p2pOfferModal', 'p2pOrderModal', 'p2pTraderModal', 'p2pImgModal'];
+    const overlays = ['gameModal', 'instantModal', 'shopModal', 'puzzleModal', 'dbrowser', 'explorer', 'dappPage', 'stakeModal', 'edDelegateModal', 'edUndelegateModal', 'sendModal', 'deleteModal', 'swapModal', 'dappModal', 'p2pCreateModal', 'p2pOfferModal', 'p2pOrderModal', 'p2pTraderModal', 'p2pImgModal', 'p2pEditModal'];
     for (const id of overlays) {
       const el = $(id);
       if (el && !el.hidden) return false;
@@ -3742,6 +3743,7 @@ async function loadP2p() {
   }
   const myC = $('p2pMyContact');
   if (myC && !myC.matches(':focus')) myC.value = p2p.status?.myContact || '';
+  loadP2pWalletSettings();
   // Moderator probe: the queue answers 200 only for moderator roles.
   try {
     const q = await api('GET', '/p2p/moderation/queue');
@@ -3758,6 +3760,7 @@ async function loadP2p() {
 function p2pStatusChip(s) {
   const map = {
     awaiting_usdt: ['Pay now', 'warn'],
+    dltx_locked: ['Reserved', 'warn'],
     usdt_submitted: ['Verifying', 'warn'],
     usdt_verifying: ['Verifying', 'warn'],
     usdt_verified: ['Verified', 'ok'],
@@ -3769,10 +3772,66 @@ function p2pStatusChip(s) {
     disputed: ['Disputed', 'bad'],
     escalated: ['Escalated', 'bad'],
     security_hold: ['Security hold', 'bad'],
+    // Ad lifecycle
+    active: ['Active', 'ok'],
+    paused: ['Paused', 'warn'],
+    filled: ['Completed', 'ok'],
+    expired: ['Expired', 'muted'],
   };
   const [label, tone] = map[s] || [s.replace(/_/g, ' '), 'muted'];
   return `<span class="p2p-chip p2p-chip-${tone}">${label}</span>`;
 }
+
+// Public P2P identifier chip ("Seller: DLTX-XXXXXX") — never email/IP.
+function p2pCodeChip(code, label) {
+  if (!code) return '';
+  return `<span class="p2p-code" title="Deltix ID">${label ? escapeHtml(label) + ': ' : ''}<b>${escapeHtml(code)}</b></span>`;
+}
+function p2pWhen(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+// ── P2P settings: USDT payout wallet (address only; trades keep their snapshot) ──
+async function loadP2pWalletSettings() {
+  const cur = $('p2pMyWalletCurrent');
+  if (!cur) return;
+  try {
+    const r = await api('GET', '/p2p/wallets');
+    const net = (r.networks || [])[0] || { id: 'bep20', label: 'USDT — BNB Chain (BEP-20)' };
+    p2p.walletNetwork = net.id;
+    $('p2pMyWalletNet').textContent = net.label.replace(/^USDT\s*[—-]\s*/, '');
+    const w = (r.wallets || []).find((x) => x.network === net.id);
+    p2p.myWallet = w ? w.address : null;
+    cur.innerHTML = w
+      ? `Current: <code class="p2p-addr-inline">${escapeHtml(w.address)}</code> <span class="muted">· updated ${p2pWhen(w.updatedAt)}</span>`
+      : 'No payout address saved yet — required before you can post a SELL ad.';
+    const codeEl = $('p2pMyCode');
+    if (codeEl && state.refCode) codeEl.innerHTML = `🆔 Your public trader ID: <b>${escapeHtml(state.refCode)}</b> — shown on your ads so partners and moderators can identify you.`;
+  } catch { /* keep last state */ }
+}
+
+$('p2pMyWalletSave')?.addEventListener('click', async () => {
+  const input = $('p2pMyWallet');
+  const address = input.value.trim();
+  if (!address) { toast('Enter your public USDT receiving address', { tone: 'error' }); return; }
+  const net = p2p.walletNetwork || 'bep20';
+  const label = $('p2pMyWalletNet').textContent;
+  const okGo = await askConfirm({
+    title: p2p.myWallet ? 'Change USDT payout address?' : 'Save USDT payout address?',
+    message: p2p.myWallet ? 'Open trades keep the address they started with. New trades will pay to the new address.' : 'The platform pays your USDT here after each release.',
+    rows: [['Network', label], ['Address', address.length > 20 ? address.slice(0, 10) + '…' + address.slice(-8) : address]],
+    confirmText: 'Confirm network & save',
+  });
+  if (!okGo) return;
+  try {
+    const r = await api('POST', '/p2p/wallets', { network: net, address, confirmNetwork: net });
+    input.value = '';
+    toast(r.unchanged ? 'That is already your payout address' : (r.previousAddress ? 'Payout address updated' : 'Payout address saved'), { tone: 'success' });
+    loadP2pWalletSettings();
+  } catch (e) { toast(e.message, { tone: 'error' }); }
+});
 
 async function renderP2pView() {
   const list = $('p2pList');
@@ -3802,9 +3861,9 @@ async function renderP2pView() {
               <span class="p2p-avatar" style="--h:${t ? (Number(t.userId) * 47) % 360 : 200}">T</span>
               <span class="p2p-trader-name">${t ? escapeHtml(t.displayName) : 'Trader'}${t?.kycVerified ? ' <span class="p2p-verif">✓</span>' : ''}${t?.merchant ? ' <span class="p2p-merch">★</span>' : ''}</span>
             </button>
-            ${o.simulation ? '<span class="pill">SIM</span>' : ''}
+            ${o.mine ? '<span class="pill">YOUR AD</span>' : ''}${o.simulation ? '<span class="pill">SIM</span>' : ''}
           </div>
-          <div class="p2p-adv-substats">${t ? `${t.completedTrades} trades · ${t.completionRate}% completion` : ''}</div>
+          <div class="p2p-adv-substats">${t ? `${t.completedTrades} trades · ${t.completionRate}% completion` : ''}${t?.referralCode ? ` · ${p2pCodeChip(t.referralCode, side === 'sell' ? 'Seller' : 'Buyer')}` : ''}</div>
           <div class="p2p-adv-mid">
             <div class="p2p-adv-price">${o.priceUsdt} <small>USDT</small></div>
             <button class="p2p-cta ${p2p.view}" data-offer-open="${o.id}">${cta} DLTX</button>
@@ -3837,25 +3896,157 @@ async function renderP2pView() {
             ${p2pStatusChip(o.status)}
           </div>
           <div class="muted small-note">${o.priceUsdt} USDT/DLTX · total ${fmt(o.totalUsdt)} USDT${o.simulation ? ' · SIMULATION' : ''}</div>
+          <div class="muted small-note">${p2pCodeChip(o.role === 'buyer' ? o.sellerCode : o.buyerCode, o.role === 'buyer' ? 'Seller' : 'Buyer')} · ${p2pWhen(o.createdAt)}</div>
         </div>`).join('');
       list.querySelectorAll('[data-order]').forEach((el) =>
         el.addEventListener('click', () => openP2pOrder(el.dataset.order)));
+    } else if (p2p.view === 'mine') {
+      await renderP2pMyAds(list);
     } else if (p2p.view === 'mod') {
       const r = await api('GET', '/p2p/moderation/queue');
       const queue = r.queue || [];
-      if (!queue.length) { list.innerHTML = '<p class="muted center">Nothing awaiting your review. 🎉</p>'; return; }
-      list.innerHTML = queue.map((o) => `
+      list.innerHTML = `
+        <div class="card p2p-modsearch">
+          <label for="p2pModSearch">🔍 Look up a trader by Deltix ID (DLTX-XXXXXX) or user #</label>
+          <div class="p2p-bid-row"><input id="p2pModSearch" type="text" maxlength="20" placeholder="DLTX-ABC123" autocomplete="off" /><button class="btn ghost" id="p2pModSearchBtn">Search</button></div>
+          <div id="p2pModSearchOut"></div>
+        </div>
+        <h3 class="section-title">Awaiting your review</h3>` +
+        (!queue.length ? '<p class="muted center">Nothing awaiting your review. 🎉</p>' : queue.map((o) => `
         <div class="card p2p-offer-card" data-mod="${o.id}">
           <div class="p2p-offer-top"><b>#${o.id} · ${fmt(o.amountDltx)} DLTX ↔ ${fmt(o.totalUsdt)} USDT</b> ${p2pStatusChip(o.status)}</div>
-          <div class="muted small-note">buyer #${o.buyerId} · seller #${o.sellerId}${o.simulation ? ' · SIMULATION' : ''}</div>
-        </div>`).join('');
+          <div class="muted small-note">${p2pCodeChip(o.buyerCode || ('#' + o.buyerId), 'Buyer')} · ${p2pCodeChip(o.sellerCode || ('#' + o.sellerId), 'Seller')}${o.simulation ? ' · SIMULATION' : ''}</div>
+          <div class="muted small-note">Created ${p2pWhen(o.createdAt)}${o.usdtSubmittedAt ? ` · paid ${p2pWhen(o.usdtSubmittedAt)}` : ''}</div>
+        </div>`).join(''));
       list.querySelectorAll('[data-mod]').forEach((el) =>
         el.addEventListener('click', () => openP2pOrder(el.dataset.mod, { moderator: true })));
+      const doSearch = async () => {
+        const q = $('p2pModSearch').value.trim();
+        const out = $('p2pModSearchOut');
+        if (q.length < 3) { out.innerHTML = '<p class="hint">Enter at least 3 characters.</p>'; return; }
+        out.innerHTML = '<p class="muted">Searching…</p>';
+        try {
+          const s = await api('GET', `/p2p/moderation/search?q=${encodeURIComponent(q)}`);
+          const u = s.user;
+          out.innerHTML = `
+            <div class="p2p-modsearch-user">
+              <b>${escapeHtml(u.displayName)}</b> ${p2pCodeChip(u.referralCode)} ${u.kycVerified ? '<span class="p2p-chip p2p-chip-ok">KYC ✓</span>' : '<span class="p2p-chip p2p-chip-muted">No KYC</span>'}
+              ${u.accountStatus !== 'active' ? `<span class="p2p-chip p2p-chip-bad">${escapeHtml(u.accountStatus)}</span>` : ''}
+              <div class="muted small-note">${u.completedTrades} completed · ${u.cancelledTrades} cancelled · ${u.disputesOpened} disputes · ${u.accountAgeDays}d old · role ${escapeHtml(u.p2pRole)}</div>
+            </div>
+            <h4 class="p2p-modsearch-h">Trades (${s.orders.length})</h4>` +
+            (s.orders.slice(0, 30).map((o) => `
+              <div class="card p2p-offer-card ${o.canOpen ? '' : 'p2p-dim'}" ${o.canOpen ? `data-mod-open="${o.id}"` : ''}>
+                <div class="p2p-offer-top"><b>#${o.id} · ${fmt(o.amountDltx)} DLTX @ ${o.priceUsdt}</b> ${p2pStatusChip(o.status)}</div>
+                <div class="muted small-note">${p2pCodeChip(o.buyerCode, 'Buyer')} · ${p2pCodeChip(o.sellerCode, 'Seller')} · ${p2pWhen(o.createdAt)}${o.canOpen ? '' : ' · assigned to another moderator'}</div>
+              </div>`).join('') || '<p class="muted small-note">No trades.</p>') +
+            `<h4 class="p2p-modsearch-h">Ads (${s.offers.length})</h4>` +
+            (s.offers.slice(0, 30).map((a) => `
+              <div class="card p2p-offer-card">
+                <div class="p2p-offer-top"><b>#${a.id} · ${a.side.toUpperCase()} ${fmt(a.amountDltx)} DLTX @ ${a.priceUsdt}</b> ${p2pStatusChip(a.status)}</div>
+                <div class="muted small-note">remaining ${fmt(a.remainingDltx)} · ${a.activeTrades} active · ${p2pWhen(a.createdAt)}</div>
+              </div>`).join('') || '<p class="muted small-note">No ads.</p>');
+          out.querySelectorAll('[data-mod-open]').forEach((el) => el.addEventListener('click', () => openP2pOrder(el.dataset.modOpen, { moderator: true })));
+        } catch (e) { out.innerHTML = `<p class="hint">${escapeHtml(e.message)}</p>`; }
+      };
+      $('p2pModSearchBtn').addEventListener('click', doSearch);
+      $('p2pModSearch').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doSearch(); } });
     }
   } catch (e) {
     list.innerHTML = `<p class="muted center">${e.message}</p>`;
   }
 }
+
+// ── My Ads: every ad I posted, in every state, with safe actions ──
+async function renderP2pMyAds(list) {
+  const r = await api('GET', '/p2p/offers/mine');
+  const ads = r.offers || [];
+  const lim = r.limit || {};
+  const quota = `<div class="p2p-listhead"><span>${ads.length} ad${ads.length === 1 ? '' : 's'}</span><span>${lim.usedLast24h ?? 0}/${lim.dailyAdLimit ?? '—'} posted in 24h${lim.remaining === 0 && lim.nextSlotAt ? ` · next slot ${p2pWhen(lim.nextSlotAt)}` : ''}</span></div>`;
+  if (!ads.length) { list.innerHTML = quota + '<p class="muted center">You have not posted any ads yet.</p>'; return; }
+  list.innerHTML = quota + ads.map((a) => `
+    <div class="card p2p-myad" data-myad="${a.id}">
+      <div class="p2p-offer-top">
+        <b>#${a.id} · <span class="${a.side === 'sell' ? 'p2p-red-t' : 'p2p-green-t'}">${a.side.toUpperCase()}</span> ${fmt(a.amountDltx)} DLTX @ ${a.priceUsdt} USDT</b>
+        ${p2pStatusChip(a.status)}
+      </div>
+      <div class="p2p-myad-grid">
+        <span>Remaining <b>${fmt(a.remainingDltx)}</b></span>
+        <span>Limit <b>${fmt(a.minDltx)}–${fmt(a.maxDltx)}</b></span>
+        <span>Active trades <b>${a.activeTrades}</b></span>
+        <span>Completed <b>${a.completedTrades}</b></span>
+        <span>Payment <b>${escapeHtml(a.paymentMethod)}</b></span>
+        <span>Created <b>${p2pWhen(a.createdAt)}</b></span>
+        ${a.status === 'paused' && a.pausedAt ? `<span>Paused <b>${p2pWhen(a.pausedAt)}</b></span>` : ''}
+        ${a.closedAt ? `<span>Closed <b>${p2pWhen(a.closedAt)}</b></span>` : ''}
+        ${a.expiresAt && !a.closedAt ? `<span>Expires <b>${p2pWhen(a.expiresAt)}</b></span>` : ''}
+      </div>
+      ${a.terms ? `<div class="muted small-note">${escapeHtml(a.terms.slice(0, 120))}</div>` : ''}
+      <div class="p2p-myad-actions">
+        <button class="btn ghost" data-act="view" data-id="${a.id}">View</button>
+        ${a.canEdit ? `<button class="btn ghost" data-act="edit" data-id="${a.id}">Edit</button>` : ''}
+        ${a.canPause ? `<button class="btn ghost" data-act="pause" data-id="${a.id}">Pause</button>` : ''}
+        ${a.canResume ? `<button class="btn ghost" data-act="resume" data-id="${a.id}">Resume</button>` : ''}
+        ${a.canCancel ? `<button class="btn ghost p2p-danger-t" data-act="cancel" data-id="${a.id}">Cancel</button>` : ''}
+      </div>
+    </div>`).join('');
+  p2p.myAds = ads;
+  list.querySelectorAll('[data-act]').forEach((btn) => btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const id = btn.dataset.id;
+    const ad = ads.find((x) => x.id === id);
+    const act = btn.dataset.act;
+    try {
+      if (act === 'view') return openP2pOffer(id);
+      if (act === 'edit') return openP2pEdit(ad);
+      if (act === 'pause') { await api('POST', `/p2p/offers/${id}/pause`, {}); toast('Ad paused — hidden from the market until you resume it', { tone: 'success' }); }
+      if (act === 'resume') { await api('POST', `/p2p/offers/${id}/resume`, {}); toast('Ad is live again', { tone: 'success' }); }
+      if (act === 'cancel') {
+        const okGo = await askConfirm({ title: 'Cancel this ad?', message: `Trades already open on it continue normally. ${ad.activeTrades ? `${ad.activeTrades} active trade${ad.activeTrades > 1 ? 's' : ''} will keep their terms.` : ''} This does not free a posting slot.`, confirmText: 'Cancel ad', danger: true });
+        if (!okGo) return;
+        await api('POST', `/p2p/offers/${id}/cancel`, {});
+        toast('Ad cancelled', { tone: 'success' });
+      }
+      renderP2pView();
+    } catch (err) { toast(err.message, { tone: 'error' }); }
+  }));
+}
+
+function openP2pEdit(ad) {
+  if (!ad) return;
+  p2p.editAd = ad;
+  $('p2pEditTitle').textContent = `Edit ad #${ad.id} · ${ad.side.toUpperCase()} ${fmt(ad.amountDltx)} DLTX`;
+  $('p2pEditPrice').value = ad.priceUsdt;
+  $('p2pEditMin').value = ad.minDltx;
+  $('p2pEditMax').value = ad.maxDltx;
+  $('p2pEditTerms').value = ad.terms || '';
+  $('p2pEditContact').value = ad.contact || '';
+  $('p2pEditHint').textContent = ad.activeTrades ? `${ad.activeTrades} open trade${ad.activeTrades > 1 ? 's' : ''} keep their current terms.` : '';
+  $('p2pEditModal').hidden = false;
+}
+$('p2pEditCancel')?.addEventListener('click', () => { $('p2pEditModal').hidden = true; });
+$('p2pEditSave')?.addEventListener('click', async () => {
+  const ad = p2p.editAd;
+  if (!ad) return;
+  const body = {};
+  const price = Number($('p2pEditPrice').value);
+  const min = Number($('p2pEditMin').value);
+  const max = Number($('p2pEditMax').value);
+  if (price !== ad.priceUsdt) body.priceUsdt = price;
+  if (min !== ad.minDltx) body.minDltx = min;
+  if (max !== ad.maxDltx) body.maxDltx = max;
+  const terms = $('p2pEditTerms').value.trim();
+  if (terms !== (ad.terms || '')) body.terms = terms;
+  const contact = $('p2pEditContact').value.trim();
+  if (contact !== (ad.contact || '')) body.contact = contact;
+  if (!Object.keys(body).length) { $('p2pEditModal').hidden = true; return; }
+  try {
+    await api('PATCH', `/p2p/offers/${ad.id}`, body);
+    $('p2pEditModal').hidden = true;
+    toast('Ad updated', { tone: 'success' });
+    renderP2pView();
+  } catch (e) { $('p2pEditHint').textContent = e.message; }
+});
 
 document.querySelectorAll('#tab-p2p [data-view]').forEach((b) =>
   b.addEventListener('click', () => { p2p.view = b.dataset.view; renderP2pView(); }));
@@ -3877,6 +4068,7 @@ async function openP2pTrader(userId) {
     av.style.setProperty('--h', (Number(t.userId) * 47) % 360);
     $('p2pTraderName').textContent = t.displayName;
     $('p2pTraderBadges').innerHTML = [
+      p2pCodeChip(t.referralCode, 'ID'),
       t.kycVerified ? '<span class="p2p-chip p2p-chip-ok">KYC Verified ✓</span>' : '<span class="p2p-chip p2p-chip-muted">No KYC</span>',
       t.merchant ? '<span class="p2p-chip p2p-chip-warn">★ Merchant</span>' : '',
     ].join(' ');
@@ -3913,6 +4105,8 @@ function openP2pCreate() {
   $('p2pCreateQuote').innerHTML = '';
   $('p2pCreateHint').textContent = '';
   $('p2pPayoutWalletWrap').hidden = false;
+  // Prefill the saved payout address so it is not retyped (and not mistyped).
+  if (p2p.myWallet && !$('p2pPayoutWallet').value) $('p2pPayoutWallet').value = p2p.myWallet;
   $('p2pCreateModal').hidden = false;
 }
 $('p2pCreateBtn')?.addEventListener('click', openP2pCreate);
@@ -3957,11 +4151,12 @@ $('p2pCreateConfirm')?.addEventListener('click', async () => {
     });
     $('p2pCreateModal').hidden = true;
     toast(`Offer #${r.offer.id} is live`, { tone: 'success', title: 'Offer posted' });
-    p2p.view = p2p.createSide === 'sell' ? 'buy' : 'sell';
+    p2p.view = 'mine';
     renderP2pView();
     p2pMaybeAd();
   } catch (e) {
     hint.textContent = e.message;
+    if (e.code === 'AD_LIMIT_REACHED' || /posting limit/i.test(e.message)) toast(e.message, { tone: 'error', title: 'Daily ad limit' });
   }
 });
 
@@ -3978,6 +4173,8 @@ async function openP2pOffer(id) {
       <div class="row"><span>Limits</span><b>${fmt(o.minDltx)} – ${fmt(o.maxDltx)} DLTX</b></div>
       <div class="row"><span>Network</span><b>USDT · BNB Chain (BEP-20)</b></div>
       ${o.trader ? `<div class="row"><span>Trader</span><b><a href="#" id="p2pOfferTraderLink">${escapeHtml(o.trader.displayName)}</a> · ${o.trader.completedTrades} trades · ${o.trader.completionRate}% ${o.trader.kycVerified ? '· KYC ✓' : ''}</b></div>` : ''}
+      ${o.trader?.referralCode ? `<div class="row"><span>${o.side === 'sell' ? 'Seller' : 'Buyer'} ID</span><b>${escapeHtml(o.trader.referralCode)}</b></div>` : ''}
+      ${o.status && o.status !== 'active' ? `<div class="row"><span>Status</span><b>${p2pStatusChip(o.status)}</b></div>` : ''}
       ${o.terms ? `<div class="row"><span>Terms</span><b>${escapeHtml(o.terms.slice(0, 140))}</b></div>` : ''}`;
     document.getElementById('p2pOfferTraderLink')?.addEventListener('click', (e) => { e.preventDefault(); openP2pTrader(o.trader.userId); });
     $('p2pTradeAmount').value = Math.min(o.maxDltx, o.remainingDltx);
@@ -3987,7 +4184,7 @@ async function openP2pOffer(id) {
     $('p2pOfferCancelOffer').hidden = !o.mine;
     const acceptBtn = $('p2pAcceptBtn');
     acceptBtn.textContent = o.mine ? 'Your offer' : `${o.side === 'sell' ? 'Buy' : 'Sell'} DLTX @ ${o.priceUsdt}`;
-    acceptBtn.disabled = Boolean(o.mine);
+    acceptBtn.disabled = Boolean(o.mine) || o.status !== 'active';
     acceptBtn.classList.toggle('p2p-green', !o.mine && o.side === 'sell');
     acceptBtn.classList.toggle('p2p-red', !o.mine && o.side === 'buy');
     renderP2pBids(r.bids || []);
@@ -4126,14 +4323,15 @@ function p2pRenderSteps(status) {
     </span>`).join('<span class="p2p-step-line"></span>');
 }
 
-// Recommended 30-minute payment window (informational — matches ad terms).
+// Payment window from the SERVER deadline (the same clock the cancel/timeout
+// rules use) — no client-side guess.
 function p2pStartPayTimer(o) {
   const el = $('p2pPayTimer');
-  const deadline = new Date(o.createdAt).getTime() + 30 * 60 * 1000;
+  const deadline = new Date(o.paymentDeadlineAt || (new Date(o.createdAt).getTime() + 30 * 60 * 1000)).getTime();
   const tick = () => {
     const left = deadline - Date.now();
     if (left <= 0) {
-      el.innerHTML = '⏰ Payment window elapsed — pay and submit now, or the seller may cancel.';
+      el.innerHTML = '⏰ Payment window elapsed — pay and submit now, or the seller may cancel and the order will expire.';
       el.classList.add('late');
       if (p2p.payTimer) { clearInterval(p2p.payTimer); p2p.payTimer = null; }
       return;
@@ -4186,8 +4384,11 @@ async function openP2pOrder(id, { moderator = false } = {}) {
       <div class="row"><span>Total</span><b>${fmt(o.totalUsdt)} USDT</b></div>
       <div class="row"><span>Buyer receives</span><b>${fmt(o.buyerReceivesDltx)} DLTX (−${o.feePercent}%)</b></div>
       <div class="row"><span>Seller receives</span><b>${fmt(o.sellerReceivesUsdt)} USDT (−1%)</b></div>
+      ${o.buyerCode || o.sellerCode ? `<div class="row"><span>Parties</span><b>${p2pCodeChip(o.buyerCode, 'Buyer')} ${p2pCodeChip(o.sellerCode, 'Seller')}</b></div>` : ''}
       <div class="row"><span>USDT payment</span><b>${o.usdtVerified ? 'Verified ✅' : (o.usdtTxHash ? 'Submitted ⏳' : 'Awaiting')}</b></div>
+      ${o.role !== 'buyer' && o.sellerPayoutAddress ? `<div class="row"><span>Payout to</span><b class="p2p-addr-inline" title="Locked when this trade was created">${escapeHtml(o.sellerPayoutAddress.slice(0, 10))}…${escapeHtml(o.sellerPayoutAddress.slice(-6))} 🔒</b></div>` : ''}
       <div class="row"><span>Moderator</span><b>${o.moderatorAssigned ? (o.moderatorApproved ? 'Approved ✅' : 'Assigned') : 'Pending assignment'}</b></div>
+      ${o.status === 'cancelled' ? `<div class="row"><span>Cancelled</span><b>${o.cancelledBy === 'system:timeout' ? 'Payment window expired' : (String(o.cancelledBy || '').startsWith('user:') ? (o.cancelledBy === `user:${o.buyerId}` ? 'by buyer' : 'by seller') : '')} · ${p2pWhen(o.closedAt)}</b></div>` : ''}
       ${o.status === 'completed' ? `<div class="row"><span>Seller payout</span><b>${o.sellerPayoutRecorded ? 'Paid ✅' : 'Processing ⏳'}</b></div>` : ''}`;
     // Contact block: official Deltix support first, then the counterparty.
     const contactEl = $('p2pContactRow');
@@ -4212,9 +4413,17 @@ async function openP2pOrder(id, { moderator = false } = {}) {
       $('p2pDepositAddr').textContent = o.usdtDepositAddress || '';
       $('p2pTxHash').value = o.usdtTxHash || '';
     }
-    $('p2pOrderCancel').hidden = !(o.role !== 'moderator' && ['dltx_locked', 'awaiting_usdt'].includes(o.status));
+    // Cancel rule comes from the server (buyer: before payment verified;
+    // seller: only after the payment window elapsed with nothing marked).
+    const cancelBtn = $('p2pOrderCancel');
+    p2p.cancelRule = r.cancel || null;
+    const canCancel = o.role !== 'moderator' && r.cancel && r.cancel.allowed;
+    const sellerWaiting = o.role === 'seller' && r.cancel && r.cancel.code === 'WINDOW_OPEN';
+    cancelBtn.hidden = !(canCancel || sellerWaiting);
+    cancelBtn.disabled = Boolean(sellerWaiting);
+    cancelBtn.textContent = sellerWaiting ? `Cancel after ${new Date(o.paymentDeadlineAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Cancel order';
     $('p2pOrderDispute').hidden = !(o.role !== 'moderator' && !['completed', 'cancelled', 'refunded', 'disputed', 'under_review', 'escalated'].includes(o.status));
-    $('p2pOrderHint').textContent = r.dispute ? `Dispute open: ${r.dispute.reason}` : '';
+    $('p2pOrderHint').textContent = r.dispute ? `Dispute open: ${r.dispute.reason}` : (sellerWaiting ? `The buyer has until ${new Date(o.paymentDeadlineAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} to pay. If nothing is marked by then, you can cancel and your DLTX unlocks automatically.` : '');
     // Moderator controls load their richer review endpoint.
     $('p2pModBlock').hidden = true;
     if (moderator || o.role === 'moderator') {
@@ -4222,10 +4431,13 @@ async function openP2pOrder(id, { moderator = false } = {}) {
         const m = await api('GET', `/p2p/moderation/orders/${o.id}`);
         $('p2pModBlock').hidden = false;
         $('p2pModInfo').innerHTML = `
-          <div class="row"><span>Buyer KYC</span><b>${m.buyer.kycVerified ? '✅' : '❌'}</b></div>
-          <div class="row"><span>Seller KYC</span><b>${m.seller.kycVerified ? '✅' : '❌'}</b></div>
+          <div class="row"><span>Buyer</span><b>${p2pCodeChip(m.buyer.profile?.referralCode || ('#' + m.buyer.id))} ${m.buyer.kycVerified ? 'KYC ✅' : 'KYC ❌'}</b></div>
+          <div class="row"><span>Seller</span><b>${p2pCodeChip(m.seller.profile?.referralCode || ('#' + m.seller.id))} ${m.seller.kycVerified ? 'KYC ✅' : 'KYC ❌'}</b></div>
+          <div class="row"><span>Escrow</span><b>${m.escrow.held ? `🔒 ${fmt(m.escrow.amountDltx)} DLTX held` : 'released / returned'} · ${escapeHtml(m.escrow.status)}</b></div>
+          <div class="row"><span>Timeline</span><b class="p2p-timeline">created ${p2pWhen(m.timeline.createdAt)}${m.timeline.paymentMarkedAt ? ` · paid ${p2pWhen(m.timeline.paymentMarkedAt)}` : ` · pay by ${p2pWhen(m.timeline.paymentDeadlineAt)}`}${m.timeline.usdtVerifiedAt ? ` · verified ${p2pWhen(m.timeline.usdtVerifiedAt)}` : ''}${m.timeline.disputedAt ? ` · disputed ${p2pWhen(m.timeline.disputedAt)}` : ''}${m.timeline.closedAt ? ` · closed ${p2pWhen(m.timeline.closedAt)}` : ''}</b></div>
           <div class="row"><span>USDT tx</span><b>${m.usdt.txHash ? m.usdt.txHash.slice(0, 18) + '…' : '—'}</b></div>
-          <div class="row"><span>Payout due</span><b>${fmt(m.usdt.sellerPayoutDue)} USDT → ${m.usdt.sellerPayoutAddress ? m.usdt.sellerPayoutAddress.slice(0, 12) + '…' : 'no wallet!'}</b></div>`;
+          <div class="row"><span>Payout due</span><b>${fmt(m.usdt.sellerPayoutDue)} USDT → ${m.usdt.sellerPayoutAddress ? escapeHtml(m.usdt.sellerPayoutAddress.slice(0, 12)) + '…' : 'no wallet!'} ${m.usdt.sellerPayoutAddressSource === 'snapshot' ? '🔒 locked at trade time' : (m.usdt.sellerPayoutAddressSource === 'live' ? '⚠️ live wallet (legacy order)' : '')}</b></div>
+          ${m.usdt.sellerCurrentAddress && m.usdt.sellerCurrentAddress !== m.usdt.sellerPayoutAddress ? `<div class="row"><span>⚠️ Seller changed wallet</span><b>now ${escapeHtml(m.usdt.sellerCurrentAddress.slice(0, 12))}… — pay the LOCKED address above</b></div>` : ''}`;
         $('p2pModBlockers').innerHTML = m.releaseBlockers.length
           ? '<ul class="disclosure">' + m.releaseBlockers.map((b) => `<li>⛔ ${escapeHtml(b)}</li>`).join('') + '</ul>'
           : '<p class="hint">✅ All release conditions satisfied.</p>';
@@ -4393,11 +4605,20 @@ $('p2pSubmitTx')?.addEventListener('click', async () => {
 });
 $('p2pOrderCancel')?.addEventListener('click', async () => {
   if (!p2p.order) return;
-  const okGo = await askConfirm({ title: 'Cancel order?', message: 'The escrowed DLTX returns to the seller. This cannot be undone.', confirmText: 'Cancel order', danger: true });
+  const isBuyer = p2p.order.role === 'buyer';
+  const paymentMarked = Boolean(p2p.order.usdtTxHash);
+  const okGo = await askConfirm({
+    title: 'Cancel order?',
+    message: isBuyer
+      ? (paymentMarked ? 'You submitted a payment hash. Cancelling gives up your claim on this trade — only do this if you did NOT actually pay. If you paid, open a dispute instead.' : 'The escrowed DLTX returns to the seller and the ad amount is restored. This cannot be undone.')
+      : 'The buyer did not mark payment in time. Your escrowed DLTX unlocks immediately and your ad amount is restored.',
+    confirmText: 'Cancel order',
+    danger: true,
+  });
   if (!okGo) return;
   try {
-    await api('POST', `/p2p/orders/${p2p.order.id}/cancel`, {});
-    toast('Order cancelled — escrow refunded', { tone: 'success' });
+    const r = await api('POST', `/p2p/orders/${p2p.order.id}/cancel`, {});
+    toast(r.code === 'ALREADY_CANCELLED' ? 'Order was already cancelled' : 'Order cancelled — escrow returned to the seller', { tone: 'success' });
     openP2pOrder(p2p.order.id);
   } catch (e) { toast(e.message, { tone: 'error' }); }
 });
@@ -5937,7 +6158,7 @@ function playRewardedAd() {
 const BACK_SENTINEL = { deltix: true };
 let exitArmed = false;
 function closeTopOverlay() {
-  for (const id of ['p2pImgModal', 'p2pTraderModal', 'swapModal', 'dappModal', 'stakeModal', 'edDelegateModal', 'edUndelegateModal', 'sendModal', 'deleteModal', 'p2pCreateModal', 'p2pOfferModal', 'p2pOrderModal']) {
+  for (const id of ['p2pImgModal', 'p2pTraderModal', 'p2pEditModal', 'swapModal', 'dappModal', 'stakeModal', 'edDelegateModal', 'edUndelegateModal', 'sendModal', 'deleteModal', 'p2pCreateModal', 'p2pOfferModal', 'p2pOrderModal']) {
     const el = document.getElementById(id);
     if (el && !el.hidden) {
       el.hidden = true;

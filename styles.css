@@ -2882,6 +2882,28 @@ html[data-dark] .ed-stat b, html[data-dark] .ed-unlock-progress { color: var(--t
 .p2p-deposit-row .btn, .p2p-bid-row .btn { width: auto; flex: none; }
 .p2p-contact-val a.p2p-wabtn { color: #fff; }
 
+/* P2P hardening: settings card, public trader IDs, My Ads, moderator search */
+.p2p-settings-title { margin: 0 0 8px; font-size: 14px; }
+.p2p-settings-gap { display: block; margin-top: 14px; }
+.p2p-addr-inline { font-size: 11px; word-break: break-all; background: rgba(128,128,148,.12); padding: 2px 6px; border-radius: 6px; }
+.p2p-code { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 6px; background: rgba(79,124,255,.12); color: #7ea0ff; letter-spacing: .3px; white-space: nowrap; }
+.p2p-code b { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 800; }
+.p2p-myad { margin-bottom: 10px; }
+.p2p-myad-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 12px; opacity: .85; margin-top: 8px; }
+.p2p-myad-grid span { display: flex; justify-content: space-between; gap: 6px; }
+.p2p-myad-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.p2p-myad-actions .btn { width: auto; flex: none; padding: 6px 12px; font-size: 12px; }
+.p2p-red-t { color: var(--p2p-red); }
+.p2p-green-t { color: var(--p2p-green); }
+.p2p-danger-t { color: var(--p2p-red) !important; border-color: rgba(246,70,93,.4) !important; }
+.p2p-modsearch { margin-bottom: 12px; }
+.p2p-modsearch label { font-size: 12px; font-weight: 700; }
+.p2p-modsearch-user { padding: 8px 0 4px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.p2p-modsearch-h { margin: 10px 0 6px; font-size: 12px; opacity: .75; text-transform: uppercase; letter-spacing: .5px; }
+.p2p-dim { opacity: .55; cursor: default; }
+.p2p-timeline { font-size: 11px; font-weight: 600; text-align: right; line-height: 1.5; }
+.p2p-minmax { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
 /* Professional order chat */
 .p2p-chat-note { font-size: 10.5px; opacity: .65; margin: 2px 0 6px; line-height: 1.45; }
 .p2p-chat { max-height: 240px; }
