@@ -3809,6 +3809,14 @@ GAME_IMPL.flash = (mount, diff, finish, status) => {
 // registering them in INSTANT_GAMES with a matching backend config entry.
 
 const INSTANT_GAMES = {
+  cases: {
+    name: 'Take It or Risk It',
+    emoji: '🧨',
+    cost: 20,
+    tagline: '10 cases, one is yours. Take the Deltix offer — or risk it for ⚡100.',
+    accent: '#f59e0b',
+    render: renderCases,
+  },
   wire: {
     name: 'Deltix Energy Wire',
     emoji: '◆',
@@ -4607,6 +4615,225 @@ function renderWhichKey(mount, g) {
     count: 5, emoji: '🔑', itemClass: 'key-item',
     instruction: 'Pick a key to try the chest 🧰', againText: 'Pick another key to try again',
   });
+}
+
+// ---- Game 14: Take It or Risk It (server-held board; client only renders what it is told) ----
+function renderCases(mount, g) {
+  const wrap = document.createElement('div');
+  wrap.className = 'instant-play cases-wrap';
+  wrap.innerHTML = `
+    <div class="cases-hud"><span class="cases-msg">◆ TAKE IT OR RISK IT</span><span class="cases-rounds"></span></div>
+    <div class="cases-board"></div>
+    <div class="cases-ladder"></div>
+    <div class="cases-panel">
+      <button class="btn primary ig-action cases-play">▶ PLAY — ⚡${g.cost}</button>
+      <div class="cases-offer" hidden>
+        <div class="cases-offer-title">◆ DELTIX OFFER</div>
+        <div class="cases-offer-amt">⚡0</div>
+        <div class="cases-offer-sub">Take the guaranteed Energy?</div>
+        <div class="cases-choices"><button class="btn gold cases-take">💰 TAKE IT</button><button class="btn primary cases-risk">🎲 RISK IT</button></div>
+      </div>
+      <div class="cases-hint" hidden>
+        <div class="cases-hint-title">👁️ FREE HINT</div>
+        <div class="cases-offer-sub">Watch one rewarded ad to reveal a case worth ⚡<span class="cases-hint-max">10</span> or less.</div>
+        <div class="cases-choices"><button class="btn primary cases-hint-yes">🎬 WATCH &amp; REVEAL</button><button class="btn ghost cases-hint-no">NO THANKS</button></div>
+      </div>
+      <div class="cases-final" hidden>
+        <div class="cases-offer-title">◆ FINAL DECISION</div>
+        <div class="cases-offer-sub">Keep your original case?</div>
+        <div class="cases-choices"><button class="btn gold cases-keep">KEEP ◆</button><button class="btn primary cases-switch">SWITCH TO ◆</button></div>
+      </div>
+    </div>
+    <p class="wire-note cases-note"></p>`;
+  mount.appendChild(wrap);
+  const $c = (s) => wrap.querySelector(s);
+  const board = $c('.cases-board');
+  const ladder = $c('.cases-ladder');
+  const msg = $c('.cases-msg');
+  const playBtn = $c('.cases-play');
+  const offerBox = $c('.cases-offer');
+  const hintBox = $c('.cases-hint');
+  const finalBox = $c('.cases-final');
+  let cfg = null;
+  let run = null;
+  let busy = false;
+  let hintDismissed = false;
+
+  function syncEnergy(energy) {
+    if (typeof energy === 'number') {
+      if (typeof state !== 'undefined' && state.energy) state.energy.energy = energy;
+      updateInstantBal();
+      if (window.renderEnergy) window.renderEnergy();
+    }
+  }
+  async function call(path, body) {
+    return api('POST', `/rewards/cases/${path}`, { runId: run ? run.id : undefined, ...(body || {}) });
+  }
+  function apply(r) {
+    if (r.run) run = r.run;
+    if (typeof r.roundsLeft === 'number' && cfg) cfg.roundsLeft = r.roundsLeft;
+    syncEnergy(r.energy);
+  }
+
+  function renderBoard() {
+    const cs = run ? run.cases : Array.from({ length: 10 }, (_, i) => ({ id: i + 1, opened: false, value: null, mine: false }));
+    const clickable = run && (run.stage === 'pick' || run.stage === 'open');
+    board.innerHTML = cs.map((c) => `
+      <button class="cases-case${c.opened ? ' open' : ''}${c.mine ? ' mine' : ''}${c.opened && c.value >= 50 ? ' big' : ''}" data-case="${c.id}" ${(!clickable || c.opened || (c.mine && run.stage === 'open')) ? 'disabled' : ''}>
+        <span class="cases-num">◆ ${c.id}</span>
+        <span class="cases-val">${c.opened || c.value !== null ? `⚡${c.value}` : ''}</span>
+        ${c.mine ? '<span class="cases-tag">YOURS</span>' : ''}
+      </button>`).join('');
+    board.querySelectorAll('.cases-case').forEach((b) => b.addEventListener('click', () => onCase(Number(b.dataset.case))));
+    // Prize ladder: values still in play stay lit, gone ones dim.
+    const prizes = (run ? run.prizes : (cfg ? cfg.prizes : [])) || [];
+    const inPlay = run ? run.remainingValues.slice() : prizes.slice();
+    ladder.innerHTML = prizes.map((p) => {
+      const i = inPlay.indexOf(p);
+      const live = i >= 0; if (live) inPlay.splice(i, 1);
+      return `<span class="cases-prize${live ? '' : ' gone'}${p >= 50 ? ' top' : ''}">⚡${p}</span>`;
+    }).join('');
+  }
+  function renderPanel() {
+    offerBox.hidden = true; hintBox.hidden = true; finalBox.hidden = true; playBtn.hidden = true;
+    if (cfg) {
+      $c('.cases-rounds').textContent = `${cfg.roundsLeft} game${cfg.roundsLeft === 1 ? '' : 's'} left today`;
+      $c('.cases-note').textContent = `⚡${cfg.entryCost} entry · top prize ⚡${cfg.topPrize} · ${cfg.maxRoundsPerDay} games/day · ⚡${cfg.dailyEnergyCap}/day from this game`;
+      $c('.cases-hint-max').textContent = cfg.hintMaxValue;
+    }
+    if (!run || run.stage === 'done') {
+      playBtn.hidden = false;
+      playBtn.disabled = busy;
+      playBtn.textContent = `${run ? '↻ PLAY AGAIN' : '▶ PLAY'} — ⚡${cfg ? cfg.entryCost : g.cost}`;
+      if (!run) msg.textContent = '◆ TAKE IT OR RISK IT';
+      return;
+    }
+    if (run.stage === 'pick') msg.textContent = 'CHOOSE YOUR CASE ◆';
+    else if (run.stage === 'open') {
+      msg.textContent = `YOUR CASE: ◆${run.playerCase} · OPEN ${run.toOpen} CASE${run.toOpen === 1 ? '' : 'S'}`;
+      if (run.hintAvailable && !hintDismissed) hintBox.hidden = false;
+    } else if (run.stage === 'offer') {
+      msg.textContent = `YOUR CASE: ◆${run.playerCase}`;
+      offerBox.hidden = false;
+      $c('.cases-offer-amt').textContent = `⚡${run.offer}`;
+      $c('.cases-offer-sub').textContent = `Take the guaranteed ${run.offer} ⚡?`;
+      $c('.cases-take').textContent = `💰 TAKE IT ⚡${run.offer}`;
+    } else if (run.stage === 'final') {
+      msg.textContent = `YOUR CASE ◆${run.playerCase} · ONE OTHER CASE ◆${run.finalOther}`;
+      finalBox.hidden = false;
+      $c('.cases-keep').textContent = `KEEP ◆${run.playerCase}`;
+      $c('.cases-switch').textContent = `SWITCH TO ◆${run.finalOther}`;
+    }
+    wrap.querySelectorAll('.cases-panel button').forEach((b) => { b.disabled = busy; });
+  }
+  function render() { renderBoard(); renderPanel(); }
+
+  function flashCase(id, value) {
+    const el = board.querySelector(`[data-case="${id}"]`);
+    if (!el) return;
+    el.classList.add('open', 'reveal');
+    el.querySelector('.cases-val').textContent = `⚡${value}`;
+    try { ArcadeSound.tap(); } catch {}
+  }
+
+  async function onCase(id) {
+    if (busy || !run) return;
+    if (run.stage !== 'pick' && run.stage !== 'open') return;
+    busy = true; renderPanel();
+    try {
+      if (run.stage === 'pick') {
+        const r = await call('pick', { caseIdx: id });
+        apply(r);
+        try { ArcadeSound.tap(); } catch {}
+      } else {
+        const r = await call('open', { caseIdx: id });
+        flashCase(id, r.revealed.value);
+        await new Promise((res) => setTimeout(res, 650));
+        apply(r);
+        if (r.offer) { msg.textContent = '◆ DELTIX OFFER'; try { ArcadeSound.coin?.(); } catch {} }
+      }
+    } catch (e) { if (e.status !== 401) toast(e.message); await load(); return; }
+    busy = false;
+    render();
+  }
+
+  async function finish(r) {
+    apply(r);
+    render();
+    const res = r.result;
+    const bigWin = res.amount >= (cfg ? cfg.entryCost : 20);
+    if (res.kind === 'offer') msg.textContent = `💰 YOU TOOK ⚡${res.amount} · your case held ⚡${res.caseValue}`;
+    else msg.textContent = `◆${res.caseIdx} CONTAINED… ⚡${res.amount}${res.switched ? ' (switched)' : ''}`;
+    if (bigWin) burstShards(board, res.amount >= 50 ? '#fbbf24' : g.accent, res.amount >= 50 ? 22 : 12);
+    (window.celebrate || toast)({
+      amount: r.energyAwarded, unit: '⚡ Energy', icon: res.amount >= 50 ? '🏆' : '⚡', duration: 2600,
+      title: res.kind === 'offer' ? 'Deal taken!' : (res.amount >= 50 ? '◆ JACKPOT CASE ◆' : `You won ⚡${res.amount}`),
+      subtitle: r.capped ? `Daily cap reached — ${r.energyAwarded} of ${res.amount} paid.` : `You now have ${r.energy} ⚡ total.`,
+    });
+    if (!bigWin) { try { ArcadeSound.lose(); } catch {} }
+  }
+
+  playBtn.addEventListener('click', async () => {
+    if (busy) return;
+    if (cfg && cfg.roundsLeft <= 0) { toast(`Daily limit reached — ${cfg.maxRoundsPerDay} games per day. Come back tomorrow!`); return; }
+    const need = cfg ? cfg.entryCost : g.cost;
+    if (instantEnergy() < need) { toast(`Not enough Energy — ⚡${need} needed to play.`); return; }
+    busy = true; renderPanel();
+    hintDismissed = false;
+    try {
+      const r = await api('POST', '/rewards/cases/start', {});
+      apply(r);
+      if (!r.resumed && cfg) cfg.roundsLeft = typeof r.roundsLeft === 'number' ? r.roundsLeft : Math.max(0, cfg.roundsLeft - 1);
+    } catch (e) { if (e.status !== 401) toast(e.message); }
+    busy = false;
+    render();
+  });
+  $c('.cases-take').addEventListener('click', async () => {
+    if (busy || !run || run.stage !== 'offer') return;
+    busy = true; renderPanel();
+    try { await finish(await call('take')); } catch (e) { if (e.status !== 401) toast(e.message); await load(); return; }
+    busy = false; renderPanel();
+  });
+  $c('.cases-risk').addEventListener('click', async () => {
+    if (busy || !run || run.stage !== 'offer') return;
+    busy = true; renderPanel();
+    try { apply(await call('risk')); hintDismissed = false; } catch (e) { if (e.status !== 401) toast(e.message); await load(); return; }
+    busy = false; render();
+  });
+  $c('.cases-hint-no').addEventListener('click', () => { hintDismissed = true; renderPanel(); });
+  $c('.cases-hint-yes').addEventListener('click', async () => {
+    if (busy || !run || !run.hintAvailable) return;
+    busy = true; renderPanel();
+    const watched = typeof playRewardedAd === 'function' ? await playRewardedAd() : false;
+    if (!watched) { busy = false; toast('Ad not completed — no hint this time.'); renderPanel(); return; }
+    try {
+      const r = await call('hint');
+      flashCase(r.revealed.caseIdx, r.revealed.value);
+      await new Promise((res) => setTimeout(res, 650));
+      apply(r);
+      toast(`👁️ Hint: ◆${r.revealed.caseIdx} held only ⚡${r.revealed.value}`);
+    } catch (e) { if (e.status !== 401) toast(e.message); await load(); return; }
+    busy = false; render();
+  });
+  const decide = (choice) => async () => {
+    if (busy || !run || run.stage !== 'final') return;
+    busy = true; renderPanel();
+    try { await finish(await call('final', { choice })); } catch (e) { if (e.status !== 401) toast(e.message); await load(); return; }
+    busy = false; renderPanel();
+  };
+  $c('.cases-keep').addEventListener('click', decide('keep'));
+  $c('.cases-switch').addEventListener('click', decide('switch'));
+
+  async function load() {
+    busy = false;
+    try {
+      const s = await api('GET', '/rewards/cases');
+      cfg = s; run = s.run; syncEnergy(s.energy);
+      render();
+      if (!s.enabled) { msg.textContent = 'Take It or Risk It is paused right now.'; playBtn.disabled = true; }
+    } catch (e) { if (e.status !== 401) msg.textContent = e.message; }
+  }
+  load();
 }
 
 // ---- Game 13: Deltix Energy Wire (timing run; server owns entry/state/rewards) ----
