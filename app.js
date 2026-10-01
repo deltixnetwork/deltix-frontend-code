@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.14.0';
+const APP_VERSION = '1.15.0';
 const $ = (id) => document.getElementById(id);
 
 // Stable per-phone identifier sent with every request (X-Device-Id) — the
@@ -335,6 +335,7 @@ function showTab(id, { refresh = true } = {}) {
     b.classList.toggle('active', b.dataset.tab === id)
   );
   updateTabAd(id);
+  if (id !== 'tab-p2p' && typeof stopP2pAdminsPoll === 'function') stopP2pAdminsPoll();
   if (id === 'tab-energy') {
     renderEnergy();
     if (state.token) loadEnergy();
@@ -3685,7 +3686,82 @@ const p2p = {
   chatTimer: null,
   payTimer: null,
   lastAdAt: 0,
+  admins: [],
+  adminsTimer: null,
+  heartbeatTimer: null,
+  me: null,
 };
+
+// ── Live admin directory (referral code + derived state only; server decides ONLINE/BUSY/OFFLINE) ──
+function p2pAdminChip(status) {
+  const map = { ONLINE: ['● Online', 'ok'], BUSY: ['● Busy', 'warn'], OFFLINE: ['○ Offline', 'muted'] };
+  const [label, tone] = map[status] || ['—', 'muted'];
+  return `<span class="p2p-chip p2p-chip-${tone}">${label}</span>`;
+}
+async function loadP2pAdmins({ silent = false } = {}) {
+  const card = $('p2pAdminsCard');
+  if (!card || !state.token || !p2p.status?.enabled) return;
+  try {
+    const r = await api('GET', '/p2p/admins');
+    p2p.admins = r.admins || [];
+    card.hidden = !p2p.admins.length;
+    $('p2pAdminsCount').textContent = `${r.onlineCount} online · ${p2p.admins.length} total`;
+    $('p2pAdminsList').innerHTML = p2p.admins.slice(0, 12).map((a) => `
+      <div class="p2p-admin-line ${a.status.toLowerCase()}">
+        <span class="p2p-admin-id">🛡 <b>${escapeHtml(a.code || '#' + a.id)}</b>${a.senior ? ' <span class="pill">SENIOR</span>' : ''}</span>
+        <span class="p2p-admin-load muted small-note">${a.activeTrades}/${a.capacity} trades</span>
+        ${p2pAdminChip(a.status)}
+      </div>`).join('');
+    // Keep an open offer modal's selector in sync.
+    if (!$('p2pOfferModal').hidden) p2pFillAdminSelect();
+  } catch (e) { if (!silent) card.hidden = true; }
+}
+function startP2pAdminsPoll() {
+  stopP2pAdminsPoll();
+  loadP2pAdmins({ silent: true });
+  p2p.adminsTimer = setInterval(() => loadP2pAdmins({ silent: true }), 30000);
+}
+function stopP2pAdminsPoll() {
+  if (p2p.adminsTimer) { clearInterval(p2p.adminsTimer); p2p.adminsTimer = null; }
+}
+// Offer modal: choose which ONLINE admin handles the trade (default = least loaded).
+function p2pFillAdminSelect() {
+  const sel = $('p2pAdminSelect');
+  if (!sel) return;
+  const prev = sel.value;
+  const online = p2p.admins.filter((a) => a.status === 'ONLINE');
+  sel.innerHTML = `<option value="">Auto — least busy online admin${online.length ? ` (${online.length} online)` : ''}</option>` +
+    p2p.admins.map((a) => `<option value="${a.id}" ${a.status !== 'ONLINE' ? 'disabled' : ''}>${escapeHtml(a.code || '#' + a.id)} · ${a.status.toLowerCase()} · ${a.activeTrades}/${a.capacity}${a.senior ? ' · senior' : ''}</option>`).join('');
+  if ([...sel.options].some((o) => o.value === prev && !o.disabled)) sel.value = prev;
+  $('p2pAdminSelectHint').textContent = online.length
+    ? 'Only online admins can be chosen. Your admin verifies the USDT payment and approves the release — they never hold your coins.'
+    : 'No admin is online right now — the trade will still be created and assigned; you can request another admin from the order if needed.';
+}
+
+// ── Moderator presence: explicit availability + 60s heartbeat while the app is open ──
+async function p2pSetAvailability(on) {
+  const r = await api('POST', '/p2p/moderation/presence', { available: on });
+  p2p.me = r.me;
+  if (on) startP2pHeartbeat(); else stopP2pHeartbeat();
+  return r.me;
+}
+function startP2pHeartbeat() {
+  stopP2pHeartbeat();
+  p2p.heartbeatTimer = setInterval(() => {
+    if (document.visibilityState === 'hidden') return;
+    api('POST', '/p2p/moderation/heartbeat', {}).then((r) => { p2p.me = r.me; p2pRenderPresence(); }).catch(() => {});
+  }, 60000);
+}
+function stopP2pHeartbeat() {
+  if (p2p.heartbeatTimer) { clearInterval(p2p.heartbeatTimer); p2p.heartbeatTimer = null; }
+}
+function p2pRenderPresence() {
+  const el = $('p2pPresenceState');
+  if (!el || !p2p.me) return;
+  el.innerHTML = `${p2pAdminChip(p2p.me.status)} <span class="muted small-note">${p2p.me.activeTrades}/${p2p.me.capacity} active trades · ${escapeHtml(p2p.me.code || '')}</span>`;
+  const tg = $('p2pPresenceToggle');
+  if (tg) tg.checked = Boolean(p2p.me.availabilityEnabled);
+}
 
 // The JWT `sub` claim is this account's immutable user id (no verification
 // needed client-side — only used to render "mine" states).
@@ -3754,6 +3830,14 @@ async function loadP2p() {
     p2p.modQueue = [];
   }
   $('p2pModTab').hidden = !p2p.isModerator;
+  if (p2p.isModerator) {
+    try {
+      const pr = await api('GET', '/p2p/moderation/presence');
+      p2p.me = pr.me;
+      if (pr.me?.availabilityEnabled) startP2pHeartbeat();
+    } catch { /* presence optional */ }
+  }
+  startP2pAdminsPoll();
   renderP2pView();
 }
 
@@ -3963,9 +4047,25 @@ async function renderP2pView() {
     } else if (p2p.view === 'mine') {
       await renderP2pMyAds(list);
     } else if (p2p.view === 'mod') {
-      const r = await api('GET', '/p2p/moderation/queue');
+      const [r, mine] = await Promise.all([api('GET', '/p2p/moderation/queue'), api('GET', '/p2p/moderation/trades').catch(() => ({ trades: [], me: p2p.me }))]);
       const queue = r.queue || [];
+      p2p.me = mine.me || p2p.me;
+      const SECTIONS = [['NEW', '🆕 New'], ['ACTIVE', '▶️ Active'], ['PAYMENT_PENDING', '⏳ Payment pending'], ['PAYMENT_MARKED', '🧾 Payment marked'], ['DISPUTED', '⚠️ Disputed'], ['COMPLETED', '✅ Completed'], ['CANCELLED', '↩️ Cancelled']];
+      const trades = mine.trades || [];
+      const tradeCard = (o) => `
+        <div class="card p2p-offer-card" data-mod="${o.id}">
+          <div class="p2p-offer-top"><b>#${o.id} · ${fmt(o.amountDltx)} DLTX ↔ ${fmt(o.totalUsdt)} USDT</b> ${p2pStatusChip(o.status)}</div>
+          <div class="muted small-note">${p2pCodeChip(o.buyerCode || ('#' + o.buyerId), 'Buyer')} · ${p2pCodeChip(o.sellerCode || ('#' + o.sellerId), 'Seller')}${o.simulation ? ' · SIMULATION' : ''}</div>
+          <div class="muted small-note">Escrow ${fmt(o.escrowAmountDltx)} · payment ${escapeHtml(o.paymentStatus)}${o.disputeStatus ? ` · dispute ${escapeHtml(o.disputeStatus)}` : ''} · ${p2pWhen(o.lastActivityAt || o.createdAt)}${o.moderatorReassigned ? ' · reassigned to you' : ''}</div>
+        </div>`;
       list.innerHTML = `
+        <div class="card p2p-presence">
+          <div class="p2p-offer-top">
+            <label class="p2p-presence-toggle"><input type="checkbox" id="p2pPresenceToggle" /> <b>Available for P2P trades</b></label>
+            <span id="p2pPresenceState"></span>
+          </div>
+          <p class="hint">While available, traders can select you for new trades (up to ${p2p.me?.capacity ?? '—'} at once). You stay online while the app is open and drop to offline automatically when it is closed. Availability never changes escrow — release still needs a verified payment and your approval.</p>
+        </div>
         <div class="card p2p-modsearch">
           <label for="p2pModSearch">🔍 Look up a trader by Deltix ID (DLTX-XXXXXX) or user #</label>
           <div class="p2p-bid-row"><input id="p2pModSearch" type="text" maxlength="20" placeholder="DLTX-ABC123" autocomplete="off" /><button class="btn ghost" id="p2pModSearchBtn">Search</button></div>
@@ -3977,7 +4077,26 @@ async function renderP2pView() {
           <div class="p2p-offer-top"><b>#${o.id} · ${fmt(o.amountDltx)} DLTX ↔ ${fmt(o.totalUsdt)} USDT</b> ${p2pStatusChip(o.status)}</div>
           <div class="muted small-note">${p2pCodeChip(o.buyerCode || ('#' + o.buyerId), 'Buyer')} · ${p2pCodeChip(o.sellerCode || ('#' + o.sellerId), 'Seller')}${o.simulation ? ' · SIMULATION' : ''}</div>
           <div class="muted small-note">Created ${p2pWhen(o.createdAt)}${o.usdtSubmittedAt ? ` · paid ${p2pWhen(o.usdtSubmittedAt)}` : ''}</div>
-        </div>`).join(''));
+        </div>`).join('')) +
+        `<h3 class="section-title">My P2P Trades <span class="muted small-note">(${trades.length})</span></h3>` +
+        (!trades.length ? '<p class="muted center">No trades assigned to you yet.</p>' : SECTIONS.map(([key, label]) => {
+          const rows = trades.filter((t) => t.section === key);
+          if (!rows.length) return '';
+          const collapsed = key === 'COMPLETED' || key === 'CANCELLED';
+          return `<details class="p2p-mytrades-sec" ${collapsed ? '' : 'open'}><summary>${label} <span class="muted small-note">(${rows.length})</span></summary>${rows.map(tradeCard).join('')}</details>`;
+        }).join(''));
+      p2pRenderPresence();
+      $('p2pPresenceToggle').addEventListener('change', async (e) => {
+        const on = e.target.checked;
+        e.target.disabled = true;
+        try {
+          const me = await p2pSetAvailability(on);
+          p2pRenderPresence();
+          toast(on ? `You are ${me.status.toLowerCase()} for P2P trades` : 'You are offline for new P2P trades', { tone: on ? 'success' : 'info' });
+          loadP2pAdmins({ silent: true });
+        } catch (err) { e.target.checked = !on; toast(err.message, { tone: 'error' }); }
+        e.target.disabled = false;
+      });
       list.querySelectorAll('[data-mod]').forEach((el) =>
         el.addEventListener('click', () => openP2pOrder(el.dataset.mod, { moderator: true })));
       const doSearch = async () => {
@@ -4248,6 +4367,8 @@ async function openP2pOffer(id) {
     acceptBtn.classList.toggle('p2p-green', !o.mine && o.side === 'sell');
     acceptBtn.classList.toggle('p2p-red', !o.mine && o.side === 'buy');
     renderP2pBids(r.bids || []);
+    p2pFillAdminSelect();
+    if (!p2p.admins.length) loadP2pAdmins({ silent: true });
     $('p2pOfferModal').hidden = false;
   } catch (e) {
     toast(e.message, { tone: 'error' });
@@ -4305,6 +4426,8 @@ $('p2pOfferCancelOffer')?.addEventListener('click', async () => {
 $('p2pAcceptBtn')?.addEventListener('click', async () => {
   if (!p2p.offer || p2p.offer.mine) return;
   const amount = Number($('p2pTradeAmount').value);
+  const adminId = $('p2pAdminSelect')?.value || '';
+  const adminPick = adminId ? p2p.admins.find((a) => a.id === adminId) : null;
   const okGo = await askConfirm({
     title: 'Accept this price?',
     message: 'Terms freeze when both sides agree — review the numbers.',
@@ -4312,17 +4435,19 @@ $('p2pAcceptBtn')?.addEventListener('click', async () => {
       ['Amount', `${fmt(amount)} DLTX`],
       ['Price', `${p2p.offer.priceUsdt} USDT/DLTX`],
       ['Total', `${fmt(amount * p2p.offer.priceUsdt)} USDT`],
+      ['Admin', adminPick ? `${adminPick.code} (online)` : 'Auto — least busy online admin'],
     ],
     confirmText: 'Accept & create order',
   });
   if (!okGo) return;
   try {
-    const r = await api('POST', `/p2p/offers/${p2p.offer.id}/accept`, { amountDltx: amount, idempotencyKey: crypto.randomUUID() });
+    const r = await api('POST', `/p2p/offers/${p2p.offer.id}/accept`, { amountDltx: amount, idempotencyKey: crypto.randomUUID(), ...(adminId ? { moderatorId: adminId } : {}) });
     $('p2pOfferModal').hidden = true;
     toast(`Order #${r.order.id} created`, { tone: 'success', title: 'Escrow locked' });
     openP2pOrder(r.order.id);
   } catch (e) {
     $('p2pOfferHint').textContent = e.message;
+    if (['ADMIN_OFFLINE', 'ADMIN_BUSY', 'ADMIN_NOT_AUTHORIZED', 'ADMIN_CONFLICT_OF_INTEREST'].includes(e.code)) loadP2pAdmins({ silent: true });
   }
 });
 
@@ -4342,7 +4467,8 @@ $('p2pBidBtn')?.addEventListener('click', async () => {
 
 async function p2pAcceptBid(bidId) {
   try {
-    const r = await api('POST', `/p2p/bids/${bidId}/accept`, { idempotencyKey: crypto.randomUUID() });
+    const adminId = $('p2pAdminSelect')?.value || '';
+    const r = await api('POST', `/p2p/bids/${bidId}/accept`, { idempotencyKey: crypto.randomUUID(), ...(adminId ? { moderatorId: adminId } : {}) });
     $('p2pOfferModal').hidden = true;
     toast(`Order #${r.order.id} created`, { tone: 'success', title: 'Escrow locked' });
     openP2pOrder(r.order.id);
@@ -4450,6 +4576,30 @@ async function openP2pOrder(id, { moderator = false } = {}) {
       <div class="row"><span>Moderator</span><b>${o.moderatorAssigned ? (o.moderatorApproved ? 'Approved ✅' : 'Assigned') : 'Pending assignment'}</b></div>
       ${o.status === 'cancelled' ? `<div class="row"><span>Cancelled</span><b>${o.cancelledBy === 'system:timeout' ? 'Payment window expired' : (String(o.cancelledBy || '').startsWith('user:') ? (o.cancelledBy === `user:${o.buyerId}` ? 'by buyer' : 'by seller') : '')} · ${p2pWhen(o.closedAt)}</b></div>` : ''}
       ${o.status === 'completed' ? `<div class="row"><span>Seller payout</span><b>${o.sellerPayoutRecorded ? 'Paid ✅' : 'Processing ⏳'}</b></div>` : ''}`;
+    // Assigned admin: public code + live state; parties may request another admin ONLY while theirs is offline.
+    const adminRow = $('p2pOrderAdminRow');
+    const mod = r.moderator;
+    adminRow.hidden = false;
+    adminRow.innerHTML = `
+      <span class="p2p-admin-id">🛡 Trade admin: <b>${mod ? escapeHtml(mod.code || '—') : 'not assigned yet'}</b>${mod ? ' ' + p2pAdminChip(mod.status) : ''}${mod?.reassigned ? ' <span class="pill">REASSIGNED</span>' : ''}</span>
+      ${r.canRequestAdmin ? '<button class="btn ghost p2p-reassign-btn" id="p2pRequestAdmin">Request another admin</button>' : ''}
+      ${(r.moderatorHistory || []).length ? `<span class="muted small-note p2p-admin-hist">${r.moderatorHistory.map((h) => `${h.from ? escapeHtml(h.from) + ' → ' : ''}${escapeHtml(h.to || '')} (${escapeHtml(h.requestedBy)}, ${p2pWhen(h.at)})`).join(' · ')}</span>` : ''}`;
+    $('p2pRequestAdmin')?.addEventListener('click', async () => {
+      await loadP2pAdmins({ silent: true });
+      const online = p2p.admins.filter((a) => a.status === 'ONLINE' && (!mod || a.code !== mod.code));
+      const okGo = await askConfirm({
+        title: 'Request another admin?',
+        message: mod ? `Your assigned admin ${mod.code} is offline. An online admin will take over this trade. Your escrow is not affected.` : 'An online admin will be assigned to this trade. Your escrow is not affected.',
+        rows: [['Online admins', online.length ? online.map((a) => a.code).join(', ') : 'none right now']],
+        confirmText: 'Request admin',
+      });
+      if (!okGo) return;
+      try {
+        const rr = await api('POST', `/p2p/orders/${o.id}/reassign-request`, { reason: 'assigned admin offline' });
+        toast(`Admin ${rr.moderator?.code || ''} is now handling your trade`, { tone: 'success', title: 'Admin reassigned' });
+        openP2pOrder(o.id);
+      } catch (e) { toast(e.message, { tone: 'error' }); }
+    });
     // Contact block: official Deltix support first, then the counterparty.
     const contactEl = $('p2pContactRow');
     const contactLines = [];

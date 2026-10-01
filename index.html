@@ -227,6 +227,11 @@
             <button class="p2p-tool p2p-post" id="p2pCreateBtn">+ Post Ad</button>
           </div>
           <p class="hint" id="p2pRefRate" hidden></p>
+          <div class="card p2p-admins" id="p2pAdminsCard" hidden>
+            <div class="p2p-offer-top"><b>🛡️ Available P2P Admins</b><span class="muted small-note" id="p2pAdminsCount"></span></div>
+            <div id="p2pAdminsList"></div>
+            <p class="hint">Admins verify payments and release escrow. Pick one when you accept a trade — only online admins can be selected. Admins never control your escrow directly.</p>
+          </div>
           <div id="p2pList"><p class="muted center">Loading…</p></div>
           <div class="card p2p-mycontact" id="p2pSettingsCard">
             <h4 class="p2p-settings-title">⚙️ P2P settings</h4>
@@ -1174,6 +1179,9 @@
       <label for="p2pTradeAmount">Amount ($DLTX)</label>
       <input id="p2pTradeAmount" type="number" min="0" step="1" placeholder="0" />
       <div class="supply-list" id="p2pOfferQuote"></div>
+      <label for="p2pAdminSelect">🛡️ Trade admin (verifies payment &amp; releases escrow)</label>
+      <select id="p2pAdminSelect"></select>
+      <p class="hint" id="p2pAdminSelectHint"></p>
       <div class="modal-actions">
         <button class="btn primary" id="p2pAcceptBtn">Accept price</button>
       </div>
@@ -1197,6 +1205,7 @@
       <h3 id="p2pOrderTitle">Order</h3>
       <div class="p2p-steps" id="p2pSteps" hidden></div>
       <div class="supply-list" id="p2pOrderDetails"></div>
+      <div class="p2p-admin-row" id="p2pOrderAdminRow" hidden></div>
       <div class="p2p-contact-row" id="p2pContactRow" hidden></div>
       <div id="p2pPaySection" hidden>
         <div class="p2p-paytimer" id="p2pPayTimer" hidden></div>

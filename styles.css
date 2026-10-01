@@ -2992,3 +2992,25 @@ html[data-dark] .ed-stat b, html[data-dark] .ed-unlock-progress { color: var(--t
 /* Chat must never collapse when the order modal is content-heavy (flex-column shrink) */
 .p2p-chat { min-height: 150px; flex: none; }
 .p2p-quickrow { flex: none; }
+
+/* ── P2P: live admin directory, presence, order-room admin row ── */
+.p2p-admins { margin: 10px 0 12px; padding: 12px 14px; }
+.p2p-admin-line { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.p2p-admin-line:last-child { border-bottom: 0; }
+.p2p-admin-line .p2p-admin-id { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.p2p-admin-line.offline .p2p-admin-id { opacity: 0.55; }
+.p2p-admin-load { flex: none; }
+#p2pAdminSelect { width: 100%; margin: 4px 0 2px; }
+#p2pAdminSelect option:disabled { color: #777; }
+.p2p-admin-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0 4px; padding: 10px 12px; border-radius: 12px; background: rgba(14, 203, 129, 0.06); border: 1px solid rgba(14, 203, 129, 0.18); }
+.p2p-admin-row .p2p-admin-id { flex: 1; min-width: 0; }
+.p2p-admin-row .p2p-reassign-btn { width: auto; flex: none; padding: 6px 12px; font-size: 0.85rem; }
+.p2p-admin-row .p2p-admin-hist { flex-basis: 100%; }
+.p2p-presence { margin-bottom: 12px; }
+.p2p-presence-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.p2p-presence-toggle input { width: 20px; height: 20px; accent-color: var(--p2p-green, #0ecb81); }
+.p2p-mytrades-sec { margin: 6px 0 10px; }
+.p2p-mytrades-sec summary { cursor: pointer; font-weight: 600; padding: 6px 0; list-style: none; }
+.p2p-mytrades-sec summary::-webkit-details-marker { display: none; }
+.p2p-mytrades-sec summary::before { content: '▸'; display: inline-block; margin-right: 6px; transition: transform .15s; }
+.p2p-mytrades-sec[open] summary::before { transform: rotate(90deg); }
