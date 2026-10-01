@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.15.0';
+const APP_VERSION = '1.16.0';
 const $ = (id) => document.getElementById(id);
 
 // Stable per-phone identifier sent with every request (X-Device-Id) — the
@@ -4047,17 +4047,32 @@ async function renderP2pView() {
     } else if (p2p.view === 'mine') {
       await renderP2pMyAds(list);
     } else if (p2p.view === 'mod') {
-      const [r, mine] = await Promise.all([api('GET', '/p2p/moderation/queue'), api('GET', '/p2p/moderation/trades').catch(() => ({ trades: [], me: p2p.me }))]);
+      const [r, mine, comm] = await Promise.all([
+        api('GET', '/p2p/moderation/queue'),
+        api('GET', '/p2p/moderation/trades').catch(() => ({ trades: [], me: p2p.me })),
+        api('GET', '/p2p/moderation/commissions').catch(() => null),
+      ]);
       const queue = r.queue || [];
       p2p.me = mine.me || p2p.me;
-      const SECTIONS = [['NEW', '🆕 New'], ['ACTIVE', '▶️ Active'], ['PAYMENT_PENDING', '⏳ Payment pending'], ['PAYMENT_MARKED', '🧾 Payment marked'], ['DISPUTED', '⚠️ Disputed'], ['COMPLETED', '✅ Completed'], ['CANCELLED', '↩️ Cancelled']];
+      const SECTIONS = [['NEW', '🆕 New'], ['ACTIVE', '▶️ Active'], ['PAYMENT_PENDING', '⏳ Payment pending'], ['PAYMENT_MARKED', '🧾 Payment marked'], ['DISPUTED', '⚠️ Disputed'], ['COMPLETED', '✅ Completed'], ['CANCELLED', '↩️ Cancelled'], ['EXPIRED', '⏰ Expired']];
       const trades = mine.trades || [];
+      const remain = (s) => (s == null ? '' : ` · ⏱ ${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')} left`);
       const tradeCard = (o) => `
         <div class="card p2p-offer-card" data-mod="${o.id}">
-          <div class="p2p-offer-top"><b>#${o.id} · ${fmt(o.amountDltx)} DLTX ↔ ${fmt(o.totalUsdt)} USDT</b> ${p2pStatusChip(o.status)}</div>
-          <div class="muted small-note">${p2pCodeChip(o.buyerCode || ('#' + o.buyerId), 'Buyer')} · ${p2pCodeChip(o.sellerCode || ('#' + o.sellerId), 'Seller')}${o.simulation ? ' · SIMULATION' : ''}</div>
-          <div class="muted small-note">Escrow ${fmt(o.escrowAmountDltx)} · payment ${escapeHtml(o.paymentStatus)}${o.disputeStatus ? ` · dispute ${escapeHtml(o.disputeStatus)}` : ''} · ${p2pWhen(o.lastActivityAt || o.createdAt)}${o.moderatorReassigned ? ' · reassigned to you' : ''}</div>
+          <div class="p2p-offer-top"><b>#${o.id} · ${fmt(o.amountDltx)} DLTX @ ${o.priceUsdt} ↔ ${fmt(o.totalUsdt)} USDT</b> ${p2pStatusChip(o.status)}</div>
+          <div class="muted small-note">${p2pCodeChip(o.buyerCode || ('#' + o.buyerId), 'Buyer')} · ${p2pCodeChip(o.sellerCode || ('#' + o.sellerId), 'Seller')}${o.adId ? ` · Ad #${o.adId}` : ''}${o.simulation ? ' · SIMULATION' : ''}</div>
+          <div class="muted small-note">Escrow ${fmt(o.escrowAmountDltx)} · payment ${escapeHtml(o.paymentStatus)}${o.disputeStatus ? ` · dispute ${escapeHtml(o.disputeStatus)}` : ''}${remain(o.remainingSeconds)} · ${p2pWhen(o.createdAt)}${o.moderatorReassigned ? ' · reassigned to you' : ''}</div>
         </div>`;
+      const period = (p, label) => `<div class="p2p-comm-cell"><span class="muted small-note">${label}</span><b>${fmt(p.commissionDltx)} DLTX</b><span class="muted small-note">${p.completedTrades} trade${p.completedTrades === 1 ? '' : 's'}</span></div>`;
+      const commCard = comm ? `
+        <div class="card p2p-commissions">
+          <div class="p2p-offer-top"><b>💰 My Commissions</b><span class="muted small-note">${comm.policy.sellerFeePercent}% seller · ${comm.policy.buyerFeePercent}% buyer · ${comm.policy.moderatorSharePercent}% share</span></div>
+          <div class="p2p-comm-grid">${period(comm.periods.today, 'Today')}${period(comm.periods.days7, '7 days')}${period(comm.periods.days30, '30 days')}${period(comm.periods.allTime, 'All time')}</div>
+          <div class="muted small-note">All time: ${comm.periods.allTime.completedTrades} completed · volume ${fmt(comm.periods.allTime.volumeDltx)} DLTX / ${fmt(comm.periods.allTime.volumeUsdt)} USDT · seller fees ${fmt(comm.periods.allTime.sellerFeesUsdt)} USDT · buyer fees ${fmt(comm.periods.allTime.buyerFeesDltx)} DLTX</div>
+          <div class="muted small-note">Pending: ${comm.pending.trades} open trade${comm.pending.trades === 1 ? '' : 's'} (≈ ${fmt(comm.pending.commissionDltx)} DLTX if settled) · Failed settlements: ${comm.failedSettlements}</div>
+          ${comm.entries.length ? `<details class="p2p-mytrades-sec"><summary>Recent entries <span class="muted small-note">(${comm.entries.length})</span></summary>${comm.entries.slice(0, 30).map((e) => `
+            <div class="p2p-comm-row"><span>#${e.tradeId} · ${p2pCodeChip(e.buyerCode, 'B')} ${p2pCodeChip(e.sellerCode, 'S')}</span><span>${fmt(e.amountDltx)} DLTX · fees ${fmt(e.sellerFee.amount)} ${escapeHtml(e.sellerFee.asset.replace(':bep20', ''))} + ${fmt(e.buyerFee.amount)} ${escapeHtml(e.buyerFee.asset)}</span><b class="p2p-green-t">+${fmt(e.commission.amount)} DLTX</b><span class="muted small-note">${escapeHtml(e.status)} · ${p2pWhen(e.at)}</span></div>`).join('')}</details>` : '<p class="hint">No settled commissions yet — commission is earned only when a trade you moderate completes.</p>'}
+        </div>` : '';
       list.innerHTML = `
         <div class="card p2p-presence">
           <div class="p2p-offer-top">
@@ -4066,6 +4081,7 @@ async function renderP2pView() {
           </div>
           <p class="hint">While available, traders can select you for new trades (up to ${p2p.me?.capacity ?? '—'} at once). You stay online while the app is open and drop to offline automatically when it is closed. Availability never changes escrow — release still needs a verified payment and your approval.</p>
         </div>
+        ${commCard}
         <div class="card p2p-modsearch">
           <label for="p2pModSearch">🔍 Look up a trader by Deltix ID (DLTX-XXXXXX) or user #</label>
           <div class="p2p-bid-row"><input id="p2pModSearch" type="text" maxlength="20" placeholder="DLTX-ABC123" autocomplete="off" /><button class="btn ghost" id="p2pModSearchBtn">Search</button></div>
@@ -4082,7 +4098,7 @@ async function renderP2pView() {
         (!trades.length ? '<p class="muted center">No trades assigned to you yet.</p>' : SECTIONS.map(([key, label]) => {
           const rows = trades.filter((t) => t.section === key);
           if (!rows.length) return '';
-          const collapsed = key === 'COMPLETED' || key === 'CANCELLED';
+          const collapsed = key === 'COMPLETED' || key === 'CANCELLED' || key === 'EXPIRED';
           return `<details class="p2p-mytrades-sec" ${collapsed ? '' : 'open'}><summary>${label} <span class="muted small-note">(${rows.length})</span></summary>${rows.map(tradeCard).join('')}</details>`;
         }).join(''));
       p2pRenderPresence();
@@ -4510,21 +4526,25 @@ function p2pRenderSteps(status) {
 }
 
 // Payment window from the SERVER deadline (the same clock the cancel/timeout
-// rules use) — no client-side guess.
-function p2pStartPayTimer(o) {
+// rules use) — no client-side guess. Both parties see the same countdown.
+function p2pStartPayTimer(o, { role = 'buyer', moderatorCode = null, windowMinutes = 90 } = {}) {
   const el = $('p2pPayTimer');
-  const deadline = new Date(o.paymentDeadlineAt || (new Date(o.createdAt).getTime() + 30 * 60 * 1000)).getTime();
+  const deadline = new Date(o.paymentDeadlineAt || (new Date(o.createdAt).getTime() + windowMinutes * 60 * 1000)).getTime();
+  const meta = `<span class="p2p-paytimer-meta">${moderatorCode ? `Moderator <b>${escapeHtml(moderatorCode)}</b> · ` : ''}Escrow <b>${fmt(o.amountDltx)} DLTX secured</b></span>`;
   const tick = () => {
     const left = deadline - Date.now();
     if (left <= 0) {
-      el.innerHTML = '⏰ Payment window elapsed — pay and submit now, or the seller may cancel and the order will expire.';
+      el.innerHTML = (role === 'buyer'
+        ? '⏰ Payment window elapsed — pay and submit now, or the seller may cancel and the order will expire.'
+        : '⏰ Payment window elapsed — you may cancel now if no payment has been marked; marked payments are never auto-returned.') + meta;
       el.classList.add('late');
       if (p2p.payTimer) { clearInterval(p2p.payTimer); p2p.payTimer = null; }
       return;
     }
-    const m = Math.floor(left / 60000);
+    const h = Math.floor(left / 3600000);
+    const m = Math.floor((left % 3600000) / 60000);
     const s = Math.floor((left % 60000) / 1000);
-    el.innerHTML = `⏱ Pay within <b>${m}:${String(s).padStart(2, '0')}</b>`;
+    el.innerHTML = `<span class="p2p-paytimer-main">⏱ PAYMENT WINDOW <b>${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}</b> remaining</span>${meta}`;
   };
   el.hidden = false;
   el.classList.remove('late');
@@ -4671,7 +4691,8 @@ async function openP2pOrder(id, { moderator = false } = {}) {
     await loadP2pChat(o.id);
     stopP2pChatPoll();
     p2p.chatTimer = setInterval(() => loadP2pChat(o.id).catch(() => {}), 5000);
-    if (payable && o.status === 'awaiting_usdt') p2pStartPayTimer(o);
+    if (payable && o.status === 'awaiting_usdt') p2pStartPayTimer(o, { role: 'buyer', moderatorCode: o.moderatorCode, windowMinutes: r.paymentWindowMinutes });
+    else if (o.role === 'seller' && o.status === 'awaiting_usdt') p2pStartPayTimer(o, { role: 'seller', moderatorCode: o.moderatorCode, windowMinutes: r.paymentWindowMinutes });
     $('p2pOrderModal').hidden = false;
     // Chat rendered while the modal was hidden (zero heights) — snap to latest now.
     const chatList = $('p2pChatList');
@@ -4806,7 +4827,9 @@ document.querySelectorAll('#p2pQuickReplies .p2p-qr').forEach((b) =>
 $('p2pOrderClose')?.addEventListener('click', () => {
   $('p2pOrderModal').hidden = true;
   stopP2pChatPoll();
-  p2pMaybeAd();
+  // AdMob interstitials only after a server-confirmed terminal state — never
+  // around payment / release / dispute actions still in flight.
+  if (['completed', 'cancelled', 'refunded'].includes(p2p.order?.status)) p2pMaybeAd();
   renderP2pView();
 });
 $('p2pCopyAddr')?.addEventListener('click', async () => {

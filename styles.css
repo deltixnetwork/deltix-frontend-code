@@ -3014,3 +3014,14 @@ html[data-dark] .ed-stat b, html[data-dark] .ed-unlock-progress { color: var(--t
 .p2p-mytrades-sec summary::-webkit-details-marker { display: none; }
 .p2p-mytrades-sec summary::before { content: '▸'; display: inline-block; margin-right: 6px; transition: transform .15s; }
 .p2p-mytrades-sec[open] summary::before { transform: rotate(90deg); }
+
+/* ── P2P: commissions dashboard + shared payment-window countdown ── */
+.p2p-commissions { margin-bottom: 12px; }
+.p2p-comm-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0 8px; }
+.p2p-comm-cell { display: flex; flex-direction: column; gap: 2px; padding: 8px; border-radius: 10px; background: rgba(255,255,255,0.04); text-align: center; }
+.p2p-comm-cell b { font-size: 0.95rem; color: var(--p2p-green, #0ecb81); }
+.p2p-comm-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 0.85rem; }
+.p2p-comm-row:last-child { border-bottom: 0; }
+.p2p-comm-row > b { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.p2p-paytimer-main { display: block; }
+.p2p-paytimer-meta { display: block; margin-top: 4px; font-size: 0.8rem; opacity: 0.85; font-weight: 400; }
