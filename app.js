@@ -4118,6 +4118,9 @@ async function renderP2pView() {
             <div class="p2p-comm-row"><span>#${e.tradeId} · ${p2pCodeChip(e.buyerCode, 'B')} ${p2pCodeChip(e.sellerCode, 'S')}</span><span>${fmt(e.amountDltx)} DLTX · fees ${fmt(e.sellerFee.amount)} ${escapeHtml(e.sellerFee.asset.replace(':bep20', ''))} + ${fmt(e.buyerFee.amount)} ${escapeHtml(e.buyerFee.asset)}</span><b class="p2p-green-t">+${fmt(e.commission.amount)} DLTX</b><span class="muted small-note">${escapeHtml(e.status)} · ${p2pWhen(e.at)}</span></div>`).join('')}</details>` : '<p class="hint">No settled commissions yet — commission is earned only when a trade you moderate completes.</p>'}
         </div>` : '';
       list.innerHTML = `
+        <div class="p2p-mod-head">
+          <div><div class="p2p-mod-title">🛡 Moderation Console</div><div class="muted small-note">${p2p.me?.code ? `Signed in as <b>${escapeHtml(p2p.me.code)}</b> · ` : ''}${(p2p.me?.senior || mine.me?.senior) ? 'Senior moderator · can view every trade, reassign admins, remove ads, ban/unban' : 'Moderator · can review assigned trades, remove ads, ban/unban'}</div></div>
+        </div>
         <div class="card p2p-presence">
           <div class="p2p-offer-top">
             <label class="p2p-presence-toggle"><input type="checkbox" id="p2pPresenceToggle" /> <b>Available for P2P trades</b></label>
@@ -4136,7 +4139,8 @@ async function renderP2pView() {
         </div>
         ${commCard}
         <div class="card p2p-modsearch">
-          <label for="p2pModSearch">🔍 Look up a trader by Deltix ID (DLTX-XXXXXX) or user #</label>
+          <label for="p2pModSearch">🔍 Trader lookup &amp; enforcement</label>
+          <p class="hint">Search by Deltix ID (DLTX-XXXXXX) or user #. Review trades, ads, holdings and enforcement history; remove ads or ban accounts from here.</p>
           <div class="p2p-bid-row"><input id="p2pModSearch" type="text" maxlength="20" placeholder="DLTX-ABC123" autocomplete="off" /><button class="btn ghost" id="p2pModSearchBtn">Search</button></div>
           <div id="p2pModSearchOut"></div>
         </div>
@@ -4187,19 +4191,36 @@ async function renderP2pView() {
           const u = s.user;
           const ctl = s.controls || {};
           const h = s.holdings;
+          const hist = s.enforcementHistory || [];
+          const statusChip = u.accountStatus === 'blocked' ? '<span class="p2p-chip p2p-chip-bad">BANNED</span>' : (u.riskState && u.riskState !== 'normal' ? `<span class="p2p-chip p2p-chip-warn">UNDER REVIEW · ${escapeHtml(u.riskState)}</span>` : '<span class="p2p-chip p2p-chip-ok">ACTIVE</span>');
+          const stat = (label, v, cls = '') => `<div class="p2p-stat ${cls}"><span class="muted small-note">${label}</span><b>${v}</b></div>`;
+          const histLabel = (e) => e.action === 'account_banned_by_moderator' ? `🚫 Banned${e.burned ? ` · ${fmt(e.burned)} DLTX burned` : ''}` : e.action === 'account_unbanned_by_moderator' ? '✅ Unbanned' : `⚠️ Risk ${escapeHtml(e.from || 'normal')} → ${escapeHtml(e.to || '')}`;
           out.innerHTML = `
-            <div class="p2p-modsearch-user">
-              <b>${escapeHtml(u.displayName)}</b> ${p2pCodeChip(u.referralCode)} ${u.kycVerified ? '<span class="p2p-chip p2p-chip-ok">KYC ✓</span>' : '<span class="p2p-chip p2p-chip-muted">No KYC</span>'}
-              ${u.accountStatus !== 'active' ? `<span class="p2p-chip p2p-chip-bad">${escapeHtml(u.accountStatus)}</span>` : ''}
-              ${u.riskState && u.riskState !== 'normal' ? `<span class="p2p-chip p2p-chip-warn">risk: ${escapeHtml(u.riskState)}</span>` : ''}
-              <div class="muted small-note">${u.completedTrades} completed · ${u.cancelledTrades} cancelled · ${u.disputesOpened} disputes · ${u.openTrades ?? 0} open · ${u.accountAgeDays}d old · role ${escapeHtml(u.p2pRole)}</div>
-              ${h ? `<div class="muted small-note">Holdings: ${fmt(h.balance)} liquid · ${fmt(h.staked)} staked · ${fmt(h.p2pLocked)} in escrow</div>` : ''}
-              ${ctl.canBan || ctl.canUnban ? `<div class="p2p-myad-actions p2p-enforce-row">
-                ${ctl.canBan ? `<button class="btn ghost p2p-danger-t" id="p2pModBanBtn">Ban account</button>` : ''}
-                ${ctl.canBan && ctl.canBurn ? `<button class="btn danger" id="p2pModBanBurnBtn">Ban + burn coins</button>` : ''}
-                ${ctl.canBan && !ctl.canBurn ? '<span class="muted small-note">Burn unavailable while trades are open.</span>' : ''}
-                ${ctl.canUnban ? `<button class="btn ghost" id="p2pModUnbanBtn">Unban account</button>` : ''}
-              </div>` : (ctl.protectedTarget ? '<div class="muted small-note">🔒 Protected account — enforcement disabled.</div>' : '')}
+            <div class="p2p-lookup">
+              <div class="p2p-lookup-head">
+                <span class="p2p-avatar" style="--h:${(Number(u.userId) * 47) % 360}">${escapeHtml((u.referralCode || 'T').slice(-2))}</span>
+                <div class="p2p-lookup-id">
+                  <b>${escapeHtml(u.referralCode || u.displayName)}</b>
+                  <div class="p2p-lookup-chips">${statusChip} ${u.kycVerified ? '<span class="p2p-chip p2p-chip-ok">KYC ✓</span>' : '<span class="p2p-chip p2p-chip-muted">No KYC</span>'} ${u.p2pRole !== 'user' ? `<span class="p2p-chip p2p-chip-muted">${escapeHtml(u.p2pRole.replace(/_/g, ' '))}</span>` : ''}</div>
+                </div>
+              </div>
+              <div class="p2p-stat-grid p2p-lookup-grid">
+                ${stat('Completed', u.completedTrades)}${stat('Cancelled', u.cancelledTrades)}${stat('Disputes', u.disputesOpened)}${stat('Open trades', u.openTrades ?? 0)}${stat('Account age', `${u.accountAgeDays}d`)}
+                ${h ? stat('Liquid', `${fmt(h.balance)}`) + stat('Staked', `${fmt(h.staked)}`) + stat('In escrow', `${fmt(h.p2pLocked)}`) : ''}
+              </div>
+              ${ctl.canBan || ctl.canUnban || ctl.protectedTarget ? `
+              <div class="p2p-enforce">
+                <div class="p2p-enforce-title">🛡 Enforcement</div>
+                ${ctl.protectedTarget ? '<p class="hint">🔒 Protected account (moderator, support or your own) — enforcement is disabled.</p>' : `
+                <p class="hint">Every action requires a written reason and is recorded in the permanent audit log under your moderator ID. Bans take effect immediately; burns are irreversible.</p>
+                <div class="p2p-myad-actions p2p-enforce-row">
+                  ${ctl.canBan ? '<button class="btn ghost p2p-danger-t" id="p2pModBanBtn">Ban account</button>' : ''}
+                  ${ctl.canBan && ctl.canBurn ? `<button class="btn danger" id="p2pModBanBurnBtn">Ban + burn ${fmt((h?.balance || 0) + (h?.staked || 0))} DLTX</button>` : ''}
+                  ${ctl.canUnban ? '<button class="btn primary" id="p2pModUnbanBtn">Unban account</button>' : ''}
+                </div>
+                ${ctl.canBan && !ctl.canBurn ? '<p class="hint">Burn is unavailable while this account has open P2P trades — cancel or complete them first.</p>' : ''}`}
+                ${hist.length ? `<div class="p2p-enforce-hist">${hist.slice(0, 6).map((e) => `<div class="p2p-comm-row"><span>${histLabel(e)}</span><span class="muted small-note">${escapeHtml(e.by || '')} · ${p2pWhen(e.at)}</span>${e.reason ? `<span class="muted small-note p2p-enforce-reason">“${escapeHtml(e.reason.slice(0, 120))}”</span>` : ''}</div>`).join('')}</div>` : ''}
+              </div>` : ''}
             </div>
             <h4 class="p2p-modsearch-h">Trades (${s.orders.length})</h4>` +
             (s.orders.slice(0, 30).map((o) => `
@@ -4210,9 +4231,9 @@ async function renderP2pView() {
             `<h4 class="p2p-modsearch-h">Ads (${s.offers.length})</h4>` +
             (s.offers.slice(0, 30).map((a) => `
               <div class="card p2p-offer-card">
-                <div class="p2p-offer-top"><b>#${a.id} · ${a.side.toUpperCase()} ${fmt(a.amountDltx)} DLTX @ ${a.priceUsdt}</b> ${a.deleted ? '<span class="p2p-chip p2p-chip-muted">Deleted</span>' : p2pStatusChip(a.status)}</div>
-                <div class="muted small-note">remaining ${fmt(a.remainingDltx)} · ${a.activeTrades} active · ${p2pWhen(a.createdAt)}</div>
-                ${ctl.canRemoveAds && ['active', 'paused'].includes(a.status) ? `<div class="p2p-myad-actions"><button class="btn ghost p2p-danger-t" data-mod-remove-ad="${a.id}" data-ad-label="#${a.id} · ${a.side.toUpperCase()} ${fmt(a.amountDltx)} DLTX @ ${a.priceUsdt}" data-ad-active="${a.activeTrades}">Remove ad</button></div>` : ''}
+                <div class="p2p-offer-top"><b>#${a.id} · <span class="${a.side === 'sell' ? 'p2p-red-t' : 'p2p-green-t'}">${a.side.toUpperCase()}</span> ${fmt(a.amountDltx)} DLTX @ ${a.priceUsdt}</b> ${a.deleted ? '<span class="p2p-chip p2p-chip-muted">Deleted</span>' : p2pStatusChip(a.status)}</div>
+                <div class="muted small-note">remaining ${fmt(a.remainingDltx)} · ${a.activeTrades} active · ${a.completedTrades} completed · ${p2pWhen(a.createdAt)}</div>
+                ${ctl.canRemoveAds && ['active', 'paused'].includes(a.status) ? `<div class="p2p-myad-actions"><button class="btn ghost p2p-danger-t" data-mod-remove-ad="${a.id}" data-ad-label="#${a.id} · ${a.side.toUpperCase()} ${fmt(a.amountDltx)} DLTX @ ${a.priceUsdt}" data-ad-active="${a.activeTrades}">Remove from market</button></div>` : ''}
               </div>`).join('') || '<p class="muted small-note">No ads.</p>');
           out.querySelectorAll('[data-mod-open]').forEach((el) => el.addEventListener('click', () => openP2pOrder(el.dataset.modOpen, { moderator: true })));
           // Remove another user's ad (soft; open trades untouched).

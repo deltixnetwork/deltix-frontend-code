@@ -3045,8 +3045,22 @@ html[data-dark] .ed-stat b, html[data-dark] .ed-unlock-progress { color: var(--t
 .p2p-release-btn:disabled { opacity: .55; }
 
 /* ── Moderator enforcement (remove ad / ban / unban) ── */
+.p2p-mod-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 2px 0 12px; }
+.p2p-mod-title { font-weight: 800; font-size: 1.05rem; }
+.p2p-lookup { padding: 12px; border-radius: 14px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); margin-top: 10px; }
+.p2p-lookup-head { display: flex; align-items: center; gap: 10px; }
+.p2p-lookup-id b { font-size: 1.05rem; letter-spacing: .02em; }
+.p2p-lookup-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.p2p-lookup-grid { grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); margin-top: 12px; }
+.p2p-lookup-grid .p2p-stat b { font-size: .95rem; }
+.p2p-lookup-grid .p2p-stat .small-note { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.p2p-enforce { margin-top: 12px; padding: 10px 12px; border-radius: 12px; border: 1px dashed rgba(246, 70, 93, .45); background: rgba(246, 70, 93, .05); }
+.p2p-enforce-title { font-weight: 700; margin-bottom: 4px; }
 .p2p-enforce-row { margin-top: 8px; }
+.p2p-enforce-hist { margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px; }
+.p2p-enforce-reason { grid-column: 1 / -1; font-style: italic; }
 .p2p-chip-warn { background: rgba(245, 158, 11, .18); color: #f59e0b; }
+html:not([data-dark]) .p2p-lookup { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.08); }
 #confirmDialog .ar-reason, #confirmDialog .ar-typed { width: 100%; margin: 8px 0 0; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(128,128,148,.35); background: rgba(255,255,255,0.04); color: inherit; font-size: 14px; }
 #confirmDialog .ar-typed { letter-spacing: .08em; font-weight: 700; text-transform: uppercase; }
 
