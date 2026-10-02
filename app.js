@@ -650,6 +650,49 @@ function askConfirm({ title = 'Are you sure?', message = '', rows = [], confirmT
   });
 }
 
+// Confirmation that also collects a REASON (5+ chars) and, optionally, a typed
+// safety word (e.g. "BAN") before the destructive button enables. Resolves the
+// reason string, or null when cancelled.
+function askReason({ title = 'Confirm', message = '', rows = [], placeholder = 'Reason', confirmText = 'Confirm', cancelText = 'Cancel', typed = null } = {}) {
+  return new Promise((resolve) => {
+    document.getElementById('confirmDialog')?.remove();
+    const wrap = document.createElement('div');
+    wrap.className = 'modal-backdrop';
+    wrap.id = 'confirmDialog';
+    wrap.innerHTML = `
+      <div class="modal" role="alertdialog" aria-modal="true">
+        <h3></h3>
+        <p class="hint"${message ? '' : ' hidden'}></p>
+        ${rows.length ? `<div class="supply-list">${rows.map(() => '<div class="supply-row"><span class="k"></span><span class="v"></span></div>').join('')}</div>` : ''}
+        <input type="text" class="ar-reason" maxlength="200" autocomplete="off" />
+        ${typed ? `<input type="text" class="ar-typed" maxlength="20" autocomplete="off" />` : ''}
+        <div class="modal-actions">
+          <button class="btn ghost" type="button"></button>
+          <button class="btn danger" type="button" disabled></button>
+        </div>
+      </div>`;
+    wrap.querySelector('h3').textContent = title;
+    if (message) wrap.querySelector('p.hint').textContent = message;
+    wrap.querySelectorAll('.supply-row').forEach((rowEl, i) => { rowEl.querySelector('.k').textContent = rows[i][0]; rowEl.querySelector('.v').textContent = rows[i][1]; });
+    const reasonEl = wrap.querySelector('.ar-reason');
+    reasonEl.placeholder = placeholder;
+    const typedEl = wrap.querySelector('.ar-typed');
+    if (typedEl) typedEl.placeholder = `Type ${typed} to confirm`;
+    const [cancelBtn, okBtn] = wrap.querySelectorAll('.modal-actions .btn');
+    cancelBtn.textContent = cancelText;
+    okBtn.textContent = confirmText;
+    const check = () => { okBtn.disabled = reasonEl.value.trim().length < 5 || (typedEl && typedEl.value.trim() !== typed); };
+    reasonEl.addEventListener('input', check);
+    typedEl?.addEventListener('input', check);
+    const done = (val) => { wrap.remove(); resolve(val); };
+    cancelBtn.addEventListener('click', () => done(null));
+    okBtn.addEventListener('click', () => { if (!okBtn.disabled) done(reasonEl.value.trim()); });
+    wrap.addEventListener('click', (e) => { if (e.target === wrap) done(null); });
+    document.body.appendChild(wrap);
+    reasonEl.focus();
+  });
+}
+
 // ---------- Reward celebration popup ----------
 // A branded, animated confetti popup used for claims and wins instead of a raw
 // toast. Falls back to toast() automatically when amount is zero/non-positive.
@@ -4142,11 +4185,21 @@ async function renderP2pView() {
         try {
           const s = await api('GET', `/p2p/moderation/search?q=${encodeURIComponent(q)}`);
           const u = s.user;
+          const ctl = s.controls || {};
+          const h = s.holdings;
           out.innerHTML = `
             <div class="p2p-modsearch-user">
               <b>${escapeHtml(u.displayName)}</b> ${p2pCodeChip(u.referralCode)} ${u.kycVerified ? '<span class="p2p-chip p2p-chip-ok">KYC ✓</span>' : '<span class="p2p-chip p2p-chip-muted">No KYC</span>'}
               ${u.accountStatus !== 'active' ? `<span class="p2p-chip p2p-chip-bad">${escapeHtml(u.accountStatus)}</span>` : ''}
-              <div class="muted small-note">${u.completedTrades} completed · ${u.cancelledTrades} cancelled · ${u.disputesOpened} disputes · ${u.accountAgeDays}d old · role ${escapeHtml(u.p2pRole)}</div>
+              ${u.riskState && u.riskState !== 'normal' ? `<span class="p2p-chip p2p-chip-warn">risk: ${escapeHtml(u.riskState)}</span>` : ''}
+              <div class="muted small-note">${u.completedTrades} completed · ${u.cancelledTrades} cancelled · ${u.disputesOpened} disputes · ${u.openTrades ?? 0} open · ${u.accountAgeDays}d old · role ${escapeHtml(u.p2pRole)}</div>
+              ${h ? `<div class="muted small-note">Holdings: ${fmt(h.balance)} liquid · ${fmt(h.staked)} staked · ${fmt(h.p2pLocked)} in escrow</div>` : ''}
+              ${ctl.canBan || ctl.canUnban ? `<div class="p2p-myad-actions p2p-enforce-row">
+                ${ctl.canBan ? `<button class="btn ghost p2p-danger-t" id="p2pModBanBtn">Ban account</button>` : ''}
+                ${ctl.canBan && ctl.canBurn ? `<button class="btn danger" id="p2pModBanBurnBtn">Ban + burn coins</button>` : ''}
+                ${ctl.canBan && !ctl.canBurn ? '<span class="muted small-note">Burn unavailable while trades are open.</span>' : ''}
+                ${ctl.canUnban ? `<button class="btn ghost" id="p2pModUnbanBtn">Unban account</button>` : ''}
+              </div>` : (ctl.protectedTarget ? '<div class="muted small-note">🔒 Protected account — enforcement disabled.</div>' : '')}
             </div>
             <h4 class="p2p-modsearch-h">Trades (${s.orders.length})</h4>` +
             (s.orders.slice(0, 30).map((o) => `
@@ -4157,10 +4210,51 @@ async function renderP2pView() {
             `<h4 class="p2p-modsearch-h">Ads (${s.offers.length})</h4>` +
             (s.offers.slice(0, 30).map((a) => `
               <div class="card p2p-offer-card">
-                <div class="p2p-offer-top"><b>#${a.id} · ${a.side.toUpperCase()} ${fmt(a.amountDltx)} DLTX @ ${a.priceUsdt}</b> ${p2pStatusChip(a.status)}</div>
+                <div class="p2p-offer-top"><b>#${a.id} · ${a.side.toUpperCase()} ${fmt(a.amountDltx)} DLTX @ ${a.priceUsdt}</b> ${a.deleted ? '<span class="p2p-chip p2p-chip-muted">Deleted</span>' : p2pStatusChip(a.status)}</div>
                 <div class="muted small-note">remaining ${fmt(a.remainingDltx)} · ${a.activeTrades} active · ${p2pWhen(a.createdAt)}</div>
+                ${ctl.canRemoveAds && ['active', 'paused'].includes(a.status) ? `<div class="p2p-myad-actions"><button class="btn ghost p2p-danger-t" data-mod-remove-ad="${a.id}" data-ad-label="#${a.id} · ${a.side.toUpperCase()} ${fmt(a.amountDltx)} DLTX @ ${a.priceUsdt}" data-ad-active="${a.activeTrades}">Remove ad</button></div>` : ''}
               </div>`).join('') || '<p class="muted small-note">No ads.</p>');
           out.querySelectorAll('[data-mod-open]').forEach((el) => el.addEventListener('click', () => openP2pOrder(el.dataset.modOpen, { moderator: true })));
+          // Remove another user's ad (soft; open trades untouched).
+          out.querySelectorAll('[data-mod-remove-ad]').forEach((btn) => btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const reason = await askReason({ title: 'Remove this ad from the market?', message: `Ad ${btn.dataset.adLabel}. ${Number(btn.dataset.adActive) ? `${btn.dataset.adActive} open trade(s) on it continue normally — escrow is untouched.` : 'No open trades on it.'} The owner is notified with your reason.`, placeholder: 'Reason (shown to the owner, kept in the audit log)', confirmText: 'Remove ad' });
+            if (!reason) return;
+            try {
+              await api('POST', `/p2p/moderation/offers/${btn.dataset.modRemoveAd}/cancel`, { reason });
+              toast('Ad removed from the market', { tone: 'success' });
+              doSearch();
+            } catch (err) { toast(err.message, { tone: 'error' }); }
+          }));
+          const banFlow = async (burn) => {
+            const reason = await askReason({
+              title: burn ? `BAN ${u.referralCode} and BURN ${fmt((h?.balance || 0) + (h?.staked || 0))} DLTX?` : `BAN ${u.referralCode}?`,
+              message: burn
+                ? 'The account is blocked everywhere, every live ad is removed, all active stakes end and the ENTIRE wallet (liquid + staked, including the welcome bonus) is burned back to the protocol. Burned coins cannot be restored. Only do this for confirmed fraud.'
+                : 'The account is blocked everywhere and every live ad is removed. Coins are NOT touched (you can burn later after review). Reversible with Unban.',
+              rows: [['Account', u.referralCode || '#' + u.userId], ['Holdings', h ? `${fmt(h.balance)} liquid · ${fmt(h.staked)} staked` : '—'], ['Open trades', String(u.openTrades ?? 0)]],
+              placeholder: 'Reason (kept in the immutable audit log)',
+              confirmText: burn ? 'BAN + BURN' : 'BAN',
+              typed: 'BAN',
+            });
+            if (!reason) return;
+            try {
+              const r = await api('POST', `/p2p/moderation/users/${u.userId}/ban`, { reason, confirm: 'BAN', burn });
+              toast(r.code === 'ALREADY_BANNED' ? 'Account was already banned' : `Account banned${burn ? ` · ${fmt(r.burned)} DLTX burned` : ''} · ${r.adsRemoved || 0} ad(s) removed`, { tone: 'success', title: 'Enforcement recorded' });
+              doSearch();
+            } catch (err) { toast(err.message, { tone: 'error' }); }
+          };
+          $('p2pModBanBtn')?.addEventListener('click', () => banFlow(false));
+          $('p2pModBanBurnBtn')?.addEventListener('click', () => banFlow(true));
+          $('p2pModUnbanBtn')?.addEventListener('click', async () => {
+            const reason = await askReason({ title: `Unban ${u.referralCode}?`, message: 'The account can sign in and trade again. Burned coins are not restored automatically.', placeholder: 'Reason (audit log)', confirmText: 'Unban' });
+            if (!reason) return;
+            try {
+              await api('POST', `/p2p/moderation/users/${u.userId}/unban`, { reason });
+              toast('Account unbanned', { tone: 'success' });
+              doSearch();
+            } catch (err) { toast(err.message, { tone: 'error' }); }
+          });
         } catch (e) { out.innerHTML = `<p class="hint">${escapeHtml(e.message)}</p>`; }
       };
       $('p2pModSearchBtn').addEventListener('click', doSearch);

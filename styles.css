@@ -3044,6 +3044,12 @@ html[data-dark] .ed-stat b, html[data-dark] .ed-unlock-progress { color: var(--t
 .p2p-release-btn { background: var(--p2p-green, #0ecb81) !important; color: #0b1020 !important; font-weight: 800; letter-spacing: .02em; }
 .p2p-release-btn:disabled { opacity: .55; }
 
+/* ── Moderator enforcement (remove ad / ban / unban) ── */
+.p2p-enforce-row { margin-top: 8px; }
+.p2p-chip-warn { background: rgba(245, 158, 11, .18); color: #f59e0b; }
+#confirmDialog .ar-reason, #confirmDialog .ar-typed { width: 100%; margin: 8px 0 0; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(128,128,148,.35); background: rgba(255,255,255,0.04); color: inherit; font-size: 14px; }
+#confirmDialog .ar-typed { letter-spacing: .08em; font-weight: 700; text-transform: uppercase; }
+
 /* ── Deltix Earn packages ── */
 .earn-packages { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 12px 0 8px; }
 .earn-packages[hidden] { display: none; }
