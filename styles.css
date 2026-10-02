@@ -3025,3 +3025,33 @@ html[data-dark] .ed-stat b, html[data-dark] .ed-unlock-progress { color: var(--t
 .p2p-comm-row > b { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
 .p2p-paytimer-main { display: block; }
 .p2p-paytimer-meta { display: block; margin-top: 4px; font-size: 0.8rem; opacity: 0.85; font-weight: 400; }
+
+/* ── P2P: admin dashboard statistics ── */
+.p2p-stats { margin-bottom: 12px; }
+.p2p-stats-filters { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 10px; }
+.p2p-chiprow { display: flex; gap: 6px; flex-wrap: wrap; }
+.p2p-chipbtn { border: 1px solid rgba(128,128,148,.35); background: transparent; color: inherit; border-radius: 999px; padding: 5px 11px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.p2p-chipbtn.on { background: var(--p2p-green, #0ecb81); border-color: var(--p2p-green, #0ecb81); color: #0b1020; }
+.p2p-stats-custom input { flex: 1; min-width: 0; }
+.p2p-stats-custom .btn { width: auto; flex: none; }
+.p2p-select { width: 100%; padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(128,128,148,.35); background: rgba(255,255,255,0.04); color: inherit; font-size: 13px; }
+.p2p-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; margin: 8px 0; }
+.p2p-stat { display: flex; flex-direction: column; gap: 2px; padding: 8px; border-radius: 10px; background: rgba(255,255,255,0.04); text-align: center; }
+.p2p-stat b { font-size: 1rem; }
+.p2p-stat-live .p2p-stat b { color: var(--p2p-green, #0ecb81); }
+
+/* ── P2P: seller RELEASE DLTX ── */
+.p2p-release-btn { background: var(--p2p-green, #0ecb81) !important; color: #0b1020 !important; font-weight: 800; letter-spacing: .02em; }
+.p2p-release-btn:disabled { opacity: .55; }
+
+/* ── Deltix Earn packages ── */
+.earn-packages { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 12px 0 8px; }
+.earn-packages[hidden] { display: none; }
+.earn-pkg { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 14px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); text-align: center; }
+.earn-pkg-energy { font-weight: 700; font-size: 0.95rem; }
+.earn-pkg-reward { font-size: 1.05rem; }
+.earn-pkg-reward b { color: var(--p2p-green, #0ecb81); }
+.earn-pkg-btn { margin-top: 6px; width: 100%; padding: 10px 8px; font-size: 13px; }
+.earn-pkg-off { opacity: .7; }
+html:not([data-dark]) .earn-pkg { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.08); }
+html:not([data-dark]) .p2p-stat, html:not([data-dark]) .p2p-select { background: rgba(0,0,0,0.03); }

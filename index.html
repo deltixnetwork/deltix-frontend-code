@@ -911,12 +911,13 @@
             <div class="reward-sub" id="earnSub">Loading…</div></div>
           </div>
           <button class="btn gold reward-btn" id="earnBtn">Loading…</button>
+          <div class="earn-packages" id="earnPackages"></div>
           <div class="muted small-note" id="earnRateNote"></div>
         </div>
         <ul class="disclosure">
           <li>Deltix Earn is completely separate from Arcade/Rewards — do both to earn more.</li>
-          <li>A session's reward and Energy cost are locked in the moment you start it.</li>
-          <li>Only one session can run at a time; start another once you've claimed.</li>
+          <li>Pick a package: 100 Energy → 5 DLTX, 150 Energy → 7.5 DLTX or 200 Energy → 10 DLTX. Every package runs for 12 hours on the server clock.</li>
+          <li>A session's reward and Energy cost are locked in the moment you start it; only one session can run at a time.</li>
         </ul>
       </div>
 
@@ -1262,6 +1263,7 @@
       <div class="modal-actions">
         <button class="btn ghost" id="p2pOrderClose">Close</button>
         <button class="btn ghost" id="p2pOrderCancel" hidden>Cancel order</button>
+        <button class="btn primary p2p-release-btn" id="p2pOrderRelease" hidden>RELEASE DLTX</button>
         <button class="btn danger" id="p2pOrderDispute" hidden>Open dispute</button>
       </div>
     </div>

@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.16.0';
+const APP_VERSION = '1.17.0';
 const $ = (id) => document.getElementById(id);
 
 // Stable per-phone identifier sent with every request (X-Device-Id) — the
@@ -1462,16 +1462,17 @@ async function loadReferrals(prefetched) {
     renderProfile();
 
     // referral slots (unlimited or capped)
+    const promoNote = r.promo && r.promo.active ? ` · 🎁 Monthly promo: ${fmt(r.promo.amount)} $DLTX per activation until day ${r.promo.dayStart + r.promo.durationDays - 1} (normally ${fmt(r.baseReward)})` : '';
     if (r.unlimited) {
       $('refSlots').innerHTML = `<div class="slot used">✓</div><div class="slot-count">${r.slotsUsed} joined · unlimited invites</div>`;
       $('refInfo').textContent =
-        `Unlimited invites · +${fmt(r.rewardPerActivation)} $DLTX when a referral keeps a stake of ${fmt(r.minStakeToActivate)}+ $DLTX · Earned so far: ${fmt(r.totalReferralRewards)} $DLTX`;
+        `Unlimited invites · +${fmt(r.rewardPerActivation)} $DLTX when a referral keeps a stake of ${fmt(r.minStakeToActivate)}+ $DLTX · Earned so far: ${fmt(r.totalReferralRewards)} $DLTX${promoNote}`;
     } else {
       $('refSlots').innerHTML = Array.from({ length: r.maxDirect }, (_, i) =>
         `<div class="slot ${i < r.slotsUsed ? 'used' : ''}">${i < r.slotsUsed ? '✓' : i + 1}</div>`
       ).join('');
       $('refInfo').textContent =
-        `${r.slotsLeft} of ${r.maxDirect} invites left · +${fmt(r.rewardPerActivation)} $DLTX when a referral keeps a stake of ${fmt(r.minStakeToActivate)}+ $DLTX · Earned so far: ${fmt(r.totalReferralRewards)} $DLTX`;
+        `${r.slotsLeft} of ${r.maxDirect} invites left · +${fmt(r.rewardPerActivation)} $DLTX when a referral keeps a stake of ${fmt(r.minStakeToActivate)}+ $DLTX · Earned so far: ${fmt(r.totalReferralRewards)} $DLTX${promoNote}`;
     }
 
     // Referral list
@@ -4081,6 +4082,15 @@ async function renderP2pView() {
           </div>
           <p class="hint">While available, traders can select you for new trades (up to ${p2p.me?.capacity ?? '—'} at once). You stay online while the app is open and drop to offline automatically when it is closed. Availability never changes escrow — release still needs a verified payment and your approval.</p>
         </div>
+        <div class="card p2p-stats" id="p2pStatsCard">
+          <div class="p2p-offer-top"><b>📊 P2P Dashboard</b><span class="muted small-note" id="p2pStatsScope"></span></div>
+          <div class="p2p-stats-filters">
+            <div class="p2p-chiprow" id="p2pStatsRange">${[['today', 'Today'], ['7d', '7 days'], ['30d', '30 days'], ['all', 'All time'], ['custom', 'Custom']].map(([v, l]) => `<button class="p2p-chipbtn ${v === (p2p.statsRange || 'today') ? 'on' : ''}" data-range="${v}">${l}</button>`).join('')}</div>
+            <div class="p2p-bid-row p2p-stats-custom" id="p2pStatsCustom" hidden><input type="date" id="p2pStatsFrom" /><input type="date" id="p2pStatsTo" /><button class="btn ghost" id="p2pStatsApply">Apply</button></div>
+            <select id="p2pStatsMod" class="p2p-select"><option value="">All moderators</option></select>
+          </div>
+          <div id="p2pStatsBody"><p class="muted">Loading statistics…</p></div>
+        </div>
         ${commCard}
         <div class="card p2p-modsearch">
           <label for="p2pModSearch">🔍 Look up a trader by Deltix ID (DLTX-XXXXXX) or user #</label>
@@ -4102,6 +4112,15 @@ async function renderP2pView() {
           return `<details class="p2p-mytrades-sec" ${collapsed ? '' : 'open'}><summary>${label} <span class="muted small-note">(${rows.length})</span></summary>${rows.map(tradeCard).join('')}</details>`;
         }).join(''));
       p2pRenderPresence();
+      p2pLoadStats();
+      list.querySelectorAll('#p2pStatsRange [data-range]').forEach((b) => b.addEventListener('click', () => {
+        p2p.statsRange = b.dataset.range;
+        list.querySelectorAll('#p2pStatsRange [data-range]').forEach((x) => x.classList.toggle('on', x === b));
+        $('p2pStatsCustom').hidden = p2p.statsRange !== 'custom';
+        if (p2p.statsRange !== 'custom') p2pLoadStats();
+      }));
+      $('p2pStatsApply')?.addEventListener('click', () => p2pLoadStats());
+      $('p2pStatsMod')?.addEventListener('change', (e) => { p2p.statsMod = e.target.value; p2pLoadStats(); });
       $('p2pPresenceToggle').addEventListener('change', async (e) => {
         const on = e.target.checked;
         e.target.disabled = true;
@@ -4152,6 +4171,51 @@ async function renderP2pView() {
   }
 }
 
+// ── Admin P2P dashboard statistics (ACCEPTED ≠ COMPLETED; range + moderator filters) ──
+async function p2pLoadStats() {
+  const body = $('p2pStatsBody');
+  if (!body) return;
+  const range = p2p.statsRange || 'today';
+  const qs = new URLSearchParams();
+  if (range === 'custom') {
+    const from = $('p2pStatsFrom')?.value; const to = $('p2pStatsTo')?.value;
+    if (!from) { body.innerHTML = '<p class="hint">Pick a start date for the custom range.</p>'; return; }
+    qs.set('from', new Date(from + 'T00:00:00Z').toISOString());
+    if (to) qs.set('to', new Date(new Date(to + 'T00:00:00Z').getTime() + 86400000).toISOString());
+  } else qs.set('range', range);
+  if (p2p.statsMod) qs.set('moderator', p2p.statsMod);
+  body.innerHTML = '<p class="muted">Loading statistics…</p>';
+  try {
+    const s = await api('GET', `/p2p/moderation/stats?${qs.toString()}`);
+    const sel = $('p2pStatsMod');
+    if (sel && sel.options.length <= 1) {
+      for (const m of s.moderators || []) { const o = document.createElement('option'); o.value = m.code; o.textContent = `${m.code} · ${m.status}`; sel.appendChild(o); }
+      if (p2p.statsMod) sel.value = p2p.statsMod;
+    }
+    $('p2pStatsScope').textContent = `${s.moderator ? `Moderator ${s.moderator.code} · ` : ''}${range === 'custom' ? `${(s.from || '').slice(0, 10)} → ${s.to ? s.to.slice(0, 10) : 'now'}` : range === 'today' ? 'Today (UTC)' : range === 'all' ? 'All time' : `Last ${range}`}`;
+    const cell = (label, v, sub) => `<div class="p2p-stat"><span class="muted small-note">${label}</span><b>${v}</b>${sub ? `<span class="muted small-note">${sub}</span>` : ''}</div>`;
+    const sc = s.scoped;
+    body.innerHTML = `
+      <div class="p2p-stat-grid">
+        ${s.moderator ? '' : cell('Offers created', sc.offersCreated)}
+        ${cell('Accepted', sc.accepted.count, `${fmt(sc.accepted.volumeDltx)} DLTX reserved`)}
+        ${cell('Completed', sc.completed.count, `${fmt(sc.completed.volumeDltx)} DLTX settled`)}
+        ${cell('Volume', `${fmt(sc.completed.volumeDltx)} DLTX`, `${fmt(sc.completed.volumeUsdt)} USDT`)}
+        ${cell('Commission', `${fmt(sc.commission.moderatorDltx)} DLTX`, `${sc.commission.entries} settled`)}
+        ${cell('Cancelled', sc.cancelled)}
+        ${cell('Expired', sc.expired)}
+      </div>
+      <div class="p2p-stat-grid p2p-stat-live">
+        ${cell('Active trades', s.live.activeTrades, `${fmt(s.live.escrowDltx)} DLTX in escrow`)}
+        ${cell('Payment pending', s.live.paymentPending)}
+        ${cell('Payment marked', s.live.paymentMarked)}
+        ${cell('Disputed', s.live.disputed)}
+      </div>
+      <div class="muted small-note">Today: accepted ${s.today.accepted} · completed ${s.today.completed} · offers ${s.today.offersCreated} · commission ${fmt(s.today.commissionDltx)} DLTX &nbsp;|&nbsp; All time: accepted ${s.totals.accepted} · completed ${s.totals.completed} · volume ${fmt(s.totals.volumeDltx)} DLTX / ${fmt(s.totals.volumeUsdt)} USDT</div>
+      <div class="muted small-note">Accepted = a trade was created from an ad (escrow locked). Completed = final settlement. Window ${s.policy.tradeWindowMinutes} min · fees ${s.policy.sellerFeePercent}% seller + ${s.policy.buyerFeePercent}% buyer · moderator share ${s.policy.moderatorSharePercent}%.</div>`;
+  } catch (e) { body.innerHTML = `<p class="hint">${escapeHtml(e.message)}</p>`; }
+}
+
 // ── My Ads: every ad I posted, in every state, with safe actions ──
 async function renderP2pMyAds(list) {
   const r = await api('GET', '/p2p/offers/mine');
@@ -4163,7 +4227,7 @@ async function renderP2pMyAds(list) {
     <div class="card p2p-myad" data-myad="${a.id}">
       <div class="p2p-offer-top">
         <b>#${a.id} · <span class="${a.side === 'sell' ? 'p2p-red-t' : 'p2p-green-t'}">${a.side.toUpperCase()}</span> ${fmt(a.amountDltx)} DLTX @ ${a.priceUsdt} USDT</b>
-        ${p2pStatusChip(a.status)}
+        ${a.deleted ? '<span class="p2p-chip p2p-chip-muted">Deleted</span>' : p2pStatusChip(a.status)}
       </div>
       <div class="p2p-myad-grid">
         <span>Remaining <b>${fmt(a.remainingDltx)}</b></span>
@@ -4179,10 +4243,10 @@ async function renderP2pMyAds(list) {
       ${a.terms ? `<div class="muted small-note">${escapeHtml(a.terms.slice(0, 120))}</div>` : ''}
       <div class="p2p-myad-actions">
         <button class="btn ghost" data-act="view" data-id="${a.id}">View</button>
-        ${a.canEdit ? `<button class="btn ghost" data-act="edit" data-id="${a.id}">Edit</button>` : ''}
         ${a.canPause ? `<button class="btn ghost" data-act="pause" data-id="${a.id}">Pause</button>` : ''}
         ${a.canResume ? `<button class="btn ghost" data-act="resume" data-id="${a.id}">Resume</button>` : ''}
-        ${a.canCancel ? `<button class="btn ghost p2p-danger-t" data-act="cancel" data-id="${a.id}">Cancel</button>` : ''}
+        ${a.canEdit ? `<button class="btn ghost" data-act="edit" data-id="${a.id}">Edit</button>` : ''}
+        ${a.canDelete ? `<button class="btn ghost p2p-danger-t" data-act="delete" data-id="${a.id}">Delete</button>` : (a.canCancel ? `<button class="btn ghost p2p-danger-t" data-act="cancel" data-id="${a.id}">Cancel</button>` : '')}
       </div>
     </div>`).join('');
   p2p.myAds = ads;
@@ -4196,11 +4260,17 @@ async function renderP2pMyAds(list) {
       if (act === 'edit') return openP2pEdit(ad);
       if (act === 'pause') { await api('POST', `/p2p/offers/${id}/pause`, {}); toast('Ad paused — hidden from the market until you resume it', { tone: 'success' }); }
       if (act === 'resume') { await api('POST', `/p2p/offers/${id}/resume`, {}); toast('Ad is live again', { tone: 'success' }); }
+      if (act === 'delete') {
+        const okGo = await askConfirm({ title: 'Delete this ad?', message: 'This ad has no trades, so it is removed from the marketplace. It stays in your ad history for your records and does not free a posting slot.', rows: [['Ad', `#${id} · ${ad.side.toUpperCase()} ${fmt(ad.amountDltx)} DLTX @ ${ad.priceUsdt}`]], confirmText: 'Delete ad', danger: true });
+        if (!okGo) return;
+        const r = await api('POST', `/p2p/offers/${id}/delete`, {});
+        toast(r.deleted ? 'Ad deleted' : 'Ad removed from the market (trade history kept)', { tone: 'success' });
+      }
       if (act === 'cancel') {
-        const okGo = await askConfirm({ title: 'Cancel this ad?', message: `Trades already open on it continue normally. ${ad.activeTrades ? `${ad.activeTrades} active trade${ad.activeTrades > 1 ? 's' : ''} will keep their terms.` : ''} This does not free a posting slot.`, confirmText: 'Cancel ad', danger: true });
+        const okGo = await askConfirm({ title: 'Remove this ad from the market?', message: `Trades already open on it continue normally and their escrow is untouched. ${ad.activeTrades ? `${ad.activeTrades} active trade${ad.activeTrades > 1 ? 's' : ''} will keep their terms.` : ''} The ad stays in your history; this does not free a posting slot.`, rows: [['Ad', `#${id} · ${ad.side.toUpperCase()} ${fmt(ad.amountDltx)} DLTX @ ${ad.priceUsdt}`], ['Trades', `${ad.activeTrades} active · ${ad.completedTrades} completed`]], confirmText: 'Remove ad', danger: true });
         if (!okGo) return;
         await api('POST', `/p2p/offers/${id}/cancel`, {});
-        toast('Ad cancelled', { tone: 'success' });
+        toast('Ad removed from the market — open trades continue', { tone: 'success' });
       }
       renderP2pView();
     } catch (err) { toast(err.message, { tone: 'error' }); }
@@ -4653,8 +4723,15 @@ async function openP2pOrder(id, { moderator = false } = {}) {
     cancelBtn.hidden = !(canCancel || sellerWaiting);
     cancelBtn.disabled = Boolean(sellerWaiting);
     cancelBtn.textContent = sellerWaiting ? `Cancel after ${new Date(o.paymentDeadlineAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Cancel order';
+    // Seller RELEASE DLTX — server-driven rule (buyer marked payment, no dispute, escrow held).
+    const releaseBtn = $('p2pOrderRelease');
+    p2p.releaseRule = r.release || null;
+    const canRelease = o.role === 'seller' && r.release && r.release.allowed;
+    releaseBtn.hidden = !canRelease;
+    releaseBtn.disabled = false;
+    releaseBtn.textContent = `RELEASE ${fmt(o.amountDltx)} DLTX`;
     $('p2pOrderDispute').hidden = !(o.role !== 'moderator' && !['completed', 'cancelled', 'refunded', 'disputed', 'under_review', 'escalated'].includes(o.status));
-    $('p2pOrderHint').textContent = r.dispute ? `Dispute open: ${r.dispute.reason}` : (sellerWaiting ? `The buyer has until ${new Date(o.paymentDeadlineAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} to pay. If nothing is marked by then, you can cancel and your DLTX unlocks automatically.` : '');
+    $('p2pOrderHint').textContent = r.dispute ? `Dispute open: ${r.dispute.reason}` : (sellerWaiting ? `The buyer has until ${new Date(o.paymentDeadlineAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} to pay. If nothing is marked by then, you can cancel and your DLTX unlocks automatically.` : (canRelease ? 'The buyer has marked payment. Check that the USDT really arrived before releasing — a release cannot be undone.' : ''));
     // Moderator controls load their richer review endpoint.
     $('p2pModBlock').hidden = true;
     if (moderator || o.role === 'moderator') {
@@ -4905,6 +4982,31 @@ async function p2pSendChat() {
 $('p2pChatSend')?.addEventListener('click', p2pSendChat);
 $('p2pChatInput')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); p2pSendChat(); }
+});
+
+// ── Seller RELEASE DLTX (irreversible; strong confirmation; idempotent key per press) ──
+$('p2pOrderRelease')?.addEventListener('click', async () => {
+  const o = p2p.order;
+  if (!o || !p2p.releaseRule?.allowed) return;
+  const btn = $('p2pOrderRelease');
+  const okGo = await askConfirm({
+    title: `RELEASE ${fmt(o.amountDltx)} DLTX?`,
+    message: 'WARNING: Only release DLTX after you have independently confirmed that the payment has actually arrived. Do not rely only on screenshots or messages from the buyer. This cannot be undone.',
+    rows: [['Buyer', o.buyerCode || '—'], ['Trade', `P2P-${o.id}`], ['Buyer receives', `${fmt(o.buyerReceivesDltx)} DLTX (−1% fee)`], ['Payment', o.usdtVerified ? 'Verified at platform wallet ✅' : 'Marked by buyer — verify yourself']],
+    confirmText: 'CONFIRM RELEASE',
+    danger: true,
+  });
+  if (!okGo) return;
+  btn.disabled = true;
+  const idempotencyKey = (window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  try {
+    const r = await api('POST', `/p2p/orders/${o.id}/release`, { confirm: 'RELEASE', idempotencyKey });
+    toast(r.code === 'ALREADY_RELEASED' ? 'This trade was already released.' : `Released — ${fmt(o.buyerReceivesDltx)} DLTX delivered to the buyer. Trade completed.`, { tone: 'success', title: 'Released' });
+    openP2pOrder(o.id);
+  } catch (e) {
+    toast(e.message, { tone: 'error' });
+    btn.disabled = false;
+  }
 });
 
 // ── Moderator actions ──
@@ -5433,33 +5535,47 @@ async function loadEarn() {
 
 function renderEarn() {
   const d = earnState.data;
+  const pkgEl = $('earnPackages');
   if (!d) {
     setText('earnStatus', '◆ Deltix Earn');
     setText('earnSub', 'Sign in to start earning.');
     const b = $('earnBtn'); if (b) { b.disabled = true; b.textContent = 'Loading…'; }
+    if (pkgEl) pkgEl.innerHTML = '';
     return;
   }
   const ready = d.canClaim;
   const running = d.active && !ready;
-  setText('earnStatus', ready ? `◆ ${fmt(d.reward)} DLTX READY` : running ? '◆ Deltix Earn — running' : '◆ Deltix Earn');
+  const packages = Array.isArray(d.packages) ? d.packages : [];
+  setText('earnStatus', ready ? `◆ ${fmt(d.reward)} DLTX READY` : running ? `◆ Deltix Earn — running${d.packageLabel ? ` · ${d.packageLabel}` : ''}` : '◆ Deltix Earn');
   setText(
     'earnSub',
     ready
       ? 'Your session is complete — claim your $DLTX.'
       : running
-      ? `Ready in ${fmtCountdown(d.msRemaining)}`
-      : `Earn ${fmt(d.reward)} $DLTX every ${d.durationHours}h · costs ⚡ ${fmt(d.cost)} Energy`
+      ? `Ready in ${fmtCountdown(d.msRemaining)} · ${fmt(d.reward)} DLTX locked in`
+      : `You have ⚡ ${fmt(d.energy)} Energy. Choose a package below — every package runs ${d.durationHours}h.`
   );
   const b = $('earnBtn');
   if (b) {
-    b.disabled = running || (!d.active && d.energy < d.cost) || !d.enabled;
-    b.textContent = ready
-      ? `Claim ◆ ${fmt(d.reward)} DLTX`
-      : running
-      ? `⏳ ${fmtCountdown(d.msRemaining)}`
-      : `Start ${d.durationHours}H Session · ⚡${fmt(d.cost)}`;
+    // The big button handles CLAIM (and the countdown); starting is per package.
+    b.hidden = !d.active;
+    b.disabled = running || !d.enabled;
+    b.textContent = ready ? `Claim ◆ ${fmt(d.reward)} DLTX` : `⏳ ${fmtCountdown(d.msRemaining)}`;
   }
-  setText('earnRateNote', `Current Earn Rate: ${fmt(d.reward)} DLTX / ${d.durationHours}h — subject to change as the network grows.`);
+  if (pkgEl) {
+    pkgEl.hidden = d.active;
+    pkgEl.innerHTML = packages.map((p) => `
+      <div class="earn-pkg ${p.canStart ? '' : 'earn-pkg-off'}">
+        <div class="earn-pkg-energy">⚡ ${fmt(p.energy)} Energy</div>
+        <div class="earn-pkg-reward">Earn <b>${fmt(p.rewardDltx)} DLTX</b></div>
+        <div class="muted small-note">Duration: ${p.durationHours} Hours</div>
+        <button class="btn gold earn-pkg-btn" data-pkg="${p.id}" ${p.canStart && d.enabled ? '' : 'disabled'}>${p.canStart ? 'START' : `Need ⚡ ${fmt(Math.max(0, p.energy - d.energy))} more`}</button>
+      </div>`).join('');
+    pkgEl.querySelectorAll('[data-pkg]').forEach((btn) => btn.addEventListener('click', () => startEarnSession(btn.dataset.pkg)));
+  }
+  setText('earnRateNote', d.active
+    ? `Reward and cost were locked in when this session started. Closing the app does not reset the timer — it runs on the server.`
+    : `Current Earn Rates: ${packages.map((p) => `${fmt(p.energy)}⚡ → ${fmt(p.rewardDltx)} DLTX`).join(' · ')} per ${d.durationHours}h — subject to change as the network grows.`);
 }
 
 function startEarnTimer() {
@@ -5477,31 +5593,55 @@ async function handleEarnAction() {
   const d = earnState.data;
   if (!d) return;
   if (d.canClaim) return claimEarnSession();
-  if (!d.active) return startEarnSession();
 }
 
-async function startEarnSession() {
+let earnStarting = false;
+async function startEarnSession(packageId) {
+  if (earnStarting) return;
+  const d = earnState.data;
+  const pkg = d && Array.isArray(d.packages) ? d.packages.find((p) => p.id === packageId) : null;
+  if (!pkg) return;
+  const okGo = await askConfirm({
+    title: `Start Deltix Earn · ${fmt(pkg.rewardDltx)} DLTX?`,
+    message: `⚡ ${fmt(pkg.energy)} Energy will be spent now. The ${pkg.durationHours}-hour timer runs on the server; closing the app does not reset it.`,
+    rows: [['Energy', `⚡ ${fmt(pkg.energy)}`], ['Reward', `${fmt(pkg.rewardDltx)} DLTX`], ['Duration', `${pkg.durationHours} hours`]],
+    confirmText: 'START',
+  });
+  if (!okGo) return;
+  earnStarting = true;
   try {
-    const r = await api('POST', '/earn/start');
+    const r = await api('POST', '/earn/start', { packageId });
     earnState.data = r;
     renderEarn();
-    toast(`Deltix Earn session started — ready in ${r.durationHours}h.`);
+    startEarnTimer();
+    toast(`Deltix Earn session started — ${fmt(r.reward)} DLTX ready in ${r.durationHours}h.`, { tone: 'success' });
+    loadEnergy(undefined, { force: true }).catch(() => {});
   } catch (e) {
-    toast(e.message);
+    toast(e.message, { tone: 'error' });
+  } finally {
+    earnStarting = false;
   }
 }
 
+let earnClaiming = false;
 async function claimEarnSession() {
+  if (earnClaiming) return;
+  earnClaiming = true;
+  const b = $('earnBtn'); if (b) b.disabled = true;
   try {
     const payload = await getIntegrityPayload();
     const r = await api('POST', '/earn/claim', payload);
     earnState.data = r;
     renderEarn();
-    celebrate({ amount: r.claimed, title: 'Deltix Earn Complete!', subtitle: 'Start another session any time.', icon: '◆' });
+    celebrate({ amount: r.claimed, title: 'Deltix Earn Complete!', subtitle: 'Start another package any time.', icon: '◆' });
     await Promise.allSettled([loadWallet(), loadEnergy(undefined, { force: true }), loadTx()]);
     showRewardInterstitial();
   } catch (e) {
-    toast(e.message);
+    toast(e.message, { tone: 'error' });
+    if (e.code === 'EARN_ALREADY_CLAIMED' || e.code === 'EARN_NOT_ACTIVE') loadEarn();
+    else if (b) b.disabled = false;
+  } finally {
+    earnClaiming = false;
   }
 }
 
