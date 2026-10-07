@@ -12,6 +12,7 @@ and packaged for stores by [deltix-Mobile-App-code](https://github.com/deltixnet
 | Tab | Features |
 |---|---|
 | **Wallet** | Balance, send/receive $DLTX (base fee burned), activity history |
+| **Deltix Earn** | Direct Earn entry in primary navigation; server-defined packages: 100 Energy for 5 DLTX, 150 for 7.5, or 200 for 10 over 12 hours by default |
 | **Stake** | Validator directory, delegation, rewards, unstake |
 | **Arcade** | **Deltix Arcade (live)** — 10 original games (easy/hard) with daily-capped $DLTX win rewards |
 | **D-Browser** | Curated, allowlisted dApp gateway with security interstitial |
