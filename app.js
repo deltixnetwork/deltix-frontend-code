@@ -348,6 +348,8 @@ function showTab(id, { refresh = true } = {}) {
     // Start timer when earn tab is opened
     if (typeof startNextEarnTimer === 'function') startNextEarnTimer();
     if (refresh && state.token) loadEarn();
+  } else if (id === 'tab-chatroom') {
+    if (typeof renderGlobalChatroom === 'function') renderGlobalChatroom();
   } else if (refresh && state.token) {
     refreshTabContent(id);
   }
@@ -393,6 +395,8 @@ function refreshTabContent(id) {
   } else if (id === 'tab-assistant') {
     ensureBotGreeting();
     loadKycStatus().catch(() => {});
+  } else if (id === 'tab-chatroom') {
+    if (typeof renderGlobalChatroom === 'function') renderGlobalChatroom();
   }
 }
 
@@ -436,6 +440,10 @@ async function refreshCurrentView({ isPull = false, silent = false } = {}) {
     tasks.push(loadP2p());
   } else if (activeTab === 'tab-assistant') {
     tasks.push(loadKycStatus());
+  } else if (activeTab === 'tab-chatroom') {
+    if (typeof renderGlobalChatroom === 'function') {
+      tasks.push(Promise.resolve().then(() => renderGlobalChatroom()));
+    }
   }
 
   try {
