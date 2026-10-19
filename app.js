@@ -5710,10 +5710,11 @@ function startEarnTimer() {
   earnTimer = setInterval(() => {
     if (!state.token || !earnState.data?.active) return;
     if (!document.getElementById('tab-earn')?.classList.contains('active')) return;
-    earnState.data.msRemaining = Math.max(0, earnState.data.msRemaining - 1000);
-    if (earnState.data.msRemaining === 0) earnState.data.canClaim = true;
-    renderEarn();
-  }, 1000);
+    
+    // Refresh from server every 5 seconds to stay in sync
+    // This prevents time drift when the app closes/reopens
+    loadEarn().catch(() => {});
+  }, 5000);
 }
 
 async function handleEarnAction() {
@@ -6851,41 +6852,6 @@ const networkValidators = [
   { name: 'Deltix Native', desc: 'Direct staking', icon: '◆', color: 'purple-gradient' },
 ];
 
-// P2B Marketplace data
-const p2bMarkets = [
-  { name: 'eBay', desc: 'Global auction platform', icon: '🏪', color: 'blue-gradient' },
-  { name: 'Amazon', desc: 'E-commerce giant', icon: '📦', color: 'orange-gradient' },
-  { name: 'Shopify', desc: 'Online store builder', icon: '🛍️', color: 'cyan-gradient' },
-  { name: 'Booking.com', desc: 'Travel & accommodations', icon: '🏨', color: 'pink-gradient' },
-  { name: 'Skyscanner', desc: 'Flight marketplace', icon: '✈️', color: 'red-gradient' },
-  { name: 'Fiverr', desc: 'Freelance services', icon: '👨‍💻', color: 'emerald-gradient' },
-];
-
-// CEX Exchanges data
-const cexExchanges = [
-  { name: 'Binance', desc: 'World\'s largest exchange', icon: '🔀', color: 'purple-gradient' },
-  { name: 'Coinbase', desc: 'Regulated US exchange', icon: '🪙', color: 'blue-gradient' },
-  { name: 'Kraken', desc: 'Advanced trading tools', icon: '🐙', color: 'pink-gradient' },
-  { name: 'Bybit', desc: 'Derivatives exchange', icon: '📊', color: 'red-gradient' },
-  { name: 'OKX', desc: 'Multi-chain DEX', icon: '🔗', color: 'orange-gradient' },
-];
-
-// Payment processors
-const paymentProcessors = [
-  { name: 'Stripe', desc: 'Online payments', icon: '💳', color: 'indigo-gradient' },
-  { name: 'PayPal', desc: 'Global payment leader', icon: '🅿️', color: 'blue-gradient' },
-  { name: 'Apple Pay', desc: 'Mobile payments', icon: '🍎', color: 'gray-gradient', customColor: '#000' },
-  { name: 'Google Pay', desc: 'Secure payments', icon: '🔐', color: 'emerald-gradient' },
-];
-
-// Explore & Connect links
-const exploreConnections = [
-  { name: 'News & Updates', desc: 'Latest crypto news', icon: '📰', color: 'cyan-gradient' },
-  { name: 'Travel Deals', desc: 'Exclusive travel offers', icon: '🌍', color: 'fuchsia-gradient' },
-  { name: 'Shopping Guide', desc: 'Products & reviews', icon: '🛒', color: 'rose-gradient' },
-  { name: 'Community Hub', desc: 'Join discussions', icon: '👥', color: 'purple-gradient' },
-];
-
 function createGradientCard(item, onClickHandler) {
   const card = document.createElement('button');
   card.className = `gradient-card ${item.color}`;
@@ -6931,55 +6897,6 @@ function renderKYCTab() {
   }
 }
 
-function renderConnectTab() {
-  const p2bGrid = $('p2bMarketsGrid');
-  const cexGrid = $('cexExchangesGrid');
-  const paymentGrid = $('paymentProcessorsGrid');
-  const exploreGrid = $('exploreConnectionsGrid');
-  
-  if (p2bGrid) {
-    p2bGrid.innerHTML = '';
-    p2bMarkets.forEach(item => {
-      const card = createGradientCard(item, (item) => {
-        toast(`Connecting to ${item.name}...`);
-        console.log('P2B card clicked:', item);
-      });
-      p2bGrid.appendChild(card);
-    });
-  }
-  
-  if (cexGrid) {
-    cexGrid.innerHTML = '';
-    cexExchanges.forEach(item => {
-      const card = createGradientCard(item, (item) => {
-        toast(`Connecting to ${item.name}...`);
-        console.log('CEX card clicked:', item);
-      });
-      cexGrid.appendChild(card);
-    });
-  }
-  
-  if (paymentGrid) {
-    paymentGrid.innerHTML = '';
-    paymentProcessors.forEach(item => {
-      const card = createGradientCard(item, (item) => {
-        toast(`Connecting to ${item.name}...`);
-        console.log('Payment card clicked:', item);
-      });
-      paymentGrid.appendChild(card);
-    });
-  }
-  
-  if (exploreGrid) {
-    exploreGrid.innerHTML = '';
-    exploreConnections.forEach(item => {
-      const card = createGradientCard(item, (item) => {
-        toast(`Opening: ${item.name}`);
-        console.log('Explore card clicked:', item);
-      });
-      exploreGrid.appendChild(card);
-    });
-  }
 }
 
 // Hook into showTab to initialize card data
@@ -6988,8 +6905,6 @@ window.showTab = function(tabId, opts) {
   originalShowTab.call(this, tabId, opts);
   if (tabId === 'tab-kyc') {
     renderKYCTab();
-  } else if (tabId === 'tab-connect') {
-    renderConnectTab();
   }
 };
 
@@ -7390,12 +7305,156 @@ function openWhatsApp() {
 }
 
 function openChat() {
-  // Direct to Discord app/browser
-  openDiscord();
+  showTab('tab-chatroom');
+  renderGlobalChatroom();
 }
 
 function openNews() {
   alert('Latest News & Updates\n\nVisit our X accounts for the latest Deltix Network news!');
+}
+
+// Global ChatRoom
+let globalChatState = {
+  messages: [],
+  loadTimer: null,
+};
+
+async function loadGlobalChatMessages() {
+  try {
+    const res = await api('GET', '/globalchat/messages?limit=50');
+    if (res && res.messages) {
+      globalChatState.messages = res.messages;
+      renderChatMessages();
+    }
+  } catch (err) {
+    console.error('Failed to load chat messages:', err);
+  }
+}
+
+function renderChatMessages() {
+  const container = $('chatMessages');
+  if (!container) return;
+  
+  if (!globalChatState.messages.length) {
+    container.innerHTML = '<p class="muted center">No messages yet. Be the first to chat!</p>';
+    return;
+  }
+  
+  container.innerHTML = globalChatState.messages.map(msg => `
+    <div class="chat-message">
+      <div class="chat-author">
+        <span class="chat-avatar">${msg.avatar || '🦊'}</span>
+        <span class="chat-name">${msg.username || 'Anonymous'}</span>
+        <span class="chat-time">${new Date(msg.timestamp).toLocaleTimeString()}</span>
+      </div>
+      <div class="chat-text">${escapeHtml(msg.text)}</div>
+    </div>
+  `).join('');
+  
+  const chatMessages = $('chatMessages');
+  if (chatMessages) {
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+}
+
+async function sendChatMessage() {
+  const input = $('chatInput');
+  if (!input || !input.value.trim()) return;
+  
+  const text = input.value.trim();
+  if (text.length > 500) {
+    toast('Message too long (max 500 characters)');
+    return;
+  }
+  
+  input.value = '';
+  input.disabled = true;
+  
+  try {
+    const res = await api('POST', '/globalchat/messages', { text });
+    if (res && res.energyRemaining !== undefined) {
+      state.energy = res.energyRemaining;
+      renderEnergyDisplay();
+      toast(`Message sent! ⚡ ${res.energyDeducted} energy used. Remaining: ${res.energyRemaining}`);
+    }
+    await loadGlobalChatMessages();
+  } catch (err) {
+    const errMsg = err.json?.error || 'Failed to send message';
+    if (errMsg.includes('Insufficient energy')) {
+      toast('⚡ Not enough energy to chat. Purchase energy to continue chatting.');
+    } else {
+      toast(errMsg);
+    }
+    console.error('Chat send error:', err);
+  } finally {
+    input.disabled = false;
+    input.focus();
+  }
+}
+
+async function checkChatEnergy() {
+  try {
+    const res = await api('GET', '/globalchat/check-energy');
+    return res;
+  } catch (err) {
+    console.error('Energy check failed:', err);
+    return { canChat: false, energyBalance: 0, costPerMessage: 10 };
+  }
+}
+
+function renderGlobalChatroom() {
+  const input = $('chatInput');
+  const sendBtn = $('chatSendBtn');
+  
+  if (input && !input.dataset.initialized) {
+    input.dataset.initialized = 'true';
+    input.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendChatMessage();
+      }
+    });
+  }
+  
+  if (sendBtn && !sendBtn.dataset.initialized) {
+    sendBtn.dataset.initialized = 'true';
+    sendBtn.addEventListener('click', sendChatMessage);
+  }
+  
+  // Check energy and update UI
+  checkChatEnergy().then(energyInfo => {
+    if (!energyInfo.canChat) {
+      input.disabled = true;
+      sendBtn.disabled = true;
+      const note = $('chatEnergyNote');
+      if (note) {
+        note.innerHTML = `⚡ Insufficient energy. You need ${energyInfo.costPerMessage} energy per message. Current: ${energyInfo.energyBalance}. <a href="javascript:showTab('tab-earn')" style="color: var(--accent); cursor: pointer;">Earn more</a>`;
+      }
+    }
+  });
+  
+  loadGlobalChatMessages();
+  }
+  
+  loadGlobalChatMessages();
+  
+  if (globalChatState.loadTimer) {
+    clearInterval(globalChatState.loadTimer);
+  }
+  globalChatState.loadTimer = setInterval(() => {
+    loadGlobalChatMessages();
+  }, 3000);
+}
+
+function escapeHtml(text) {
+  const map = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return text.replace(/[&<>"']/g, m => map[m]);
 }
 
 function populateBookingPage() {
@@ -7634,8 +7693,6 @@ function populateStoresPage() {
   }
 }
 
-}
-
 // ===== CEX Listings removed - not professional for this release =====
 
 // Defer these to ensure original functions are defined
@@ -7645,7 +7702,7 @@ setTimeout(() => {
     window.showTab = function(tabId, opts) {
       if (originalShowTab) originalShowTab.call(this, tabId, opts);
       if (tabId === 'tab-wallet') { startWalletTimer(); }
-      if (tabId === 'tab-social' || tabId === 'tab-booking' || tabId === 'tab-stores' || tabId === 'tab-cex') {
+      if (tabId === 'tab-social' || tabId === 'tab-booking' || tabId === 'tab-stores') {
         if (!window.newPagesPopulated) { populateNewPages(); window.newPagesPopulated = true; }
       }
     };

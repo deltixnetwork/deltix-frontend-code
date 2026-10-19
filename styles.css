@@ -3629,97 +3629,6 @@ html:not([data-dark]) .p2p-stat, html:not([data-dark]) .p2p-select { background:
   color: #666;
 }
 
-/* ============ CEX LISTINGS TAB STYLING ============ */
-.cex-summary-card {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-  padding: 16px;
-}
-
-.cex-stat {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  background: linear-gradient(135deg, rgba(168, 85, 247, 0.1), rgba(79, 70, 229, 0.1));
-  border-radius: 8px;
-}
-
-.cex-stat-icon {
-  font-size: 28px;
-  min-width: 40px;
-  text-align: center;
-}
-
-.cex-stat-content {
-  flex: 1;
-}
-
-.cex-stat-label {
-  font-size: 12px;
-  color: #666;
-  text-transform: uppercase;
-}
-
-.cex-stat-value {
-  font-size: 18px;
-  font-weight: 700;
-  color: #a855f7;
-  margin-top: 4px;
-}
-
-.cex-roadmap-card {
-  padding: 16px;
-}
-
-.roadmap-item {
-  display: flex;
-  gap: 12px;
-  padding: 12px 0;
-  position: relative;
-}
-
-.roadmap-dot {
-  width: 12px;
-  height: 12px;
-  background: #a855f7;
-  border-radius: 50%;
-  margin-top: 4px;
-  min-width: 12px;
-}
-
-.roadmap-item.active .roadmap-dot {
-  background: linear-gradient(135deg, #a855f7, #7c3aed);
-  box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
-  width: 16px;
-  height: 16px;
-  margin-top: 2px;
-}
-
-.roadmap-content {
-  padding-bottom: 12px;
-}
-
-.roadmap-stage {
-  font-weight: 600;
-  font-size: 14px;
-  color: #1f2937;
-}
-
-.roadmap-timeline {
-  font-size: 12px;
-  color: #a855f7;
-  font-weight: 600;
-  margin: 4px 0;
-}
-
-.roadmap-exchanges {
-  font-size: 12px;
-  color: #666;
-  margin-top: 4px;
-}
-
 /* Cards grid for integrations */
 .cards-grid {
   display: grid;
@@ -3780,10 +3689,6 @@ html:not([data-dark]) .p2p-stat, html:not([data-dark]) .p2p-select { background:
   }
   
   .stores-stats-card {
-    grid-template-columns: 1fr;
-  }
-  
-  .cex-summary-card {
     grid-template-columns: 1fr;
   }
 }
@@ -4098,64 +4003,6 @@ html:not([data-dark]) .p2p-stat, html:not([data-dark]) .p2p-select { background:
   50% { transform: translateX(10px); }
 }
 
-/* CEX Listings - Exchange Cards with Currency Pairs */
-.cex-exchange-card {
-  background: linear-gradient(135deg, #667eea15, #764ba215);
-  border: 2px solid #667eea;
-  border-radius: 10px;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.exchange-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.exchange-icon {
-  font-size: 24px;
-}
-
-.exchange-name {
-  font-weight: bold;
-  font-size: 15px;
-  color: #333;
-}
-
-.exchange-pairs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.pair-badge {
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  color: white;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: bold;
-  white-space: nowrap;
-}
-
-.exchange-timeline {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.timeline-badge {
-  background: #f0f0f0;
-  color: #667eea;
-  padding: 3px 6px;
-  border-radius: 3px;
-  font-size: 10px;
-  font-weight: bold;
-  border: 1px solid #667eea;
-}
 
 /* Social Media - X Cards with Follow & Earn */
 .social-x-grid {
@@ -4614,3 +4461,88 @@ html:not([data-dark]) .p2p-stat, html:not([data-dark]) .p2p-select { background:
   border-left: 3px solid #764ba2;
   border-radius: 3px;
 }
+
+/* Global ChatRoom Styles */
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 500px;
+  gap: 12px;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  background: var(--panel-2);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-message {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border-radius: 8px;
+  border-left: 3px solid var(--accent);
+}
+
+.chat-author {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.chat-avatar {
+  font-size: 16px;
+}
+
+.chat-name {
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+}
+
+.chat-time {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.chat-text {
+  font-size: 14px;
+  color: var(--text);
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--panel);
+}
+
+.chat-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.1);
+}
+
+.chat-input::placeholder {
+  color: var(--muted);
+}
+
