@@ -132,6 +132,26 @@
           <button class="btn ghost pill-btn" id="receiveBtn">↓ Receive</button>
         </div>
 
+        <div class="card next-earn-timer-card" id="walletTimerCard">
+          <div class="countdown-label">NEXT EARN IN</div>
+          <div class="countdown-row">
+            <span class="countdown-unit">
+              <span class="countdown-number" id="walletCountdownHours">00</span>
+              <span class="countdown-label-small">HRS</span>
+            </span>
+            <span class="countdown-separator">:</span>
+            <span class="countdown-unit">
+              <span class="countdown-number" id="walletCountdownMinutes">00</span>
+              <span class="countdown-label-small">MIN</span>
+            </span>
+            <span class="countdown-separator">:</span>
+            <span class="countdown-unit">
+              <span class="countdown-number" id="walletCountdownSeconds">00</span>
+              <span class="countdown-label-small">SEC</span>
+            </span>
+          </div>
+        </div>
+
         <button class="nav-card earn-nav-card" type="button" id="walletEarnCard" onclick="showTab('tab-earn')">
           <span class="nav-card-ic">◆</span>
           <span class="nav-card-txt"><b>Deltix Earn</b><small>Spend Energy, earn $DLTX every 12h</small></span>
@@ -905,6 +925,28 @@
       <!-- Deltix Earn — Path 2 of the Dual Earning System. Separate from games. -->
       <div class="tab" id="tab-earn">
         <div class="showcase-banner"><div class="showcase-title">◆ Deltix Earn</div><div class="showcase-sub">Don't want to play? Earn. Spend Energy, wait, claim $DLTX — no games required.</div></div>
+        
+        <!-- NEXT EARN IN Timer Card -->
+        <div class="card next-earn-timer-card">
+          <div class="next-earn-title">NEXT EARN IN</div>
+          <div class="next-earn-countdown" id="nextEarnCountdown">
+            <span class="countdown-segment">
+              <span class="countdown-number" id="countdownHours">00</span>
+              <span class="countdown-label">HRS</span>
+            </span>
+            <span class="countdown-divider">:</span>
+            <span class="countdown-segment">
+              <span class="countdown-number" id="countdownMinutes">00</span>
+              <span class="countdown-label">MIN</span>
+            </span>
+            <span class="countdown-divider">:</span>
+            <span class="countdown-segment">
+              <span class="countdown-number" id="countdownSeconds">00</span>
+              <span class="countdown-label">SEC</span>
+            </span>
+          </div>
+        </div>
+        
         <div class="card reward-card earn-card">
           <div class="reward-head"><span class="reward-emoji">◆</span>
             <div><div class="reward-title" id="earnStatus">◆ Deltix Earn</div>
@@ -1003,6 +1045,191 @@
           <p class="pp-note">Have a question that isn't here? Email <a href="mailto:support@deltixllc.com">support@deltixllc.com</a> — popular questions get added to this page.</p>
         </div>
       </div>
+
+      <!-- Connect & Integrations Tab -->
+      <div class="tab" id="tab-connect">
+        <div class="showcase-banner"><div class="showcase-title">Connect & Integrations 🔗</div><div class="showcase-sub">Link payment, exchange, and marketplace integrations to enhance your experience.</div></div>
+
+        <!-- P2B Marketplace Section -->
+        <h3 class="section-title">P2B Marketplaces</h3>
+        <p class="muted small-note">Connect and sell across global marketplaces</p>
+        <div class="cards-grid" id="p2bMarketsGrid"></div>
+
+        <!-- CEX Section -->
+        <h3 class="section-title">Crypto Exchanges (CEX)</h3>
+        <p class="muted small-note">Trade on major cryptocurrency exchanges</p>
+        <div class="cards-grid" id="cexExchangesGrid"></div>
+
+        <!-- Payment Processors Section -->
+        <h3 class="section-title">Payment Processors</h3>
+        <p class="muted small-note">Accept payments worldwide</p>
+        <div class="cards-grid" id="paymentProcessorsGrid"></div>
+
+        <!-- Explore & Connect Section -->
+        <h3 class="section-title">Explore & Connect</h3>
+        <div class="cards-grid" id="exploreConnectionsGrid"></div>
+      </div>
+
+      <!-- Social Media & Community Tab -->
+      <div class="tab" id="tab-social">
+        <div class="showcase-banner"><div class="showcase-title">Follow & Connect 📱</div><div class="showcase-sub">Stay updated and join our global community. Follow & Earn 10 Energy!</div></div>
+
+        <!-- Follow & Earn Reward Section -->
+        <div class="card follow-reward-card">
+          <div class="reward-header">
+            <div class="reward-icon">⚡</div>
+            <div class="reward-text">Follow & Earn Program</div>
+          </div>
+          <p class="reward-desc">Follow our X accounts to earn 10 Energy per account!</p>
+        </div>
+
+        <!-- Community Stats -->
+        <div class="card social-stats-card">
+          <div class="social-stat">
+            <div class="social-stat-number" id="socialFollowers">1.2M+</div>
+            <div class="social-stat-label">Followers</div>
+          </div>
+          <div class="social-stat">
+            <div class="social-stat-number" id="socialEngagement">450K+</div>
+            <div class="social-stat-label">Daily Engagement</div>
+          </div>
+          <div class="social-stat">
+            <div class="social-stat-number" id="socialCommunities">12</div>
+            <div class="social-stat-label">Active Platforms</div>
+          </div>
+        </div>
+
+        <!-- Quick Action Buttons (KYC, ChatRoom, News) -->
+        <div class="social-action-row" id="socialActionGrid"></div>
+
+        <!-- Official X Accounts - Primary Focus -->
+        <h3 class="section-title">Official Deltix X Accounts</h3>
+        <p class="muted small-note">Follow all official accounts to stay connected</p>
+        <div class="social-x-grid" id="officialSocialGrid"></div>
+
+        <!-- Community Platforms -->
+        <h3 class="section-title">Community Platforms</h3>
+        <p class="muted small-note">Join our Discord, Telegram, and more</p>
+        <div class="cards-grid" id="communitySocialGrid"></div>
+      </div>
+
+      <!-- Booking & Travel Tab -->
+      <div class="tab" id="tab-booking">
+        <div class="showcase-banner"><div class="showcase-title">Flight Tracker ✈️</div><div class="showcase-sub">Track your real flight using your booking reference</div></div>
+
+        <!-- Flight Tracker Form -->
+        <div id="flightTrackerForm"></div>
+
+        <!-- Flight Tracker Results -->
+        <div id="flightTrackerResults" style="margin-top: 20px;"></div>
+      </div>
+
+      <!-- Online Stores Tab -->
+      <div class="tab" id="tab-stores">
+        <div class="showcase-banner"><div class="showcase-title">Online Stores 🛍️</div><div class="showcase-sub">Shop at your favorite retailers and earn DLTX cashback.</div></div>
+
+        <!-- Cashback Stats -->
+        <div class="card stores-stats-card">
+          <div class="store-stat">
+            <div class="store-stat-value" id="totalCashback">$0.00</div>
+            <div class="store-stat-label">Total Cashback Earned</div>
+          </div>
+          <div class="store-stat">
+            <div class="store-stat-value" id="availableRewards">0 DLTX</div>
+            <div class="store-stat-label">Claimable Rewards</div>
+          </div>
+        </div>
+
+        <!-- Marketplace Platforms -->
+        <h3 class="section-title">Marketplace Platforms</h3>
+        <p class="muted small-note">Shop and earn cashback in DLTX</p>
+        <div class="cards-grid" id="marketplaceStoresGrid"></div>
+
+        <!-- Ecommerce Stores -->
+        <h3 class="section-title">E-Commerce & Retail</h3>
+        <p class="muted small-note">Top online stores with DLTX rewards</p>
+        <div class="cards-grid" id="ecommerceStoresGrid"></div>
+
+        <!-- Services & Subscriptions -->
+        <h3 class="section-title">Services & Subscriptions</h3>
+        <p class="muted small-note">Save on premium subscriptions</p>
+        <div class="cards-grid" id="servicesGrid"></div>
+
+        <!-- Recent Purchases -->
+        <h3 class="section-title">Recent Purchases</h3>
+        <div class="stores-purchases-list" id="purchasesList"><p class="muted center">No purchases yet.</p></div>
+      </div>
+
+    </main>
+        <div class="showcase-banner"><div class="showcase-title">CEX Listings 💱</div><div class="showcase-sub">DLTX future listings on major cryptocurrency exchanges.</div></div>
+
+        <!-- Listing Status Summary -->
+        <div class="card cex-summary-card">
+          <div class="cex-stat">
+            <div class="cex-stat-icon">📊</div>
+            <div class="cex-stat-content">
+              <div class="cex-stat-label">Listing Status</div>
+              <div class="cex-stat-value" id="listingStatus">In Review</div>
+            </div>
+          </div>
+          <div class="cex-stat">
+            <div class="cex-stat-icon">⏰</div>
+            <div class="cex-stat-content">
+              <div class="cex-stat-label">Expected Launch</div>
+              <div class="cex-stat-value" id="expectedLaunch">Q4 2026</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active Exchanges -->
+        <h3 class="section-title">Exchange Partnerships</h3>
+        <p class="muted small-note">Major exchanges supporting DLTX trading</p>
+        <div class="cards-grid" id="cexListingsGrid"></div>
+
+        <!-- Trading Pairs -->
+        <h3 class="section-title">Planned Trading Pairs</h3>
+        <p class="muted small-note">Coming soon on listed exchanges</p>
+        <div class="cards-grid" id="tradingPairsGrid"></div>
+
+        <!-- Features & Benefits -->
+        <h3 class="section-title">CEX Listing Benefits</h3>
+        <ul class="disclosure">
+          <li>🌍 <b>Global Liquidity</b> — Access DLTX from millions of traders worldwide.</li>
+          <li>💰 <b>Price Discovery</b> — Market-driven pricing across multiple exchanges.</li>
+          <li>🔒 <b>Secure Trading</b> — Enterprise-grade custody and settlement infrastructure.</li>
+          <li>📈 <b>24/7 Trading</b> — Round-the-clock trading without platform restrictions.</li>
+          <li>🛡️ <b>Compliance</b> — Full regulatory compliance on all major exchanges.</li>
+        </ul>
+
+        <!-- Roadmap -->
+        <div class="card cex-roadmap-card">
+          <h4 class="section-title">Listing Roadmap</h4>
+          <div class="roadmap-item active">
+            <div class="roadmap-dot"></div>
+            <div class="roadmap-content">
+              <div class="roadmap-stage">Stage 1: Tier-1 Exchanges</div>
+              <div class="roadmap-timeline">Q4 2026</div>
+              <div class="roadmap-exchanges">Binance · Coinbase · Kraken</div>
+            </div>
+          </div>
+          <div class="roadmap-item">
+            <div class="roadmap-dot"></div>
+            <div class="roadmap-content">
+              <div class="roadmap-stage">Stage 2: Tier-2 Exchanges</div>
+              <div class="roadmap-timeline">Q1 2027</div>
+              <div class="roadmap-exchanges">Bybit · OKX · Huobi</div>
+            </div>
+          </div>
+          <div class="roadmap-item">
+            <div class="roadmap-dot"></div>
+            <div class="roadmap-content">
+              <div class="roadmap-stage">Stage 3: Regional Exchanges</div>
+              <div class="roadmap-timeline">Q2 2027</div>
+              <div class="roadmap-exchanges">Local exchanges in 50+ countries</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </main>
 
     <!-- Bottom navigation (wraps to two rows) -->
@@ -1012,6 +1239,10 @@
       <button class="tabbtn" data-tab="tab-stake"><img src="assets/energy/39_stake_nav.png" class="nav-3d-icon" alt="" /><span>Stake</span></button>
       <button class="tabbtn" data-tab="tab-arcade"><img src="assets/energy/40_arcade_nav.png" class="nav-3d-icon" alt="" /><span>Arcade</span></button>
       <button class="tabbtn" data-tab="tab-games"><span class="nav-3d-icon nav-emoji">🎮</span><span>Games</span></button>
+      <button class="tabbtn" data-tab="tab-connect"><span class="nav-3d-icon nav-emoji">🔗</span><span>Connect</span></button>
+      <button class="tabbtn" data-tab="tab-social"><span class="nav-3d-icon nav-emoji">📱</span><span>Social</span></button>
+      <button class="tabbtn" data-tab="tab-booking"><span class="nav-3d-icon nav-emoji">✈️</span><span>Travel</span></button>
+      <button class="tabbtn" data-tab="tab-stores"><span class="nav-3d-icon nav-emoji">🛍️</span><span>Stores</span></button>
       <button class="tabbtn" data-tab="tab-rewards"><img src="assets/energy/20_gift.png" class="nav-3d-icon" alt="" /><span>Rewards</span></button>
       <button class="tabbtn" data-tab="tab-shop"><span class="nav-3d-icon nav-emoji">🛒</span><span>Shop</span></button>
       <button class="tabbtn" data-tab="tab-missions"><span class="nav-3d-icon nav-emoji">🚀</span><span>Missions</span></button>
@@ -1046,6 +1277,18 @@
         </button>
         <button class="sidenav-item" data-tab="tab-games">
           <span class="nav-3d-icon nav-emoji">🎮</span><span>Games</span>
+        </button>
+        <button class="sidenav-item" data-tab="tab-connect">
+          <span class="nav-3d-icon nav-emoji">🔗</span><span>Connect & Integrations</span>
+        </button>
+        <button class="sidenav-item" data-tab="tab-social">
+          <span class="nav-3d-icon nav-emoji">📱</span><span>Follow & Social</span>
+        </button>
+        <button class="sidenav-item" data-tab="tab-booking">
+          <span class="nav-3d-icon nav-emoji">✈️</span><span>Travel & Booking</span>
+        </button>
+        <button class="sidenav-item" data-tab="tab-stores">
+          <span class="nav-3d-icon nav-emoji">🛍️</span><span>Online Stores</span>
         </button>
         <button class="sidenav-item" data-tab="tab-rewards">
           <img src="assets/energy/20_gift.png" class="nav-3d-icon" alt="" /><span>Rewards</span>
