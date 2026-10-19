@@ -6897,8 +6897,6 @@ function renderKYCTab() {
   }
 }
 
-}
-
 // Hook into showTab to initialize card data
 const originalShowTab = window.showTab;
 window.showTab = function(tabId, opts) {
@@ -7432,9 +7430,6 @@ function renderGlobalChatroom() {
       }
     }
   });
-  
-  loadGlobalChatMessages();
-  }
   
   loadGlobalChatMessages();
   
