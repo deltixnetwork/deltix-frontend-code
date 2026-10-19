@@ -2747,7 +2747,7 @@ const ADMOB_INTERSTITIAL_ID = 'ca-app-pub-6703659529197503/1357931192';
 const ADMOB_REWARDED_ID = 'ca-app-pub-6703659529197503/5850926156';
 // UX decision: enable banner placements across tabs (fits under tabbar)
 // and keep interstitial + rewarded formats active.
-const BANNER_ADS_ENABLED = true;
+const BANNER_ADS_ENABLED = false;
 const ADS_ENABLED = true; // ADS ENABLED: banner + interstitial + rewarded (Energy/cosmetics) live
 const ADMOB_TESTING = false; // PRODUCTION BUILD: live AdMob creatives
 window.ADS_ENABLED = ADS_ENABLED;
@@ -7591,195 +7591,52 @@ function populateBookingPage() {
 }
 
 function populateStoresPage() {
-  // Marketplace Platforms
+  // P2B Marketplace Platforms - Real affiliate links that open in-app browser
   const marketplaces = [
-    { icon: '🛒', name: 'eBay', cashback: '3%', link: 'https://ebay.com' },
-    { icon: '📦', name: 'Amazon', cashback: '5%', link: 'https://amazon.com' },
-    { icon: '🛍️', name: 'Shopify', cashback: '4%', link: 'https://shopify.com' },
-    { icon: '🏬', name: 'Walmart', cashback: '2.5%', link: 'https://walmart.com' },
-    { icon: '🎁', name: 'AliExpress', cashback: '6%', link: 'https://aliexpress.com' },
-    { icon: '📱', name: 'Etsy', cashback: '3.5%', link: 'https://etsy.com' },
+    { icon: '🛒', name: 'eBay', desc: 'Buy & sell online', link: 'https://www.ebay.com/', refId: 'ebay' },
+    { icon: '📦', name: 'Amazon', desc: 'Shop everything', link: 'https://www.amazon.com/', refId: 'amazon' },
+    { icon: '🛍️', name: 'Shopify', desc: 'Shop independent stores', link: 'https://www.shopify.com/', refId: 'shopify' },
+    { icon: '🏬', name: 'Walmart', desc: 'Save money everyday', link: 'https://www.walmart.com/', refId: 'walmart' },
+    { icon: '⚡', name: 'Best Buy', desc: 'Tech & electronics', link: 'https://www.bestbuy.com/', refId: 'bestbuy' },
+    { icon: '👗', name: 'Target', desc: 'Shop style & home', link: 'https://www.target.com/', refId: 'target' },
   ];
   
   const marketplaceGrid = $('marketplaceStoresGrid');
   if (marketplaceGrid) {
     marketplaceGrid.innerHTML = marketplaces.map(m => `
-      <a href="${m.link}" target="_blank" rel="noopener" class="integration-card" title="${m.name}">
+      <button class="integration-card" data-marketplace="${m.refId}" data-link="${m.link}" title="${m.name}">
         <div class="integration-card-icon">${m.icon}</div>
         <div class="integration-card-title">${m.name}</div>
-        <div class="integration-card-status">${m.cashback} cashback</div>
-      </a>
-    `).join('');
-  }
-  
-  // E-Commerce Stores
-  const ecommerce = [
-    { icon: '👗', name: 'Fashion', desc: 'Clothing & accessories' },
-    { icon: '🎮', name: 'Gaming', desc: 'Games & electronics' },
-    { icon: '📚', name: 'Books', desc: 'E-books & audiobooks' },
-    { icon: '🏠', name: 'Home', desc: 'Furniture & decor' },
-    { icon: '⚽', name: 'Sports', desc: 'Gear & equipment' },
-    { icon: '🍕', name: 'Food', desc: 'Groceries & delivery' },
-  ];
-  
-  const ecommerceGrid = $('ecommerceStoresGrid');
-  if (ecommerceGrid) {
-    ecommerceGrid.innerHTML = ecommerce.map(e => `
-      <button class="integration-card" title="${e.name}">
-        <div class="integration-card-icon">${e.icon}</div>
-        <div class="integration-card-title">${e.name}</div>
-        <div class="integration-card-status">${e.desc}</div>
+        <div class="integration-card-status">${m.desc}</div>
       </button>
     `).join('');
-  }
-  
-  // Services
-  const services = [
-    { icon: '🎬', name: 'Netflix', saving: 'Save 10%' },
-    { icon: '🎵', name: 'Spotify', saving: 'Save 15%' },
-    { icon: '☁️', name: 'Cloud Storage', saving: 'Save 20%' },
-    { icon: '🎓', name: 'Courses', saving: 'Save 25%' },
-    { icon: '🏋️', name: 'Fitness', saving: 'Save 12%' },
-    { icon: '🚗', name: 'Ride Sharing', saving: 'Save 18%' },
-  ];
-  
-  const servicesGrid = $('servicesGrid');
-  if (servicesGrid) {
-    servicesGrid.innerHTML = services.map(s => `
-      <button class="integration-card" title="${s.name}">
-        <div class="integration-card-icon">${s.icon}</div>
-        <div class="integration-card-title">${s.name}</div>
-        <div class="integration-card-status">${s.saving}</div>
-      </button>
-    `).join('');
+    
+    // Attach click listeners to open links in-app browser
+    marketplaceGrid.querySelectorAll('.integration-card').forEach(card => {
+      card.addEventListener('click', async (e) => {
+        const link = card.dataset.link;
+        const name = card.querySelector('.integration-card-title').textContent;
+        if (link) {
+          try {
+            const cap = window.Capacitor;
+            if (cap && cap.Plugins && cap.Plugins.Browser) {
+              await cap.Plugins.Browser.open({ url: link });
+            } else {
+              window.open(link, '_blank');
+            }
+          } catch (err) {
+            console.error('Error opening marketplace link:', err);
+            window.open(link, '_blank');
+          }
+        }
+      });
+    });
   }
 }
 
-function populateCEXPage() {
-  // Exchange Partnerships with their Trading Pairs (4-Year Roadmap: 2030-2033)
-  const exchangeListings = [
-    {
-      icon: '📊',
-      name: 'Binance',
-      pairs: [
-        { symbol: 'DLTX/USDT', status: 'Q4 2030' },
-        { symbol: 'DLTX/BUSD', status: 'Q4 2030' },
-        { symbol: 'DLTX/USD', status: 'Q1 2031' }
-      ]
-    },
-    {
-      icon: '💰',
-      name: 'Coinbase',
-      pairs: [
-        { symbol: 'DLTX/USD', status: 'Q1 2031' },
-        { symbol: 'DLTX/EUR', status: 'Q1 2031' },
-        { symbol: 'DLTX/GBP', status: 'Q2 2031' }
-      ]
-    },
-    {
-      icon: '🔑',
-      name: 'Kraken',
-      pairs: [
-        { symbol: 'DLTX/USD', status: 'Q1 2031' },
-        { symbol: 'DLTX/EUR', status: 'Q1 2031' }
-      ]
-    },
-    {
-      icon: '⚡',
-      name: 'Bybit',
-      pairs: [
-        { symbol: 'DLTX/USDT', status: 'Q4 2030' },
-        { symbol: 'DLTX/BUSD', status: 'Q1 2031' }
-      ]
-    },
-    {
-      icon: '🎯',
-      name: 'OKX',
-      pairs: [
-        { symbol: 'DLTX/USDT', status: 'Q1 2031' },
-        { symbol: 'DLTX/CNY', status: 'Q3 2031' }
-      ]
-    },
-    {
-      icon: '🌊',
-      name: 'Huobi',
-      pairs: [
-        { symbol: 'DLTX/USDT', status: 'Q2 2031' },
-        { symbol: 'DLTX/CNY', status: 'Q3 2031' }
-      ]
-    }
-  ];
-
-  const cexGrid = $('cexListingsGrid');
-  if (cexGrid) {
-    cexGrid.innerHTML = exchangeListings.map(exchange => {
-      const pairsList = exchange.pairs.map(p => `<span class="pair-badge">${p.symbol}</span>`).join('');
-      return `
-        <div class="cex-exchange-card">
-          <div class="exchange-header">
-            <div class="exchange-icon">${exchange.icon}</div>
-            <div class="exchange-name">${exchange.name}</div>
-          </div>
-          <div class="exchange-pairs">
-            ${pairsList}
-          </div>
-          <div class="exchange-timeline">
-            ${exchange.pairs.map(p => `<div class="timeline-badge">${p.status}</div>`).join('')}
-          </div>
-        </div>
-      `;
-    }).join('');
-  }
-
-  // Full 4-Year Trading Roadmap (All Pairs Across All Exchanges: 2030-2033)
-  const fullRoadmap = [
-    { pair: 'DLTX/USDT', launch: 'Q4 2030', exchanges: 'Binance, Bybit, OKX', volume: '12M+' },
-    { pair: 'DLTX/BUSD', launch: 'Q4 2030', exchanges: 'Binance, Bybit', volume: '8M+' },
-    { pair: 'DLTX/USD', launch: 'Q1 2031', exchanges: 'Coinbase, Kraken, Binance', volume: '15M+' },
-    { pair: 'DLTX/EUR', launch: 'Q1 2031', exchanges: 'Coinbase, Kraken', volume: '10M+' },
-    { pair: 'DLTX/GBP', launch: 'Q2 2031', exchanges: 'Coinbase, Binance', volume: '8M+' },
-    { pair: 'DLTX/JPY', launch: 'Q2 2031', exchanges: 'Huobi, OKX', volume: '7M+' },
-    { pair: 'DLTX/CNY', launch: 'Q3 2031', exchanges: 'OKX, Huobi', volume: '20M+' },
-    { pair: 'DLTX/INR', launch: 'Q4 2031', exchanges: 'Binance, Kraken', volume: '5M+' },
-    { pair: 'DLTX/AUD', launch: 'Q1 2032', exchanges: 'Coinbase, Bybit', volume: '6M+' },
-    { pair: 'DLTX/CAD', launch: 'Q2 2032', exchanges: 'Kraken, Binance', volume: '7M+' },
-    { pair: 'DLTX/SGD', launch: 'Q3 2032', exchanges: 'Bybit, OKX', volume: '9M+' },
-    { pair: 'DLTX/KRW', launch: 'Q4 2032', exchanges: 'Huobi, Bybit', volume: '18M+' },
-    { pair: 'DLTX/THB', launch: 'Q1 2033', exchanges: 'Binance, OKX', volume: '4M+' },
-    { pair: 'DLTX/VND', launch: 'Q2 2033', exchanges: 'Bybit, Huobi', volume: '6M+' },
-    { pair: 'DLTX/MXN', launch: 'Q3 2033', exchanges: 'Coinbase, Binance', volume: '5M+' },
-    { pair: 'DLTX/BRL', launch: 'Q4 2033', exchanges: 'Kraken, OKX', volume: '7M+' },
-  ];
-
-  const roadmapGrid = $('tradingPairsGrid');
-  if (roadmapGrid) {
-    roadmapGrid.innerHTML = `
-      <div style="grid-column: 1 / -1; text-align: center; padding: 10px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-radius: 8px; margin-bottom: 10px;">
-        <h3 style="margin: 0; font-size: 16px;">4-Year Trading Roadmap: 16 Currency Pairs</h3>
-        <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.9;">Q4 2030 → Q4 2033</p>
-      </div>
-      ${fullRoadmap.map((pair, idx) => `
-        <div class="roadmap-pair-card">
-          <div class="pair-header">
-            <span class="pair-number">#${idx + 1}</span>
-            <span class="pair-symbol">${pair.pair}</span>
-          </div>
-          <div class="pair-launch">
-            <strong>Launch:</strong> ${pair.launch}
-          </div>
-          <div class="pair-exchanges">
-            <strong>Exchanges:</strong> ${pair.exchanges}
-          </div>
-          <div class="pair-volume">
-            <strong>Est. Volume:</strong> ${pair.volume}
-          </div>
-        </div>
-      `).join('')}
-    `;
-  }
 }
 
-// ===== REMOVED: populateCEXPage - CEX tab temporarily disabled =====
+// ===== CEX Listings removed - not professional for this release =====
 
 // Defer these to ensure original functions are defined
 setTimeout(() => {
