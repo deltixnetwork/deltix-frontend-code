@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.17.0';
+const APP_VERSION = '1.18.0';
 const $ = (id) => document.getElementById(id);
 
 // Stable per-phone identifier sent with every request (X-Device-Id) — the
@@ -37,6 +37,38 @@ const state = {
   energy: null,
   hideBalances: localStorage.getItem('dltx_hide_balances') === '1',
 };
+
+// Global ChatRoom state — declared up here because showTab() (which stops chat
+// polling) runs during boot, before the chat section further down is evaluated.
+const globalChatState = {
+  messages: [],   // server messages, ascending by id
+  pending: [],    // optimistic sends not yet acknowledged
+  pinned: null,
+  muted: [],      // staff only: opaque ids (uid) of currently muted members
+  presence: { online: 0, seen: {} },   // seen: uid -> 'o' online | 'h' hidden | epoch-ms last seen
+  adBusy: false,
+  fast: false,    // next sync is a quick one (after a (re)start) instead of a long-poll
+  room: { type: 'global' },   // which conversation is open: { type: 'global' } or { type: 'group', id, title }
+  group: null,    // the open group's details (title, about, role, memberCount, inviteCode…) from the server
+  listOpen: false,// the chat list is showing instead of a conversation
+  groups: [],     // my groups, for the chat list
+  view: null,     // { top, stick } remembered while the chat tab is hidden
+  me: null,       // { role, energy, cost, canChat, mute } as reported by the server
+  epoch: '',
+  rev: 0,
+  gen: 0,         // sync-loop generation: bumping it cancels the running loop
+  running: false,
+  failures: 0,
+  available: true,
+  loaded: false,
+  replyTo: null,
+  unread: 0,
+  stick: true,
+};
+
+// Predict screen state — declared up here for the same reason: showTab() (which stops the Predict
+// timers) runs during boot, before the Predict section further down is evaluated.
+const predictState = { markets: null, mine: null, board: null, coin: 'BTC', horizon: 60, filter: 'all', busy: false, claiming: false, poll: null, tick: null, loaded: false, lastChart: '' };
 
 // ---------- API helper ----------
 // Self-healing session: if the server ever reports the session/wallet as
@@ -235,12 +267,14 @@ function onAppResumed() {
   flushPendingCompletions();
   if (state.token && $('screen-main')?.classList.contains('active')) {
     refreshCurrentView({ silent: true });
+    loadEarn();
     if (typeof checkMysteryHour === 'function') checkMysteryHour();
   }
 }
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) onAppResumed();
 });
+window.addEventListener('online', () => { if (state.token) loadEarn(); });
 
 // Capacitor native app lifecycle resume
 try {
@@ -318,6 +352,7 @@ function showScreen(id) {
   $(id).classList.add('active');
   const authed = id === 'screen-main';
   $('topbar').hidden = !authed;
+  document.body.classList.toggle('authed', authed);
   closeSidenav();
   if (!authed) {
     document.body.classList.remove('has-ad-banner');
@@ -325,16 +360,23 @@ function showScreen(id) {
     if (cap?.Plugins?.AdMob) cap.Plugins.AdMob.hideBanner().catch(() => {});
   } else {
     updateTabAd();
+    requestAnimationFrame(() => { if (typeof updateNavMetrics === 'function') updateNavMetrics(); });
   }
 }
 
 function showTab(id, { refresh = true } = {}) {
+  if (typeof chatSaveView === 'function') chatSaveView();
+  navSaveScroll();
   document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
   $(id).classList.add('active');
   document.querySelectorAll('.tabbtn, .sidenav-item').forEach((b) =>
     b.classList.toggle('active', b.dataset.tab === id)
   );
   updateTabAd(id);
+  navRecord(id);
+  syncNavSelection(id);
+  if (id !== 'tab-chatroom') stopChatPolling();
+  if (id !== 'tab-predict' && typeof stopPredictPolling === 'function') stopPredictPolling();
   if (id !== 'tab-p2p' && typeof stopP2pAdminsPoll === 'function') stopP2pAdminsPoll();
   if (id === 'tab-energy') {
     renderEnergy();
@@ -350,6 +392,8 @@ function showTab(id, { refresh = true } = {}) {
     if (refresh && state.token) loadEarn();
   } else if (id === 'tab-chatroom') {
     if (typeof renderGlobalChatroom === 'function') renderGlobalChatroom();
+  } else if (id === 'tab-predict') {
+    if (typeof renderPredict === 'function') renderPredict();
   } else if (refresh && state.token) {
     refreshTabContent(id);
   }
@@ -397,6 +441,8 @@ function refreshTabContent(id) {
     loadKycStatus().catch(() => {});
   } else if (id === 'tab-chatroom') {
     if (typeof renderGlobalChatroom === 'function') renderGlobalChatroom();
+  } else if (id === 'tab-social') {
+    if (typeof loadFollowState === 'function') loadFollowState();
   }
 }
 
@@ -598,7 +644,13 @@ let toastTimer;
 function toast(msg, opts = {}) {
   const t = $('toast');
   if (!t) return;
-  const message = String(msg || '');
+  let message = String(msg || '');
+  // Every "Ad not completed — …" notice names the real reason (offline, no ad, timed out…)
+  // unless the member simply closed the ad themselves.
+  const last = window.lastAdResult;
+  if (/^Ad not completed/i.test(message) && last && !last.earned && last.reason !== 'closed' && Date.now() - last.at < 4000) {
+    message = adFailureText(last.reason);
+  }
   const tone = opts.tone || toastTone(message);
   const icon = opts.icon || TOAST_TONE_ICONS[tone] || TOAST_TONE_ICONS.info;
   t.className = `toast t-${tone}`;
@@ -859,6 +911,11 @@ $('sendCodeBtn').addEventListener('click', async () => {
     return;
   }
   $('sendCodeBtn').disabled = true;
+  // Retries can take a while on a slow link — tell the user we're still working instead of freezing.
+  const slowHint = setTimeout(() => {
+    hint.className = 'hint';
+    hint.textContent = 'Still connecting… this can take a few seconds on a slow connection.';
+  }, 7000);
   try {
     const referralCode = isSignup ? $('refCodeInput').value.trim().toUpperCase() : '';
     const integrityPayload = await getIntegrityPayload();
@@ -887,6 +944,8 @@ $('sendCodeBtn').addEventListener('click', async () => {
     hint.textContent = e.message;
     hint.classList.add('error');
   } finally {
+    clearTimeout(slowHint);
+    if (hint.textContent.startsWith('Still connecting')) hint.textContent = '';
     updateSendCodeState();
   }
 });
@@ -925,6 +984,10 @@ function resetAccountUI() {
   if (typeof resetMissionsUI === 'function') resetMissionsUI();
   if (typeof resetVaultUI === 'function') resetVaultUI();
   if (typeof resetEarnUI === 'function') resetEarnUI();
+  if (typeof chatReset === 'function') chatReset();
+  // An ad preloaded for one account must never be used for the next one.
+  adState.session = null;
+  if (adState.preparedWithSsv) { rewardedLoaded = false; adState.nonce = null; adState.preparedWithSsv = false; }
   treeState = null;
   const treeScene = $('treeScene'); if (treeScene) treeScene.textContent = '🌱';
   setText('treeSub', 'Water it once a day to grow it and collect a small reward.');
@@ -943,6 +1006,7 @@ function clearAccountSession() {
   state.email = null;
   localStorage.removeItem('dltx_token');
   localStorage.removeItem('dltx_email');
+  localStorage.removeItem('dltx_chat_draft');
   // Shared devices must not keep the previous person's email/code on the form.
   ['emailInput', 'codeInput', 'refCodeInput'].forEach((id) => { const el = $(id); if (el) el.value = ''; });
   const ageGate = $('ageGate');
@@ -1074,6 +1138,7 @@ async function enterApp() {
   // Never let the previous account's numbers survive into this session.
   resetAccountUI();
   showScreen('screen-main');
+  navReset();
   showTab('tab-wallet', { refresh: false });
   // Recover the email from the JWT for sessions that signed in before we
   // started persisting it (so the profile never shows a blank email).
@@ -1082,8 +1147,10 @@ async function enterApp() {
     if (state.email) localStorage.setItem('dltx_email', state.email);
   }
   renderProfile();
-  // Start the earn timer
-  if (typeof startNextEarnTimer === 'function') startNextEarnTimer();
+  // Start the shared earn clock; the server session is fetched right after
+  // login so the Wallet card and the Earn page show the same remaining time.
+  startEarnTicker();
+  loadEarn();
   // One-request startup: /bootstrap returns wallet + stats + tx + referrals +
   // energy in a single round-trip. Each loader falls back to its own request
   // for any missing part (and on older backends without /bootstrap), so this is
@@ -1098,6 +1165,7 @@ async function enterApp() {
   ]);
   flushPendingCompletions();
   if (typeof checkMysteryHour === 'function') checkMysteryHour();
+  if (adsReady) preloadRewardedAd();   // now that we are signed in, load the next ad with this account's proof id
   // Non-blocking: powers the Deltix Bot's one-shot daily nudge (checked
   // against data already needed elsewhere, no dedicated notification backend).
   Promise.allSettled([loadRewards(), loadTree()]).then(() => setTimeout(checkBotNudge, 1500));
@@ -2745,31 +2813,55 @@ $('expSearch').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') expSearch();
 });
 
-// ---------- AdMob (native app only — Sustainability Fund banner) ----------
+// ---------- AdMob (native app only) ----------
 // Production ad units from the Deltix Network AdMob account.
 //   App id (AndroidManifest): ca-app-pub-6703659529197503~2016406742
-const ADMOB_BANNER_ID = 'ca-app-pub-6703659529197503/5133524678';
-const ADMOB_INTERSTITIAL_ID = 'ca-app-pub-6703659529197503/1357931192';
-// Rewarded unit: used ONLY for non-transferable cosmetics (premium avatar
-// unlocks) — never $DLTX, which is P2P-transferable (AdMob rewarded-ad policy).
-const ADMOB_REWARDED_ID = 'ca-app-pub-6703659529197503/5850926156';
-// UX decision: enable banner placements across tabs (fits under tabbar)
-// and keep interstitial + rewarded formats active.
+const ADMOB_LIVE = {
+  banner: 'ca-app-pub-6703659529197503/5133524678',
+  interstitial: 'ca-app-pub-6703659529197503/1357931192',
+  // Rewarded unit: grants only non-transferable in-app benefits (Energy, cosmetics) —
+  // never $DLTX, which is P2P-transferable (AdMob rewarded-ad policy).
+  rewarded: 'ca-app-pub-6703659529197503/5850926156',
+};
+// Google's official demo units: always safe, they never count as real impressions or clicks.
+const ADMOB_DEMO = {
+  banner: 'ca-app-pub-3940256099942544/6300978111',
+  interstitial: 'ca-app-pub-3940256099942544/1033173712',
+  rewarded: 'ca-app-pub-3940256099942544/5224354917',
+};
+// UX decision: banner placements stay off; interstitial + rewarded formats are active.
 const BANNER_ADS_ENABLED = false;
-const ADS_ENABLED = true; // ADS ENABLED: banner + interstitial + rewarded (Energy/cosmetics) live
-const ADMOB_TESTING = false; // PRODUCTION BUILD: live AdMob creatives
+const ADS_ENABLED = true;
+const ADMOB_FORCE_TESTING = false; // true only for a dedicated test build
+// Emulators, automated browsers and an explicit opt-in flag always get DEMO ads, so
+// simulations and tests can never send live ad requests (invalid-traffic risk).
+function adsTestMode() {
+  try { if (localStorage.getItem('dltx_ads_test') === '1') return true; } catch {}
+  if (window.DELTIX_ADS_TEST === true) return true;
+  return /sdk_gphone|google_sdk|Android SDK built|Emulator|generic_x86|Cuttlefish/i.test(navigator.userAgent || '') || navigator.webdriver === true;
+}
+const ADMOB_TESTING = ADMOB_FORCE_TESTING || adsTestMode();
+const adUnit = (kind) => (ADMOB_TESTING ? ADMOB_DEMO : ADMOB_LIVE)[kind];
 window.ADS_ENABLED = ADS_ENABLED;
 let adsReady = false;
 let gamesSinceInterstitial = 0;
 let lastInterstitialAt = 0;
 // Interstitial/rewarded ads are PRELOADED ahead of time so the moment a game
-// ends (or a reward action fires) the ad is already cached and shows
-// instantly — requesting the ad on-demand (the old pattern) meant a live
-// ad-network round-trip delay right when the user expected something to happen.
+// ends (or a reward action fires) the ad is already cached and shows instantly.
 let interstitialLoading = false;
 let interstitialLoaded = false;
 let rewardedLoaded = false;
 let rewardedLoadPromise = null;
+
+const AD_LOAD_TIMEOUT_MS = 15000;   // an ad that has not loaded by now is treated as unavailable
+const AD_SHOW_TIMEOUT_MS = 12000;   // …and one that has not appeared after show() is treated as failed
+const AD_HARD_TIMEOUT_MS = 5 * 60000; // nothing may keep the UI waiting longer than this
+const adState = { status: 'idle', failures: 0, retryTimer: null, nonce: null, session: null, preparedWithSsv: false, playing: false, lastError: '' };
+const withTimeout = (promise, ms, label) => new Promise((resolve, reject) => {
+  const t = setTimeout(() => reject(new Error(label)), ms);
+  Promise.resolve(promise).then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+});
+const newAdNonce = () => (window.crypto?.randomUUID?.() || `${Date.now()}${Math.random().toString(36).slice(2)}`).replace(/[^\w-]/g, '').slice(0, 40);
 
 async function initAds() {
   try {
@@ -2781,19 +2873,22 @@ async function initAds() {
     // GDPR/UMP consent (EEA, UK, Switzerland): gather consent before ads load.
     // Never allowed to block the app — failures fall through to ad init.
     try {
-      const info = await AdMob.requestConsentInfo();
+      const info = await withTimeout(AdMob.requestConsentInfo(), 8000, 'consent-timeout');
       if (info && info.isConsentFormAvailable && info.status === 'REQUIRED') {
         await AdMob.showConsentForm();
       }
     } catch {
       /* consent flow unavailable — continue; SDK serves non-personalized ads */
     }
-    await AdMob.initialize({ initializeForTesting: ADMOB_TESTING });
+    await withTimeout(AdMob.initialize({ initializeForTesting: ADMOB_TESTING }), 10000, 'init-timeout');
     adsReady = true;
     preloadInterstitial();
     preloadRewardedAd();
-  } catch {
+  } catch (err) {
     /* ads are never allowed to break the app */
+    adState.status = 'failed';
+    adState.lastError = String(err?.message || err);
+    scheduleAdRetry(true);
   }
 }
 
@@ -2804,7 +2899,7 @@ function preloadInterstitial() {
   const AdMob = cap && cap.Plugins && cap.Plugins.AdMob;
   if (!cap || !cap.isNativePlatform || !cap.isNativePlatform() || !AdMob) return;
   interstitialLoading = true;
-  AdMob.prepareInterstitial({ adId: ADMOB_INTERSTITIAL_ID, isTesting: ADMOB_TESTING })
+  withTimeout(AdMob.prepareInterstitial({ adId: adUnit('interstitial'), isTesting: ADMOB_TESTING }), AD_LOAD_TIMEOUT_MS, 'load-timeout')
     .then(() => { interstitialLoading = false; interstitialLoaded = true; })
     .catch(() => { interstitialLoading = false; interstitialLoaded = false; });
 }
@@ -2822,6 +2917,29 @@ function showPreloadedInterstitial() {
 }
 window.showPreloadedInterstitial = showPreloadedInterstitial;
 
+/** Retries a failed ad setup/load with growing delays, so ads recover on their own. */
+function scheduleAdRetry(reinit = false) {
+  clearTimeout(adState.retryTimer);
+  const delay = Math.min(300000, 20000 * 2 ** Math.min(Math.max(adState.failures - 1, 0), 4));
+  adState.retryTimer = setTimeout(() => {
+    if (document.hidden) return scheduleAdRetry(reinit);
+    if (reinit && !adsReady) initAds(); else preloadRewardedAd();
+  }, delay);
+}
+
+/** The server tells the app whether it will ask for proof of an ad, and which opaque id to attach. */
+async function ensureAdSession() {
+  if (!state.token) return { mode: 'off' };
+  if (adState.session) return adState.session;
+  try {
+    adState.session = await api('GET', '/admob/session', null, { retries: 0 });
+  } catch {
+    // An older backend has no such endpoint — behave exactly as before.
+    adState.session = { mode: 'off' };
+  }
+  return adState.session;
+}
+
 /** Fetches the next rewarded ad in the background; opt-in taps fall back to
  *  a fresh load only when the preload hasn't landed yet. */
 function preloadRewardedAd() {
@@ -2830,15 +2948,40 @@ function preloadRewardedAd() {
   const cap = window.Capacitor;
   const AdMob = cap && cap.Plugins && cap.Plugins.AdMob;
   if (!cap || !cap.isNativePlatform || !cap.isNativePlatform() || !AdMob) return Promise.resolve(false);
-  rewardedLoadPromise = AdMob.prepareRewardVideoAd({ adId: ADMOB_REWARDED_ID, isTesting: ADMOB_TESTING })
-    .then(() => { rewardedLoaded = true; return true; })
+  adState.status = 'loading';
+  rewardedLoadPromise = (async () => {
+    const session = await ensureAdSession();
+    const nonce = newAdNonce();
+    const options = { adId: adUnit('rewarded'), isTesting: ADMOB_TESTING };
+    const withSsv = session.mode && session.mode !== 'off' && session.userId;
+    if (withSsv) options.ssv = { userId: session.userId, customData: nonce };
+    await withTimeout(AdMob.prepareRewardVideoAd(options), AD_LOAD_TIMEOUT_MS, 'load-timeout');
+    adState.nonce = nonce;
+    adState.preparedWithSsv = Boolean(withSsv);
+    adState.status = 'ready';
+    adState.failures = 0;
+    rewardedLoaded = true;
+    return true;
+  })()
     .catch((error) => {
       rewardedLoaded = false;
+      adState.status = 'failed';
+      adState.failures += 1;
+      adState.lastError = String(error?.message || error);
       console.warn('[ads] rewarded ad failed to load', error);
+      scheduleAdRetry();
       return false;
     })
     .finally(() => { rewardedLoadPromise = null; });
   return rewardedLoadPromise;
+}
+
+/** Can the UI honestly offer "Watch ad" right now? */
+function adsOfferable() {
+  if (!ADS_ENABLED || window.ADS_ENABLED === false) return false;
+  const native = !!(window.Capacitor?.isNativePlatform?.() && window.Capacitor?.Plugins?.AdMob);
+  if (!native) return true;                       // web preview uses the disclosed simulated ad
+  return adState.status !== 'failed' || adState.failures < 3;
 }
 
 /** Banner is placed cleanly across all tabs, fitting neatly between the header and the raised footer tab bar. */
@@ -2892,7 +3035,7 @@ async function showBannerAd(adSize) {
     shownBannerSize = null;
   }
   await AdMob.showBanner({
-    adId: ADMOB_BANNER_ID,
+    adId: adUnit('banner'),
     adSize,
     position: 'BOTTOM_CENTER',
     margin: 0,
@@ -3046,7 +3189,11 @@ async function unlockGameWithEnergy(id) {
 /** Records a rewarded-ad cosmetic unlock on the account (costs no Energy). */
 async function unlockCosmetic(kind, item) {
   try {
-    state.energy = await api('POST', '/energy/unlock', { kind, item });
+    // The ad's nonce lets the server tie the unlock to that one completed ad.
+    const adNonce = window.lastAdResult?.earned ? window.lastAdResult.nonce : null;
+    state.energy = await postAdReward('/energy/unlock', { kind, item, ...(adNonce ? { adNonce } : {}) }, {
+      onConfirming: () => toast('Confirming your ad…', { tone: 'info' }),
+    });
     return true;
   } catch (e) {
     toast(e.message);
@@ -3057,6 +3204,7 @@ window.energyBalance = () => energyState().energy;
 window.isGameUnlocked = isGameUnlocked;
 window.unlockGameWithEnergy = unlockGameWithEnergy;
 function renderEnergy() {
+  if (typeof chatOnEnergyChanged === 'function') chatOnEnergyChanged();
   const st = energyState();
   const { rank, index } = rankForEnergy(st.energy);
   const next = ENERGY_RANKS[index + 1] || null;
@@ -3208,13 +3356,14 @@ async function activateEnergyHour(btn) {
   if (waitMs > 0) { toast(`Please wait ${Math.ceil(waitMs / 1000)}s before the next ad.`); return; }
   if (btn) btn.disabled = true;
   try {
-    const earned = await playRewardedAd();
-    if (!earned) { toast('Ad not completed — 2x Energy Hour not activated.'); return; }
+    const ad = await playRewardedAdDetailed();
+    if (!ad.earned) { toast(ad.reason === 'closed' ? 'Ad not completed — 2x Energy Hour not activated.' : adFailureText(ad.reason)); return; }
     lastEnergyAdAt = Date.now();
-    // Fresh nonce per completed ad — the server refuses duplicate activations
+    // One nonce per completed ad — the server refuses duplicate activations
     // (double SDK callbacks, network retries, replays) without consuming a use.
-    const adNonce = (window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    const r = await api('POST', '/energy/hour/activate', { adNonce });
+    const r = await postAdReward('/energy/hour/activate', { adNonce: ad.nonce || newAdNonce() }, {
+      onConfirming: () => toast('Confirming your ad…', { tone: 'info' }),
+    });
     state.energy = r;
     // The detailed popup below covers the announcement — don't double-notify.
     ehAnnouncedFor = r.happyHour?.endsAt || null;
@@ -3237,20 +3386,22 @@ async function activateEnergyHour(btn) {
 // Rewarded ads may not be requested back-to-back — enforce a 30s gap between views.
 const ENERGY_AD_COOLDOWN_MS = 30000;
 let lastEnergyAdAt = 0;
+/** Watch a rewarded ad and bank its Energy. Resolves true when Energy was credited. */
 async function earnEnergy(btn) {
-  if (window.ADS_ENABLED === false) { toast('Ads are temporarily unavailable — please try again later.'); return; }
+  if (window.ADS_ENABLED === false) { toast('Ads are temporarily unavailable — please try again later.'); return false; }
   const waitMs = ENERGY_AD_COOLDOWN_MS - (Date.now() - lastEnergyAdAt);
-  if (waitMs > 0) { toast(`Please wait ${Math.ceil(waitMs / 1000)}s before the next ad.`); return; }
+  if (waitMs > 0) { toast(`Please wait ${Math.ceil(waitMs / 1000)}s before the next ad.`); return false; }
   if (btn) btn.disabled = true;
   try {
-    const earned = await playRewardedAd();
-    if (earned) lastEnergyAdAt = Date.now();
-    if (!earned) { toast('Ad not completed — no Energy earned.'); return; }
-    // The account is the source of truth — the server credits and returns it.
-    // A fresh nonce per completed ad lets the server refuse duplicate credits
-    // (double SDK callbacks, network retries, replays).
-    const adNonce = (window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    const r = await api('POST', '/energy/earn', { adNonce });
+    const ad = await playRewardedAdDetailed();
+    if (!ad.earned) { toast(ad.reason === 'closed' ? 'Ad not completed — no Energy earned.' : adFailureText(ad.reason)); return false; }
+    lastEnergyAdAt = Date.now();
+    // The account is the source of truth — the server credits and returns it. One nonce
+    // per completed ad lets the server refuse duplicate credits (double SDK callbacks,
+    // network retries, replays) and tie the credit to AdMob's own confirmation.
+    const r = await postAdReward('/energy/earn', { adNonce: ad.nonce || newAdNonce() }, {
+      onConfirming: () => toast('Confirming your ad…', { tone: 'info' }),
+    });
     state.energy = r;
     renderEnergy();
     const gained = Number(r.earned) || 1;
@@ -3262,9 +3413,17 @@ async function earnEnergy(btn) {
       subtitle: `You now have ${fmt(r.energy)} ⚡ total.`,
       duration: 2600,
     });
+    return true;
   } catch (e) {
-    if (e.data) { state.energy = e.data; renderEnergy(); }
+    if (e.alreadyCredited) {
+      // The first request went through even though its reply was lost — just refresh.
+      await loadEnergy(undefined, { force: true }).catch(() => {});
+      toast('Energy credited ⚡', { tone: 'success' });
+      return true;
+    }
+    if (e.data && typeof e.data.energy === 'number') { state.energy = e.data; renderEnergy(); }
     toast(e.message);
+    return false;
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -5282,13 +5441,26 @@ function renderShop() {
   );
 }
 
+// A purchase that failed WITHOUT an answer from the server (dropped connection) is retried
+// with the same id, so if the first try did go through the server returns its receipt
+// instead of charging again. Any definite answer retires the id.
+const shopPurchaseIds = new Map(); // item -> { id, at }
+function shopPurchaseIdFor(item) {
+  const hit = shopPurchaseIds.get(item);
+  if (hit && Date.now() - hit.at < 8 * 60000) return hit.id;
+  const id = `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+  shopPurchaseIds.set(item, { id, at: Date.now() });
+  return id;
+}
+
 async function buyShopItem(id, btn) {
   const it = (shopState.items || []).find((x) => x.id === id);
   if (!it) return;
   if (btn) btn.disabled = true;
   try {
-    const payload = { item: id, ...(it.currency === 'dltx' ? await getIntegrityPayload() : {}) };
-    const r = await api('POST', '/shop/buy', payload);
+    const payload = { item: id, purchaseId: shopPurchaseIdFor(id), ...(it.currency === 'dltx' ? await getIntegrityPayload() : {}) };
+    const r = await api('POST', '/shop/buy', payload, { retries: 0 });
+    shopPurchaseIds.delete(id);
     await Promise.allSettled([loadShop(), loadEnergy(undefined, { force: true }), loadWallet()]);
     const msg = it.category === 'energy' ? `+${r.energyAwarded} ⚡ Energy added!`
       : it.category === 'boost' ? 'Arcade cap boosted for today! 🏆'
@@ -5297,7 +5469,8 @@ async function buyShopItem(id, btn) {
     $('shopStatus').textContent = msg;
     toast(msg);
   } catch (e) {
-    if (e.status !== 401) toast(e.message);
+    if (e.status) shopPurchaseIds.delete(id);          // a definite answer — the next tap is a new purchase
+    if (e.status !== 401) toast(e.status ? e.message : `${e.message} If you were charged, tap Buy again — you won’t be charged twice.`);
     if (btn) btn.disabled = false;
   }
 }
@@ -5657,16 +5830,105 @@ function renderFaq() {
 // Completely separate from games: spend Energy to start a timed session, wait
 // for it, then claim its $DLTX reward. Lives only on its own dedicated page.
 const earnState = { data: null };
-let earnTimer = null;
+
+// One shared, server-authoritative Earn clock. The server sends the remaining
+// time of the running session; we anchor it to performance.now() (monotonic —
+// unaffected by the user changing the device clock or time zone) and derive
+// every countdown on screen from that single anchor. The anchor is refreshed
+// from the server on launch, resume, reconnect and every 30s while running, so
+// background throttling or device sleep can never leave it drifting.
+const earnClock = { synced: false, msAtSync: 0, perfAtSync: 0, lastPoll: 0 };
+let earnTicker = null;
+let earnLoading = null;
+
+function earnRemainingMs() {
+  if (!earnState.data?.active || !earnClock.synced) return 0;
+  return Math.max(0, earnClock.msAtSync - (performance.now() - earnClock.perfAtSync));
+}
+
+function applyEarnSnapshot(d, requestedAtPerf) {
+  const now = performance.now();
+  earnState.data = d;
+  earnClock.synced = true;
+  // The server computed msRemaining roughly half a round-trip before we got it.
+  const transit = requestedAtPerf != null ? Math.max(0, (now - requestedAtPerf) / 2) : 0;
+  earnClock.msAtSync = Math.max(0, Number(d.msRemaining) - transit);
+  earnClock.perfAtSync = now;
+  startEarnTicker();
+}
 
 async function loadEarn() {
   if (!state.token) return;
-  try {
-    earnState.data = await api('GET', '/earn');
-    renderEarn();
-    startEarnTimer();
-  } catch { /* handled by api() */ }
+  if (earnLoading) return earnLoading;
+  earnLoading = (async () => {
+    const t0 = performance.now();
+    try {
+      applyEarnSnapshot(await api('GET', '/earn'), t0);
+      renderEarn();
+    } catch { /* handled by api() */ } finally {
+      earnClock.lastPoll = performance.now();
+      earnLoading = null;
+    }
+  })();
+  return earnLoading;
 }
+
+const pad2 = (n) => String(n).padStart(2, '0');
+function setClockDigits(prefix, h, m, s) {
+  const els = [$(`${prefix}Hours`), $(`${prefix}Minutes`), $(`${prefix}Seconds`)];
+  [h, m, s].forEach((v, i) => { if (els[i] && els[i].textContent !== v) els[i].textContent = v; });
+}
+
+// Paints every Earn countdown (Wallet card + Earn page) from the same state.
+function paintEarnClock() {
+  const d = earnState.data;
+  let label = 'NEXT EARN IN';
+  let digits = ['--', '--', '--'];
+  if (d && earnClock.synced) {
+    const rem = earnRemainingMs();
+    const total = Math.ceil(rem / 1000);
+    if (!d.active) { label = 'READY TO START'; digits = ['00', '00', '00']; }
+    else if (d.canClaim) { label = 'EARN READY'; digits = ['00', '00', '00']; }
+    else {
+      if (rem <= 0) label = 'CONFIRMING…';
+      digits = [pad2(Math.floor(total / 3600)), pad2(Math.floor((total % 3600) / 60)), pad2(total % 60)];
+    }
+  }
+  setClockDigits('walletCountdown', ...digits);
+  setClockDigits('countdown', ...digits);
+  ['walletTimerLabel', 'earnTimerLabel'].forEach((id) => { const el = $(id); if (el && el.textContent !== label) el.textContent = label; });
+}
+
+function startEarnTicker() {
+  if (!earnTicker) earnTicker = setInterval(earnTick, 1000);
+  paintEarnClock();
+}
+function stopEarnTicker() {
+  if (earnTicker) { clearInterval(earnTicker); earnTicker = null; }
+}
+
+function earnTick() {
+  paintEarnClock();
+  const d = earnState.data;
+  if (!state.token || !d?.active || document.hidden) return;
+  const rem = earnRemainingMs();
+  if (!d.canClaim) {
+    const sub = $('earnSub'); const b = $('earnBtn');
+    const text = rem > 0 ? fmtCountdown(rem) : null;
+    if (sub) sub.textContent = text ? `Ready in ${text} · ${fmt(d.reward)} DLTX locked in` : 'Confirming with the server…';
+    if (b && !b.hidden) b.textContent = text ? `⏳ ${text}` : '⏳ Confirming…';
+  }
+  const sinceSync = performance.now() - earnClock.perfAtSync;
+  const sincePoll = performance.now() - earnClock.lastPoll;
+  // At zero the claim button unlocks only once the server confirms eligibility.
+  if (!d.canClaim && ((rem <= 0 && sincePoll > 3000) || (sinceSync > 30000 && sincePoll > 30000))) loadEarn();
+}
+
+// The countdown is shared, so these legacy entry points just (re)start it.
+function startNextEarnTimer() { startEarnTicker(); }
+function stopNextEarnTimer() { stopEarnTicker(); }
+function startWalletTimer() { startEarnTicker(); }
+function stopWalletTimer() { stopEarnTicker(); }
 
 function renderEarn() {
   const d = earnState.data;
@@ -5680,6 +5942,7 @@ function renderEarn() {
   }
   const ready = d.canClaim;
   const running = d.active && !ready;
+  const remainingText = fmtCountdown(earnRemainingMs());
   const packages = Array.isArray(d.packages) ? d.packages : [];
   setText('earnStatus', ready ? `◆ ${fmt(d.reward)} DLTX READY` : running ? `◆ Deltix Earn — running${d.packageLabel ? ` · ${d.packageLabel}` : ''}` : '◆ Deltix Earn');
   setText(
@@ -5687,7 +5950,7 @@ function renderEarn() {
     ready
       ? 'Your session is complete — claim your $DLTX.'
       : running
-      ? `Ready in ${fmtCountdown(d.msRemaining)} · ${fmt(d.reward)} DLTX locked in`
+      ? `Ready in ${remainingText} · ${fmt(d.reward)} DLTX locked in`
       : `You have ⚡ ${fmt(d.energy)} Energy. Choose a package below — every package runs ${d.durationHours}h.`
   );
   const b = $('earnBtn');
@@ -5695,7 +5958,7 @@ function renderEarn() {
     // The big button handles CLAIM (and the countdown); starting is per package.
     b.hidden = !d.active;
     b.disabled = running || !d.enabled;
-    b.textContent = ready ? `Claim ◆ ${fmt(d.reward)} DLTX` : `⏳ ${fmtCountdown(d.msRemaining)}`;
+    b.textContent = ready ? `Claim ◆ ${fmt(d.reward)} DLTX` : `⏳ ${remainingText}`;
   }
   if (pkgEl) {
     pkgEl.hidden = d.active;
@@ -5711,18 +5974,6 @@ function renderEarn() {
   setText('earnRateNote', d.active
     ? `Reward and cost were locked in when this session started. Closing the app does not reset the timer — it runs on the server.`
     : `Current Earn Rates: ${packages.map((p) => `${fmt(p.energy)}⚡ → ${fmt(p.rewardDltx)} DLTX`).join(' · ')} per ${d.durationHours}h — subject to change as the network grows.`);
-}
-
-function startEarnTimer() {
-  if (earnTimer) return;
-  earnTimer = setInterval(() => {
-    if (!state.token || !earnState.data?.active) return;
-    if (!document.getElementById('tab-earn')?.classList.contains('active')) return;
-    
-    // Refresh from server every 5 seconds to stay in sync
-    // This prevents time drift when the app closes/reopens
-    loadEarn().catch(() => {});
-  }, 5000);
 }
 
 async function handleEarnAction() {
@@ -5746,10 +5997,10 @@ async function startEarnSession(packageId) {
   if (!okGo) return;
   earnStarting = true;
   try {
+    const t0 = performance.now();
     const r = await api('POST', '/earn/start', { packageId });
-    earnState.data = r;
+    applyEarnSnapshot(r, t0);
     renderEarn();
-    startEarnTimer();
     toast(`Deltix Earn session started — ${fmt(r.reward)} DLTX ready in ${r.durationHours}h.`, { tone: 'success' });
     loadEnergy(undefined, { force: true }).catch(() => {});
   } catch (e) {
@@ -5766,15 +6017,16 @@ async function claimEarnSession() {
   const b = $('earnBtn'); if (b) b.disabled = true;
   try {
     const payload = await getIntegrityPayload();
+    const t0 = performance.now();
     const r = await api('POST', '/earn/claim', payload);
-    earnState.data = r;
+    applyEarnSnapshot(r, t0);
     renderEarn();
     celebrate({ amount: r.claimed, title: 'Deltix Earn Complete!', subtitle: 'Start another package any time.', icon: '◆' });
     await Promise.allSettled([loadWallet(), loadEnergy(undefined, { force: true }), loadTx()]);
     showRewardInterstitial();
   } catch (e) {
     toast(e.message, { tone: 'error' });
-    if (e.code === 'EARN_ALREADY_CLAIMED' || e.code === 'EARN_NOT_ACTIVE') loadEarn();
+    if (e.code === 'EARN_ALREADY_CLAIMED' || e.code === 'EARN_NOT_ACTIVE' || e.code === 'EARN_NOT_READY') loadEarn();
     else if (b) b.disabled = false;
   } finally {
     earnClaiming = false;
@@ -5783,7 +6035,8 @@ async function claimEarnSession() {
 
 function resetEarnUI() {
   earnState.data = null;
-  if (earnTimer) { clearInterval(earnTimer); earnTimer = null; }
+  earnClock.synced = false;
+  paintEarnClock();
   renderEarn();
 }
 
@@ -6646,88 +6899,6 @@ function renderPassport() {
     </div>`).join('');
 }
 
-// ===== NEXT EARN IN Timer - Updates every second =====
-let nextEarnTimerInterval = null;
-
-function startNextEarnTimer() {
-  const hoursEl = $('countdownHours');
-  const minutesEl = $('countdownMinutes');
-  const secondsEl = $('countdownSeconds');
-  
-  if (!hoursEl || !minutesEl || !secondsEl) return;
-  
-  function updateTimer() {
-    // 12-hour earning session - calculate seconds until next earn window
-    // Using server clock: next window is at the next 12-hour boundary (0:00, 12:00 UTC)
-    const now = new Date();
-    const hours = now.getUTCHours();
-    const minutes = now.getUTCMinutes();
-    const seconds = now.getUTCSeconds();
-    
-    let hoursUntilNext, minutesUntilNext, secondsUntilNext;
-    
-    if (hours < 12) {
-      // Next window at 12:00 UTC
-      hoursUntilNext = 12 - hours;
-      minutesUntilNext = 59 - minutes;
-      secondsUntilNext = 60 - seconds;
-    } else {
-      // Next window at 00:00 UTC (tomorrow)
-      hoursUntilNext = 24 - hours;
-      minutesUntilNext = 59 - minutes;
-      secondsUntilNext = 60 - seconds;
-    }
-    
-    // Handle overflow
-    if (secondsUntilNext === 60) {
-      secondsUntilNext = 0;
-      minutesUntilNext++;
-    }
-    if (minutesUntilNext === 60) {
-      minutesUntilNext = 0;
-      hoursUntilNext++;
-    }
-    
-    // Format with leading zeros
-    const hStr = String(hoursUntilNext).padStart(2, '0');
-    const mStr = String(minutesUntilNext).padStart(2, '0');
-    const sStr = String(secondsUntilNext).padStart(2, '0');
-    
-    // Update display
-    if (hoursEl.textContent !== hStr) {
-      hoursEl.textContent = hStr;
-      hoursEl.classList.add('updated');
-      setTimeout(() => hoursEl.classList.remove('updated'), 300);
-    }
-    if (minutesEl.textContent !== mStr) {
-      minutesEl.textContent = mStr;
-      minutesEl.classList.add('updated');
-      setTimeout(() => minutesEl.classList.remove('updated'), 300);
-    }
-    if (secondsEl.textContent !== sStr) {
-      secondsEl.textContent = sStr;
-      secondsEl.classList.add('updated');
-      setTimeout(() => secondsEl.classList.remove('updated'), 300);
-    }
-  }
-  
-  // Initial update
-  updateTimer();
-  
-  // Clear any existing timer
-  if (nextEarnTimerInterval) clearInterval(nextEarnTimerInterval);
-  
-  // Update every second
-  nextEarnTimerInterval = setInterval(updateTimer, 1000);
-}
-
-function stopNextEarnTimer() {
-  if (nextEarnTimerInterval) {
-    clearInterval(nextEarnTimerInterval);
-    nextEarnTimerInterval = null;
-  }
-}
-
 function renderPassport() {
   const d = communityState.passport;
   if (!d) return;
@@ -6781,61 +6952,147 @@ function resetCommunityUI() {
   setText('badgesCount', '0/0');
 }
 
-/** Opt-in rewarded ad. Resolves true only on the SDK's own reward callback.
- *  Rewards must stay non-transferable in-app benefits (never $DLTX). */
-function playRewardedAd() {
-  return new Promise((resolve) => {
-    if (!ADS_ENABLED) return resolve(false);
-    const cap = window.Capacitor;
-    const AdMob = cap && cap.Plugins && cap.Plugins.AdMob;
-    if (cap && cap.isNativePlatform && cap.isNativePlatform() && AdMob) {
-      let earned = false, settled = false;
-      let handles = [];
-      const cleanup = () => handles.forEach((h) => h?.remove?.());
-      const finish = (val, reload = false) => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        rewardedLoaded = false;
-        resolve(val);
-        if (reload) preloadRewardedAd(); // start fetching the next one right away
-      };
-      (async () => {
-        try {
-          // Listener registration is asynchronous; install all handlers before
-          // loading/showing so quick callbacks cannot be lost.
-          handles.push(await AdMob.addListener('onRewardedVideoAdReward', () => { earned = true; }));
-          handles.push(await AdMob.addListener('onRewardedVideoAdDismissed', () => finish(earned, true)));
-          handles.push(await AdMob.addListener('onRewardedVideoAdFailedToShow', () => finish(false, true)));
-          handles.push(await AdMob.addListener('onRewardedVideoAdFailedToLoad', () => finish(false)));
-          if (settled) { cleanup(); return; }
+/** Why an ad did not pay out, in words a person understands. */
+function adFailureText(reason) {
+  switch (reason) {
+    case 'disabled': return 'Ads are temporarily unavailable — please try again later.';
+    case 'offline': return 'You’re offline — connect to the internet to watch an ad.';
+    case 'unavailable': return 'No ad is available right now. Please try again in a minute.';
+    case 'timeout': return 'The ad took too long to load. Please try again.';
+    case 'failed_to_show': return 'The ad couldn’t be shown. Please try again in a moment.';
+    case 'busy': return 'An ad is already playing.';
+    case 'closed': return 'You closed the ad before it finished — no reward this time.';
+    default: return 'The ad wasn’t completed — no reward this time.';
+  }
+}
 
-          // Reuse an in-flight preload rather than starting a competing load.
-          if (!rewardedLoaded && !(await preloadRewardedAd())) {
-            finish(false);
-            return;
-          }
-          if (settled) return;
-          rewardedLoaded = false;
-          const item = await AdMob.showRewardVideoAd();
-          if (item) earned = true; // showRewardVideoAd resolves with the reward item
-        } catch (error) {
-          console.warn('[ads] rewarded ad could not be shown', error);
-          finish(false, rewardedLoaded);
-        }
-      })();
-      return;
-    }
+/**
+ * Opt-in rewarded ad. Resolves `{ earned, reason, nonce }`.
+ *  - earned is true ONLY when the SDK reported the reward. Closing an ad early,
+ *    a failed load/show, a timeout or being offline are all `earned: false`.
+ *  - `nonce` identifies this one ad; it is also the customData AdMob signs into
+ *    its server-side-verification callback.
+ *  - Nothing here can hang the UI: every stage has a timeout.
+ * Rewards must stay non-transferable in-app benefits (never $DLTX).
+ */
+async function playRewardedAdDetailed() {
+  const result = (earned, reason, nonce = null) => {
+    const r = { earned, reason, nonce, at: Date.now() };
+    window.lastAdResult = r;
+    return r;
+  };
+  if (!ADS_ENABLED || window.ADS_ENABLED === false) return result(false, 'disabled');
+  const cap = window.Capacitor;
+  const AdMob = cap && cap.Plugins && cap.Plugins.AdMob;
+  const native = !!(cap && cap.isNativePlatform && cap.isNativePlatform() && AdMob);
+
+  if (!native) {
     // Web / dev fallback — disclosed simulated ad so the flow is testable.
-    askConfirm({
+    const okd = await askConfirm({
       title: 'Simulated rewarded ad',
       message: 'Web preview — on a real device this plays a full AdMob rewarded video.',
       confirmText: '▶ Continue',
-    }).then((okd) => {
-      if (!okd) return resolve(false);
-      setTimeout(() => resolve(true), 600);
     });
+    if (!okd) return result(false, 'closed');
+    await new Promise((r) => setTimeout(r, 600));
+    return result(true, 'earned', newAdNonce());
+  }
+  if (navigator.onLine === false) return result(false, 'offline');
+  if (adState.playing) return result(false, 'busy');
+  adState.playing = true;
+
+  return new Promise((resolve) => {
+    let earned = false;
+    let settled = false;
+    const handles = [];
+    const timers = [];
+    const later = (fn, ms) => { const t = setTimeout(fn, ms); timers.push(t); return t; };
+    let showTimer = null;
+
+    const finish = (reason) => {
+      if (settled) return;
+      settled = true;
+      timers.forEach(clearTimeout);
+      handles.forEach((h) => { try { h?.remove?.(); } catch {} });
+      const nonce = adState.nonce;
+      rewardedLoaded = false;
+      adState.nonce = null;
+      adState.playing = false;
+      resolve(result(reason === 'earned', reason, reason === 'earned' ? nonce : null));
+      preloadRewardedAd();   // line up the next ad straight away
+    };
+
+    (async () => {
+      try {
+        // Listener registration is asynchronous; install all handlers before
+        // loading/showing so quick callbacks cannot be lost.
+        handles.push(await AdMob.addListener('onRewardedVideoAdReward', () => { earned = true; }));
+        handles.push(await AdMob.addListener('onRewardedVideoAdShowed', () => { clearTimeout(showTimer); }));
+        // Dismissal is the end of the ad. A short grace lets a late reward event land first.
+        handles.push(await AdMob.addListener('onRewardedVideoAdDismissed', () => {
+          if (earned) finish('earned'); else later(() => finish(earned ? 'earned' : 'closed'), 700);
+        }));
+        handles.push(await AdMob.addListener('onRewardedVideoAdFailedToShow', () => finish('failed_to_show')));
+        handles.push(await AdMob.addListener('onRewardedVideoAdFailedToLoad', () => { if (!rewardedLoaded) finish('unavailable'); }));
+        if (settled) return;
+        later(() => finish(earned ? 'earned' : 'timeout'), AD_HARD_TIMEOUT_MS);
+
+        // Reuse an in-flight preload rather than starting a competing load.
+        let ready = rewardedLoaded || (await preloadRewardedAd());
+        // When the server asks for proof of the ad, the ad must have been loaded WITH it.
+        const session = await ensureAdSession();
+        const needsSsv = session.mode && session.mode !== 'off';
+        if (ready && needsSsv && !adState.preparedWithSsv) { rewardedLoaded = false; ready = await preloadRewardedAd(); }
+        if (settled) return;
+        if (!ready) { finish(adState.lastError === 'load-timeout' ? 'timeout' : 'unavailable'); return; }
+
+        rewardedLoaded = false;
+        showTimer = later(() => finish('failed_to_show'), AD_SHOW_TIMEOUT_MS);
+        const item = await AdMob.showRewardVideoAd();
+        if (item) earned = true; // the plugin resolves only when the user actually earned the reward
+      } catch (error) {
+        console.warn('[ads] rewarded ad could not be shown', error);
+        finish('failed_to_show');
+      }
+    })();
   });
+}
+
+/** Boolean form kept for the many existing callers. The reason is in window.lastAdResult. */
+async function playRewardedAd() {
+  return (await playRewardedAdDetailed()).earned;
+}
+
+/**
+ * Asks the server to credit a completed ad. AdMob's own confirmation (server-side
+ * verification) can trail the ad by a few seconds, so "not verified yet" is retried
+ * with the SAME nonce; a dropped connection is retried too, safely — the server
+ * pays one ad only once, however many times it is asked.
+ */
+async function postAdReward(path, body, { onConfirming } = {}) {
+  let attempt = 0;
+  let networkRetried = false;
+  for (;;) {
+    try {
+      return await api('POST', path, body, { retries: 0 });
+    } catch (e) {
+      if (e.data?.code === 'AD_NOT_VERIFIED' && attempt < 2) {
+        if (attempt === 0 && onConfirming) onConfirming();
+        attempt += 1;
+        await new Promise((r) => setTimeout(r, 2000));
+        continue;
+      }
+      if (!e.status && attempt < 3) {
+        networkRetried = true;
+        attempt += 1;
+        await new Promise((r) => setTimeout(r, 1500 * attempt));
+        continue;
+      }
+      // The first attempt may have been credited even though its reply was lost.
+      if (networkRetried && e.data?.code === 'AD_DUPLICATE') e.alreadyCredited = true;
+      throw e;
+    }
+  }
 }
 
 // ---------- KYC & Integrations: Card Data & Rendering ----------
@@ -6914,12 +7171,174 @@ window.showTab = function(tabId, opts) {
   }
 };
 
-// ---------- Hardware / browser back button ----------
-// A sentinel history entry absorbs the back press so we can close the topmost
-// overlay (or return to the Wallet tab) instead of exiting the app.
-const BACK_SENTINEL = { deltix: true };
-let exitArmed = false;
+// ---------- Navigation history + Android back button ----------
+// Every screen the user opens is remembered, so Back walks the same path in
+// reverse (Wallet → Stores → … → Wallet). Back first dismisses whatever sits on
+// top (dialogs, the menu, an in-app browser page) and only then leaves the
+// screen. Only from the root (Wallet) is the app sent to the background, the
+// way any Android app behaves — it is never closed from a deeper screen.
+const NAV_STACK_MAX = 40;
+const navStack = ['tab-wallet'];
+const navScroll = {};
+let navCurrent = 'tab-wallet';
+let navRestoring = false;
+
+function navReset() {
+  navStack.length = 0;
+  navStack.push('tab-wallet');
+  navCurrent = 'tab-wallet';
+  Object.keys(navScroll).forEach((k) => delete navScroll[k]);
+}
+
+function navSaveScroll() {
+  navScroll[navCurrent] = window.scrollY;
+}
+
+function navRecord(id) {
+  if (id === navCurrent) return;
+  if (!navRestoring) {
+    const seen = navStack.lastIndexOf(id);
+    // Returning to a screen already in the trail trims back to it (no loops).
+    if (seen >= 0) navStack.length = seen + 1;
+    else navStack.push(id);
+    if (navStack.length > NAV_STACK_MAX) navStack.shift();
+  }
+  navCurrent = id;
+  const y = navRestoring ? (navScroll[id] || 0) : 0;
+  requestAnimationFrame(() => window.scrollTo(0, y));
+}
+
+// Collapsible bottom navigation: full grid, one compact row, or hidden.
+const NAV_MODE_KEY = 'dltx_nav_mode';
+const NAV_LAST_KEY = 'dltx_nav_last_visible';
+const NAV_MODES = ['full', 'compact', 'hidden'];
+let navMode = 'full';
+let navLastVisible = 'full';
+let navAnimTimer = null;
+
+function navPrefersReducedMotion() {
+  return !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+}
+
+function applyNavMode(mode, { animate = true, persist = true } = {}) {
+  const bar = $('tabbar');
+  const items = $('tabbarItems');
+  if (!bar || !items || !NAV_MODES.includes(mode)) return;
+  const prevHeight = items.offsetHeight;
+  navMode = mode;
+  if (mode !== 'hidden') navLastVisible = mode;
+  bar.dataset.mode = mode;
+  document.body.dataset.nav = mode;
+
+  const toggle = $('navToggle');
+  if (toggle) {
+    const full = mode === 'full';
+    toggle.setAttribute('aria-expanded', String(full));
+    toggle.setAttribute('aria-label', full ? 'Switch to compact navigation' : 'Switch to full navigation');
+    $('navToggleLabel').textContent = full ? 'Compact' : 'Full';
+  }
+  const restore = $('navRestore');
+  if (restore) restore.hidden = mode !== 'hidden';
+  // A hidden bar must not be reachable by keyboard or screen readers.
+  bar.toggleAttribute('inert', mode === 'hidden');
+  bar.setAttribute('aria-hidden', String(mode === 'hidden'));
+
+  // Animate the height change between the full grid and the compact row.
+  clearTimeout(navAnimTimer);
+  items.style.height = '';
+  if (animate && mode !== 'hidden' && prevHeight && !navPrefersReducedMotion()) {
+    const nextHeight = items.offsetHeight;
+    if (nextHeight !== prevHeight) {
+      items.style.height = `${prevHeight}px`;
+      void items.offsetHeight;
+      items.style.height = `${nextHeight}px`;
+      navAnimTimer = setTimeout(() => { items.style.height = ''; }, 320);
+    }
+  }
+  if (persist) {
+    try {
+      localStorage.setItem(NAV_MODE_KEY, mode);
+      localStorage.setItem(NAV_LAST_KEY, navLastVisible);
+    } catch {}
+  }
+  syncNavSelection(navCurrent);
+  updateNavMetrics();
+}
+
+// Publishes the live nav height so page content always clears the bar.
+function updateNavMetrics() {
+  const bar = $('tabbar');
+  if (!bar) return;
+  const h = navMode === 'hidden' ? 0 : Math.round(bar.getBoundingClientRect().height);
+  document.documentElement.style.setProperty('--nav-h', `${h}px`);
+  const top = $('topbar');
+  if (top && !top.hidden) document.documentElement.style.setProperty('--topbar-h', `${Math.round(top.getBoundingClientRect().height)}px`);
+}
+
+function syncNavSelection(id) {
+  document.querySelectorAll('.tabbtn').forEach((b) => {
+    if (b.dataset.tab === id) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
+  const items = $('tabbarItems');
+  const active = items?.querySelector(`.tabbtn[data-tab="${id}"]`);
+  if (navMode === 'compact' && items && active) {
+    const left = active.offsetLeft - (items.clientWidth - active.offsetWidth) / 2;
+    items.scrollTo({ left: Math.max(0, left), behavior: navPrefersReducedMotion() ? 'auto' : 'smooth' });
+  }
+}
+
+(function initNavigationBar() {
+  const bar = $('tabbar');
+  if (!bar) return;
+  let saved = 'full';
+  try {
+    saved = localStorage.getItem(NAV_MODE_KEY) || 'full';
+    const last = localStorage.getItem(NAV_LAST_KEY);
+    if (last === 'full' || last === 'compact') navLastVisible = last;
+  } catch {}
+  applyNavMode(NAV_MODES.includes(saved) ? saved : 'full', { animate: false, persist: false });
+  $('navToggle')?.addEventListener('click', () => applyNavMode(navMode === 'full' ? 'compact' : 'full'));
+  $('navHide')?.addEventListener('click', () => {
+    applyNavMode('hidden');
+    $('navRestore')?.focus({ preventScroll: true });
+  });
+  $('navRestore')?.addEventListener('click', () => {
+    applyNavMode(navLastVisible);
+    $('navToggle')?.focus({ preventScroll: true });
+  });
+  if (typeof ResizeObserver === 'function') new ResizeObserver(updateNavMetrics).observe(bar);
+  window.addEventListener('resize', updateNavMetrics);
+  // The on-screen keyboard would otherwise leave the bar floating over the input.
+  document.addEventListener('focusin', (e) => {
+    if (e.target.matches?.('input, textarea, select')) document.body.classList.add('kbd-open');
+  });
+  document.addEventListener('focusout', () => {
+    setTimeout(() => {
+      if (!document.activeElement?.matches?.('input, textarea, select')) document.body.classList.remove('kbd-open');
+    }, 120);
+  });
+})();
+
+// Dialogs and transient popups sit above everything, so they close first.
+function closeTransientOverlay() {
+  if (closeChatSheet()) return true;
+  const confirmDlg = document.getElementById('confirmDialog');
+  if (confirmDlg) {
+    const cancel = confirmDlg.querySelector('.modal-actions .btn.ghost');
+    if (cancel) cancel.click(); else confirmDlg.remove();
+    return true;
+  }
+  const pop = document.getElementById('rewardPop');
+  if (pop) { pop.querySelector('.rp-close')?.click(); return true; }
+  const overlays = document.querySelectorAll('.modal-overlay');
+  if (overlays.length) { overlays[overlays.length - 1].remove(); return true; }
+  if (document.body.classList.contains('nav-open')) { closeSidenav(); return true; }
+  return false;
+}
+
 function closeTopOverlay() {
+  if (closeTransientOverlay()) return true;
   for (const id of ['p2pImgModal', 'p2pTraderModal', 'p2pEditModal', 'swapModal', 'dappModal', 'stakeModal', 'edDelegateModal', 'edUndelegateModal', 'sendModal', 'deleteModal', 'p2pCreateModal', 'p2pOfferModal', 'p2pOrderModal']) {
     const el = document.getElementById(id);
     if (el && !el.hidden) {
@@ -6945,28 +7364,51 @@ function closeTopOverlay() {
     if (dbState.index > 0) goDbBack(); else closeDBrowser();
     return true;
   }
+  // Any other open dialog (avatar picker, …) closes before the screen does.
+  const openModals = [...document.querySelectorAll('.modal-backdrop:not([hidden])')].filter((el) => el.id !== 'updateGate');
+  if (openModals.length) { openModals[openModals.length - 1].hidden = true; return true; }
   return false;
 }
-history.replaceState(BACK_SENTINEL, '');
-history.pushState(BACK_SENTINEL, '');
-window.addEventListener('popstate', () => {
-  if (closeTopOverlay()) { history.pushState(BACK_SENTINEL, ''); return; }
-  const onMain = $('screen-main').classList.contains('active');
-  const tab = document.querySelector('.tab.active')?.id;
-  if (onMain && tab && tab !== 'tab-wallet') {
-    showTab('tab-wallet');
-    history.pushState(BACK_SENTINEL, '');
-    return;
+
+// One entry point for every Back gesture/button. Returns true when it handled
+// the press; false means the app is already at its root.
+function handleBack() {
+  if (closeTopOverlay()) return true;
+  // Inside a group, Back goes to the chat list first (the global chat keeps going straight to the previous screen).
+  if (typeof chatLive === 'function' && chatLive() && chatIsGroup()) { chatShowList(); return true; }
+  if (!$('screen-main')?.classList.contains('active')) {
+    if ($('screen-otp')?.classList.contains('active')) { $('backToEmail')?.click(); return true; }
+    return false;
   }
-  if (!exitArmed) {
-    exitArmed = true;
-    toast('Press back again to exit');
-    setTimeout(() => {
-      exitArmed = false;
-      history.pushState(BACK_SENTINEL, ''); // re-arm the sentinel if the user stayed
-    }, 2000);
+  if (navStack.length > 1) {
+    navStack.pop();
+    navRestoring = true;
+    try { showTab(navStack[navStack.length - 1]); } finally { navRestoring = false; }
+    return true;
   }
-});
+  return false;
+}
+
+function leaveApp() {
+  const appPlugin = window.Capacitor?.Plugins?.App;
+  if (appPlugin?.minimizeApp) appPlugin.minimizeApp();
+  else appPlugin?.exitApp?.();
+}
+
+if (isNativeApp()) {
+  // Android hardware button, back gesture and predictive back all arrive here.
+  try {
+    window.Capacitor?.Plugins?.App?.addListener('backButton', () => { if (!handleBack()) leaveApp(); });
+  } catch (e) { console.warn('Back button listener unavailable:', e); }
+} else {
+  // Browser: one guard entry absorbs Back so it can be handled in-app first.
+  const BACK_SENTINEL = { deltix: true };
+  history.replaceState(BACK_SENTINEL, '');
+  history.pushState(BACK_SENTINEL, '');
+  window.addEventListener('popstate', () => {
+    if (handleBack()) history.pushState(BACK_SENTINEL, '');
+  });
+}
 
 // ---------- Boot ----------
 (async function boot() {
@@ -6999,76 +7441,6 @@ window.addEventListener('popstate', () => {
   showScreen('screen-email');
 })();
 
-// ===== WALLET TIMER - Shows same timer as Earn page =====
-let walletTimerInterval = null;
-
-function startWalletTimer() {
-  const hoursEl = $('walletCountdownHours');
-  const minutesEl = $('walletCountdownMinutes');
-  const secondsEl = $('walletCountdownSeconds');
-  
-  if (!hoursEl || !minutesEl || !secondsEl) return;
-  
-  function updateWalletTimer() {
-    const now = new Date();
-    const hours = now.getUTCHours();
-    const minutes = now.getUTCMinutes();
-    const seconds = now.getUTCSeconds();
-    
-    let hoursUntilNext, minutesUntilNext, secondsUntilNext;
-    
-    if (hours < 12) {
-      hoursUntilNext = 12 - hours;
-      minutesUntilNext = 59 - minutes;
-      secondsUntilNext = 60 - seconds;
-    } else {
-      hoursUntilNext = 24 - hours;
-      minutesUntilNext = 59 - minutes;
-      secondsUntilNext = 60 - seconds;
-    }
-    
-    if (secondsUntilNext === 60) {
-      secondsUntilNext = 0;
-      minutesUntilNext++;
-    }
-    if (minutesUntilNext === 60) {
-      minutesUntilNext = 0;
-      hoursUntilNext++;
-    }
-    
-    const hStr = String(hoursUntilNext).padStart(2, '0');
-    const mStr = String(minutesUntilNext).padStart(2, '0');
-    const sStr = String(secondsUntilNext).padStart(2, '0');
-    
-    if (hoursEl.textContent !== hStr) {
-      hoursEl.textContent = hStr;
-      hoursEl.classList.add('updated');
-      setTimeout(() => hoursEl.classList.remove('updated'), 300);
-    }
-    if (minutesEl.textContent !== mStr) {
-      minutesEl.textContent = mStr;
-      minutesEl.classList.add('updated');
-      setTimeout(() => minutesEl.classList.remove('updated'), 300);
-    }
-    if (secondsEl.textContent !== sStr) {
-      secondsEl.textContent = sStr;
-      secondsEl.classList.add('updated');
-      setTimeout(() => secondsEl.classList.remove('updated'), 300);
-    }
-  }
-  
-  updateWalletTimer();
-  if (walletTimerInterval) clearInterval(walletTimerInterval);
-  walletTimerInterval = setInterval(updateWalletTimer, 1000);
-}
-
-function stopWalletTimer() {
-  if (walletTimerInterval) {
-    clearInterval(walletTimerInterval);
-    walletTimerInterval = null;
-  }
-}
-
 // ===== POPULATE NEW PAGES WITH CONTENT =====
 function populateNewPages() {
   populateSocialMediaPage();
@@ -7081,7 +7453,7 @@ function populateSocialMediaPage() {
   // X Accounts with Follow & Earn Feature
   const xAccounts = [
     { handle: '@DeltixOfficial', username: 'DeltixOfficial', desc: 'Official Main Account', verified: true },
-    { handle: '@Deltix_offical', username: 'Deltix_offical', desc: 'Community Updates', verified: true },
+    { handle: '@Deltix_Official', username: 'Deltix_Official', desc: 'Community Updates', verified: true },
     { handle: '@Crypmatrx', username: 'Crypmatrx', desc: 'Crypto News & Insights', verified: false },
     { handle: '@Queen_Anet', username: 'Queen_Anet', desc: 'Team & Leadership', verified: false },
   ];
@@ -7100,10 +7472,12 @@ function populateSocialMediaPage() {
         </div>
         <div class="social-actions">
           <button class="btn-social btn-visit" onclick="openXAccount('${x.username}')">Visit</button>
-          <button class="btn-social btn-follow" onclick="followXAccount('${x.username}', '${x.handle}')">Follow & Earn</button>
+          <button class="btn-social btn-follow" data-handle="${x.username}" onclick="followXAccount('${x.username}', '${x.handle}')">Follow & Earn</button>
         </div>
       </div>
     `).join('');
+    paintFollowButtons();
+    loadFollowState();
   }
   
   // KYC, ChatRoom, News Action Buttons
@@ -7148,37 +7522,66 @@ function populateSocialMediaPage() {
   }
 }
 
-// Open X Account - Direct to X App
+// ---------- Official links ----------
+// External links are always plain https URLs. In the native app Capacitor hands
+// them to Android, which opens the matching app (X, WhatsApp, Discord, Telegram)
+// when it is installed and the default browser otherwise.
+const OFFICIAL_LINKS = {
+  discord: 'https://discord.com/invite/xw8k3cgREy',
+  whatsapp: 'https://wa.me/19253007638',
+  telegram: 'https://t.me/A_Network_Community',
+  xProfile: (username) => `https://x.com/${username}`,
+};
+
+function isNativeApp() {
+  return !!window.Capacitor?.isNativePlatform?.();
+}
+
+function openExternalLink(url) {
+  let target;
+  try { target = new URL(url); } catch { return false; }
+  if (target.protocol !== 'https:') return false;
+  if (isNativeApp()) window.location.href = target.href;
+  else window.open(target.href, '_blank', 'noopener');
+  return true;
+}
+
+// Open X Account - X app when installed, browser otherwise
 function openXAccount(username) {
-  // Try native X app first (x://), fallback to browser
-  const xAppUrl = `x://user?screen_name=${username}`;
-  const webUrl = `https://x.com/${username}`;
-  
-  // Try to open in X app
-  const xhr = new XMLHttpRequest();
-  xhr.onerror = () => {
-    // X app not installed, fall back to Deltix Browser
-    window.location.href = `app://browser?url=${webUrl}`;
-  };
-  xhr.timeout = 500;
-  xhr.ontimeout = () => {
-    window.location.href = `app://browser?url=${webUrl}`;
-  };
-  
-  // Attempt native app link
-  window.location.href = xAppUrl;
-  setTimeout(() => {
-    if (document.hidden === false) {
-      // If app didn't open, fallback to browser
-      window.location.href = `app://browser?url=${webUrl}`;
-    }
-  }, 500);
+  if (!/^[A-Za-z0-9_]{1,15}$/.test(String(username))) return;
+  openExternalLink(OFFICIAL_LINKS.xProfile(username));
+}
+
+// ---------- Follow & Earn (the server decides; nothing is stored on the device) ----------
+// The reward is 10 Energy, once per account per official X account. Deltix cannot see X's
+// follower lists, so it trusts the member's word and cannot take the reward back on an unfollow.
+const followState = { reward: 10, claimed: {}, busy: false };
+try { localStorage.removeItem('userEnergy'); } catch {}   // the old, fake on-device counter
+
+async function loadFollowState() {
+  if (!state.token) return;
+  try {
+    const r = await api('GET', '/energy/social', null, { retries: 0 });
+    followState.reward = Number(r.reward) || 10;
+    followState.claimed = {};
+    for (const a of r.accounts || []) followState.claimed[String(a.handle).toLowerCase()] = !!a.claimed;
+    paintFollowButtons();
+  } catch { /* older backend or offline — buttons stay as they are */ }
+}
+function paintFollowButtons() {
+  document.querySelectorAll('.btn-follow[data-handle]').forEach((btn) => {
+    const done = !!followState.claimed[btn.dataset.handle.toLowerCase()];
+    btn.disabled = done;
+    btn.classList.toggle('claimed', done);
+    btn.textContent = done ? '✓ Claimed' : 'Follow & Earn';
+  });
 }
 
 // Follow X Account & Earn 10 Energy Program
 function followXAccount(username, handle) {
-  const userEnergy = parseInt(localStorage.getItem('userEnergy') || '0');
-  
+  if (followState.claimed[String(username).toLowerCase()]) { toast(`You already received the reward for ${handle}.`, { tone: 'info' }); return; }
+  document.querySelectorAll('.follow-modal').forEach((m) => m.closest('.modal-overlay')?.remove());
+
   // Show dialog
   const dialog = document.createElement('div');
   dialog.className = 'modal-overlay';
@@ -7191,11 +7594,11 @@ function followXAccount(username, handle) {
       <div class="modal-body">
         <div class="follow-icon">𝕏</div>
         <p>Visit <strong>${handle}</strong> on X</p>
-        <p class="follow-desc">Follow the account to unlock 10 Energy rewards</p>
+        <p class="follow-desc">Follow the account to earn ${followState.reward} Energy — paid once per account</p>
         
         <div class="follow-reward">
           <span class="reward-icon">⚡</span>
-          <span class="reward-text">+10 Energy</span>
+          <span class="reward-text">+${followState.reward} Energy</span>
         </div>
         
         <div class="follow-steps">
@@ -7222,33 +7625,55 @@ function followXAccount(username, handle) {
   document.body.appendChild(dialog);
 }
 
+// Opens X, then offers the claim. The server decides everything: the amount (10), which X
+// accounts count, and that each is paid once per account.
 function claimFollowReward(username, handle, modalElement) {
-  // Open X app or browser
   openXAccount(username);
-  
-  // Claim reward after delay (user returns from X app)
-  setTimeout(() => {
-    const currentEnergy = parseInt(localStorage.getItem('userEnergy') || '0');
-    const newEnergy = currentEnergy + 10;
-    localStorage.setItem('userEnergy', newEnergy);
-    
-    // Show confirmation
-    const confirmDialog = document.createElement('div');
-    confirmDialog.className = 'modal-overlay';
-    confirmDialog.innerHTML = `
-      <div class="modal-content reward-modal">
-        <div class="reward-success">✓</div>
-        <h2>Reward Claimed!</h2>
-        <p>You earned <strong>+10 Energy</strong></p>
-        <p class="energy-total">Total Energy: ${newEnergy}⚡</p>
-        <button class="btn primary" onclick="this.closest('.modal-overlay').remove()">Continue</button>
-      </div>
-    `;
-    document.body.appendChild(confirmDialog);
-    
-    // Update UI
-    if (modalElement) modalElement.remove();
-  }, 2000);
+  const footer = modalElement && modalElement.querySelector('.modal-footer');
+  if (!footer) return;
+  footer.innerHTML = `
+    <button class="btn primary" id="followClaimBtn" type="button" disabled>I followed — claim ⚡ ${followState.reward}</button>
+    <button class="btn ghost" type="button" data-close>Cancel</button>`;
+  footer.querySelector('[data-close]').addEventListener('click', () => modalElement.remove());
+  const btn = footer.querySelector('#followClaimBtn');
+  btn.addEventListener('click', () => submitFollowClaim(username, handle, modalElement, btn));
+  // A short pause so the claim is not fired before the member has even reached X.
+  let left = 8;
+  const label = btn.textContent;
+  btn.textContent = `Claim available in ${left}s`;
+  const timer = setInterval(() => {
+    if (!document.body.contains(modalElement)) { clearInterval(timer); return; }
+    left -= 1;
+    if (left <= 0) { clearInterval(timer); btn.disabled = false; btn.textContent = label; } else btn.textContent = `Claim available in ${left}s`;
+  }, 1000);
+}
+
+async function submitFollowClaim(username, handle, modalElement, btn) {
+  if (followState.busy) return;
+  followState.busy = true;
+  btn.disabled = true;
+  try {
+    const r = await api('POST', '/energy/social/follow', { handle: username }, { retries: 0 });
+    state.energy = r;                      // the server returns the full, authoritative Energy snapshot
+    renderEnergy();
+    followState.claimed[username.toLowerCase()] = true;
+    paintFollowButtons();
+    modalElement.remove();
+    celebrate({ amount: r.awarded, unit: 'Energy', icon: '⚡', title: 'Follow reward!', subtitle: `${handle} · you now have ${fmt(r.energy)} ⚡ total.`, duration: 2600 });
+  } catch (e) {
+    if (e.data && e.data.code === 'FOLLOW_ALREADY_CLAIMED') {
+      followState.claimed[username.toLowerCase()] = true;
+      if (typeof e.data.energy === 'number') { state.energy = e.data; renderEnergy(); }
+      paintFollowButtons();
+      modalElement.remove();
+      toast(`You already received the reward for ${handle}.`, { tone: 'info' });
+    } else {
+      btn.disabled = false;
+      toast(e.status === 404 ? 'Follow rewards are not available yet — please try again later.' : (e.message || 'Could not claim the reward. Please try again.'), { tone: 'error' });
+    }
+  } finally {
+    followState.busy = false;
+  }
 }
 
 // Action buttons - Open Social Apps Directly
@@ -7256,58 +7681,19 @@ function openKYC() {
   alert('KYC Verification - Coming Soon\n\nVerify your identity to unlock premium features.');
 }
 
-// Discord - Direct to Discord App
+// Discord - Discord app when installed, browser otherwise
 function openDiscord() {
-  // Discord invite link
-  const discordInvite = 'xw8k3cgREy';
-  
-  // Try native Discord app first
-  const discordAppUrl = `discord://invite/${discordInvite}`;
-  const webUrl = `https://discord.gg/${discordInvite}`;
-  
-  window.location.href = discordAppUrl;
-  setTimeout(() => {
-    // If Discord app didn't open, fallback to browser
-    if (document.hidden === false) {
-      window.location.href = `app://browser?url=${webUrl}`;
-    }
-  }, 500);
+  openExternalLink(OFFICIAL_LINKS.discord);
 }
 
-// Telegram - Direct to Telegram App
+// Telegram - Telegram app when installed, browser otherwise
 function openTelegram() {
-  // Telegram channel username or ID
-  const telegramChannel = 'A_Network_Community';
-  
-  // Try native Telegram app first
-  const telegramAppUrl = `tg://resolve?domain=${telegramChannel}`;
-  const webUrl = `https://t.me/${telegramChannel}`;
-  
-  window.location.href = telegramAppUrl;
-  setTimeout(() => {
-    // If Telegram app didn't open, fallback to browser
-    if (document.hidden === false) {
-      window.location.href = `app://browser?url=${webUrl}`;
-    }
-  }, 500);
+  openExternalLink(OFFICIAL_LINKS.telegram);
 }
 
-// WhatsApp - Direct to WhatsApp App
+// WhatsApp - official Deltix contact, +1 (925) 300-7638
 function openWhatsApp() {
-  // WhatsApp Business or regular number (format: country code + number, no +)
-  const whatsappNumber = '1234567890'; // Replace with actual WhatsApp number
-  
-  // Try native WhatsApp app first
-  const whatsappAppUrl = `whatsapp://send?phone=${whatsappNumber}`;
-  const webUrl = `https://wa.me/${whatsappNumber}`;
-  
-  window.location.href = whatsappAppUrl;
-  setTimeout(() => {
-    // If WhatsApp app didn't open, fallback to browser
-    if (document.hidden === false) {
-      window.location.href = `app://browser?url=${webUrl}`;
-    }
-  }, 500);
+  openExternalLink(OFFICIAL_LINKS.whatsapp);
 }
 
 function openChat() {
@@ -7320,144 +7706,1794 @@ function openNews() {
 }
 
 // Global ChatRoom
-let globalChatState = {
-  messages: [],
-  loadTimer: null,
+// The server is authoritative for Energy and for the per-message cost; the
+// client only mirrors what it reports and never assumes "no energy" when the
+// service itself is unreachable. (State lives next to `state`, near the top.)
+
+// ----- helpers -----
+const CHAT_RANK = { user: 0, moderator: 1, admin: 2 };
+const CHAT_GROUP_RANK = { user: 0, admin: 1, owner: 2 };   // inside a group: members < admins < the owner
+const chatIsGroup = () => globalChatState.room.type === 'group';
+const chatRoomKey = () => (chatIsGroup() ? `g${globalChatState.room.id}` : 'global');
+const chatRoomBase = () => (chatIsGroup() ? `/groups/${globalChatState.room.id}` : '/globalchat');
+const chatRankOf = (role) => (chatIsGroup() ? CHAT_GROUP_RANK : CHAT_RANK)[role] || 0;
+const CHAT_GROUP_GAP_MS = 5 * 60 * 1000;
+const CHAT_MAX_LEN = 500;
+// Low-end phones and slow links keep a shorter list on screen and skip decorative effects.
+const CHAT_LITE = (() => {
+  try {
+    const c = navigator.connection || {};
+    return (navigator.deviceMemory && navigator.deviceMemory <= 2) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2)
+      || c.saveData === true || /(^|-)2g$/.test(c.effectiveType || '');
+  } catch { return false; }
+})();
+if (CHAT_LITE) document.documentElement.classList.add('lite');
+const CHAT_DOM_MAX = CHAT_LITE ? 150 : 400;
+
+const chatSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const chatReducedMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+const chatTabActive = () => !!document.getElementById('tab-chatroom')?.classList.contains('active') && !!$('screen-main')?.classList.contains('active');
+// A conversation (not the chat list) is on screen and should be kept live.
+const chatLive = () => chatTabActive() && !globalChatState.listOpen;
+
+function chatTime(ts) {
+  const d = new Date(ts);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+function chatDayKey(ts) { const d = new Date(ts); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; }
+function chatDayLabel(ts) {
+  const d = new Date(ts);
+  const today = new Date();
+  const yesterday = new Date(Date.now() - 86400000);
+  if (chatDayKey(d) === chatDayKey(today)) return 'Today';
+  if (chatDayKey(d) === chatDayKey(yesterday)) return 'Yesterday';
+  return d.toLocaleDateString([], { day: 'numeric', month: 'long', ...(d.getFullYear() !== today.getFullYear() ? { year: 'numeric' } : {}) });
+}
+function chatHue(name) {
+  let h = 0;
+  for (const ch of String(name || '')) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return h;
+}
+const chatSnippet = (t, n = 90) => {
+  const s = String(t || '').replace(/\s+/g, ' ').trim();
+  return s.length > n ? `${s.slice(0, n - 1)}…` : s;
 };
+function chatHaptic() {
+  try { navigator.vibrate?.(8); } catch {}
+  try { window.Capacitor?.Plugins?.Haptics?.impact?.({ style: 'Light' }); } catch {}
+}
+const chatList = () => [...globalChatState.messages, ...globalChatState.pending];
+const chatFind = (id) => chatList().find((m) => String(m.id) === String(id)) || null;
+const chatNearBottom = (c, slack = 120) => c.scrollHeight - c.scrollTop - c.clientHeight < slack;
 
-async function loadGlobalChatMessages() {
-  try {
-    const res = await api('GET', '/globalchat/messages?limit=50');
-    if (res && res.messages) {
-      globalChatState.messages = res.messages;
-      renderChatMessages();
-    }
-  } catch (err) {
-    console.error('Failed to load chat messages:', err);
-  }
+function chatScrollToBottom(smooth = false) {
+  const c = $('chatMessages');
+  if (!c) return;
+  c.scrollTo({ top: c.scrollHeight, behavior: smooth && !chatReducedMotion() ? 'smooth' : 'auto' });
 }
 
-function renderChatMessages() {
-  const container = $('chatMessages');
-  if (!container) return;
-  
-  if (!globalChatState.messages.length) {
-    container.innerHTML = '<p class="muted center">No messages yet. Be the first to chat!</p>';
-    return;
-  }
-  
-  container.innerHTML = globalChatState.messages.map(msg => `
-    <div class="chat-message">
-      <div class="chat-author">
-        <span class="chat-avatar">${msg.avatar || '🦊'}</span>
-        <span class="chat-name">${msg.username || 'Anonymous'}</span>
-        <span class="chat-time">${new Date(msg.timestamp).toLocaleTimeString()}</span>
-      </div>
-      <div class="chat-text">${escapeHtml(msg.text)}</div>
-    </div>
-  `).join('');
-  
-  const chatMessages = $('chatMessages');
-  if (chatMessages) {
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-  }
-}
-
-async function sendChatMessage() {
+// ----- drafts & scroll position survive leaving the tab -----
+const CHAT_DRAFT_KEY = 'dltx_chat_draft';
+function chatDraftOwner() { return String(state.email || '').toLowerCase(); }
+function chatSaveDraft() {
   const input = $('chatInput');
-  if (!input || !input.value.trim()) return;
-  
-  const text = input.value.trim();
-  if (text.length > 500) {
-    toast('Message too long (max 500 characters)');
+  const owner = chatDraftOwner();
+  if (!input || !owner) return;
+  try {
+    // One draft per conversation (the global chat and each group keep their own text).
+    let store = JSON.parse(localStorage.getItem(CHAT_DRAFT_KEY) || 'null');
+    if (!store || store.o !== owner || typeof store.d !== 'object' || !store.d) store = { o: owner, d: {} };
+    const key = chatRoomKey();
+    if (input.value.trim()) store.d[key] = input.value.slice(0, CHAT_MAX_LEN); else delete store.d[key];
+    if (Object.keys(store.d).length) localStorage.setItem(CHAT_DRAFT_KEY, JSON.stringify(store));
+    else localStorage.removeItem(CHAT_DRAFT_KEY);
+  } catch {}
+}
+function chatRestoreDraft() {
+  const input = $('chatInput');
+  if (!input || input.value) return;
+  try {
+    const d = JSON.parse(localStorage.getItem(CHAT_DRAFT_KEY) || 'null');
+    const text = d && d.o === chatDraftOwner() && d.d ? d.d[chatRoomKey()] : null;
+    if (typeof text === 'string') { input.value = text; chatAutosize(); }
+  } catch {}
+}
+let chatDraftTimer = null;
+function chatQueueDraftSave() { clearTimeout(chatDraftTimer); chatDraftTimer = setTimeout(chatSaveDraft, 400); }
+
+// Must run before the tab is hidden: a display:none element reports scrollTop 0.
+function chatSaveView() {
+  // showTab() runs during boot, before the rest of the chat code exists — look at the DOM only.
+  if (!document.getElementById('tab-chatroom')?.classList.contains('active')) return;
+  const c = $('chatMessages');
+  if (!c) return;
+  globalChatState.view = { top: c.scrollTop, stick: chatNearBottom(c, 160) };
+  clearTimeout(chatDraftTimer);
+  chatSaveDraft();
+}
+function chatRestoreView() {
+  const c = $('chatMessages');
+  const v = globalChatState.view;
+  if (!c) return;
+  if (v && !v.stick) { c.scrollTop = v.top; globalChatState.stick = false; chatUpdateJump(); }
+  else chatScrollToBottom(false);
+}
+
+function chatRoleBadge(role) {
+  if (role === 'owner') return '<span class="chat-role owner">OWNER</span>';
+  if (role === 'admin') return '<span class="chat-role admin">ADMIN</span>';
+  if (role === 'moderator') return '<span class="chat-role mod">MOD</span>';
+  return '';
+}
+
+function chatQuoteHtml(r) {
+  const body = r.text ? escapeHtml(chatSnippet(r.text)) : '<i>Deleted message</i>';
+  return `<div class="chat-quote" data-goto="${Number(r.id)}" style="--nh:${chatHue(r.uid || r.name)}"><b>${escapeHtml(r.name || 'Message')}</b><span>${body}</span></div>`;
+}
+
+function chatSameGroup(a, b) {
+  if (!a || !b) return false;
+  const sameSender = a.mine === b.mine && (a.mine || (a.uid || a.name) === (b.uid || b.name));
+  return sameSender && chatDayKey(a.ts) === chatDayKey(b.ts) && Math.abs(new Date(b.ts) - new Date(a.ts)) < CHAT_GROUP_GAP_MS;
+}
+
+const chatIsOnline = (uid) => !!uid && globalChatState.presence.seen[uid] === 'o';
+
+function chatBubbleHtml(m, { first, last }) {
+  const mine = !!m.mine;
+  const tick = m.failed ? '<span class="chat-tick err" title="Not sent — tap to retry">!</span>' : m.pending ? '<span class="chat-tick wait">⏳</span>' : mine ? '<span class="chat-tick">✓</span>' : '';
+  const showAuthor = first && (!mine || (m.role && m.role !== 'user'));
+  const hue = chatHue(m.uid || m.name);
+  const author = showAuthor
+    ? `<div class="chat-author">${mine ? '' : `<span class="chat-name" role="button" tabindex="0" data-uid="${escapeHtml(m.uid || '')}" style="--nh:${hue}">${escapeHtml(m.name || 'Member')}</span>`}${chatRoleBadge(m.role)}</div>`
+    : '';
+  return `
+    <div class="chat-message ${mine ? 'mine' : ''} ${first ? 'grp-first' : ''} ${last ? 'grp-last' : ''} ${m.pending ? 'pending' : ''} ${m.failed ? 'failed' : ''}" data-id="${escapeHtml(String(m.id))}">
+      ${mine ? '' : `<span class="chat-avatar ${last ? '' : 'ghost'} ${chatIsOnline(m.uid) ? 'online' : ''}" role="button" aria-label="View ${escapeHtml(m.name || 'member')}’s profile" data-uid="${escapeHtml(m.uid || '')}">${escapeHtml(m.avatar || '🦊')}</span>`}
+      <div class="chat-bubble" tabindex="0" role="button" aria-label="Message from ${escapeHtml(m.name || 'member')}. Open actions">
+        ${author}
+        ${m.reply ? chatQuoteHtml(m.reply) : ''}
+        <div class="chat-text">${escapeHtml(m.text)}</div>
+        <div class="chat-meta"><span class="chat-time">${chatTime(m.ts)}</span>${tick}</div>
+      </div>
+    </div>`;
+}
+
+// Presence changes arrive with every sync; only the little green dots are touched.
+function chatPaintPresence() {
+  const c = $('chatMessages');
+  if (!c) return;
+  c.querySelectorAll('.chat-avatar[data-uid]').forEach((el) => el.classList.toggle('online', chatIsOnline(el.dataset.uid)));
+}
+
+function chatEmptyHtml() {
+  const g = globalChatState;
+  if (!g.loaded) return '<p class="chat-hint">Loading messages…</p>';
+  if (!g.available) {
+    return `<div class="chat-empty"><div class="chat-empty-icon">💬</div><b>Chat is temporarily unavailable</b>
+      <p>We couldn’t reach the chat service. Your Energy has not been used.</p>
+      <button class="btn ghost chat-retry" type="button" id="chatRetryBtn">Try again</button></div>`;
+  }
+  return '<div class="chat-empty"><div class="chat-empty-icon">👋</div><b>No messages yet</b><p>Be the first to say hello!</p></div>';
+}
+
+// Full repaint — used on (re)sync and when something other than a plain append changed.
+function chatRenderAll({ stick = false } = {}) {
+  const c = $('chatMessages');
+  if (!c) return;
+  const g = globalChatState;
+  const list = chatList();
+  const wasNear = chatNearBottom(c, 160);
+  if (!list.length) {
+    c.innerHTML = chatEmptyHtml();
+    $('chatRetryBtn')?.addEventListener('click', () => { g.failures = 0; chatStart(); });
     return;
   }
-  
-  input.value = '';
-  input.disabled = true;
-  
-  try {
-    const res = await api('POST', '/globalchat/messages', { text });
-    if (res && res.energyRemaining !== undefined) {
-      state.energy = res.energyRemaining;
-      renderEnergyDisplay();
-      toast(`Message sent! ⚡ ${res.energyDeducted} energy used. Remaining: ${res.energyRemaining}`);
-    }
-    await loadGlobalChatMessages();
-  } catch (err) {
-    const errMsg = err.json?.error || 'Failed to send message';
-    if (errMsg.includes('Insufficient energy')) {
-      toast('⚡ Not enough energy to chat. Purchase energy to continue chatting.');
-    } else {
-      toast(errMsg);
-    }
-    console.error('Chat send error:', err);
-  } finally {
-    input.disabled = false;
-    input.focus();
+  let html = '';
+  for (let i = 0; i < list.length; i++) {
+    const m = list[i];
+    const prev = list[i - 1];
+    const next = list[i + 1];
+    if (!prev || chatDayKey(prev.ts) !== chatDayKey(m.ts)) html += `<div class="chat-day"><span>${chatDayLabel(m.ts)}</span></div>`;
+    html += chatBubbleHtml(m, { first: !chatSameGroup(prev, m), last: !chatSameGroup(m, next) });
+  }
+  c.innerHTML = html;
+  if (stick || wasNear) chatScrollToBottom(false);
+}
+
+// Fast path for the common case: one new message at the end.
+function chatAppend(m) {
+  const c = $('chatMessages');
+  if (!c) return;
+  const g = globalChatState;
+  const list = chatList();
+  if (list.length < 2 || !c.querySelector('.chat-message')) return chatRenderAll({ stick: true });
+  const prev = list[list.length - 2];
+  const grouped = chatSameGroup(prev, m);
+  if (grouped) {
+    const prevEl = c.querySelector(`.chat-message[data-id="${CSS.escape(String(prev.id))}"]`);
+    prevEl?.classList.remove('grp-last');
+    prevEl?.querySelector('.chat-avatar')?.classList.add('ghost');
+  }
+  let html = '';
+  if (chatDayKey(prev.ts) !== chatDayKey(m.ts)) html += `<div class="chat-day"><span>${chatDayLabel(m.ts)}</span></div>`;
+  html += chatBubbleHtml(m, { first: !grouped, last: true });
+  c.insertAdjacentHTML('beforeend', html);
+  c.querySelector('.chat-hint, .chat-empty')?.remove();
+  void g;
+}
+
+function chatUpdateHeader() {
+  const g = globalChatState;
+  const grp = chatIsGroup();
+  const title = $('chatTitle');
+  if (title) title.textContent = grp ? ((g.group && g.group.title) || g.room.title || 'Group') : 'Deltix Global Chat';
+  const icon = $('chatHeadIcon');
+  if (icon) icon.textContent = grp ? '👥' : '💬';
+  $('chatHeadMain')?.classList.toggle('tappable', grp);
+  const status = $('chatStatus');
+  if (status) {
+    const online = g.presence.online > 0 ? ` · ${g.presence.online.toLocaleString()} online` : '';
+    const roleText = !g.me ? '' : grp
+      ? (g.me.role === 'owner' ? ' · you own this group' : g.me.role === 'admin' ? ' · you are an admin' : '')
+      : (g.me.role !== 'user' ? ` · you are ${g.me.role === 'admin' ? 'an admin' : 'a moderator'}` : '');
+    const members = grp && g.group ? `${g.group.memberCount.toLocaleString()} member${g.group.memberCount === 1 ? '' : 's'}` : 'Live';
+    status.textContent = !g.loaded ? 'Connecting…' : g.failures ? 'Reconnecting…' : `${members}${online}${roleText}`;
+    status.classList.toggle('live', g.loaded && !g.failures);
+    status.classList.toggle('off', !!g.failures);
+  }
+  const chip = $('chatEnergyChip');
+  if (chip) chip.textContent = g.me ? `⚡ ${Number(g.me.energy).toLocaleString()}` : '⚡ —';
+  const listChip = $('chatListEnergy');
+  if (listChip) listChip.textContent = g.me ? `⚡ ${Number(g.me.energy).toLocaleString()}` : '⚡ —';
+  const av = $('chatMyAvatar');
+  if (av) av.textContent = state.avatar || '🦊';
+}
+
+function chatUpdatePinBar() {
+  const g = globalChatState;
+  const bar = $('chatPinBar');
+  if (!bar) return;
+  bar.hidden = !g.pinned;
+  if (g.pinned) {
+    $('chatPinName').textContent = `Pinned · ${g.pinned.name || 'message'}`;
+    $('chatPinText').textContent = chatSnippet(g.pinned.text, 80);
+    bar.dataset.goto = g.pinned.id;
   }
 }
 
-async function checkChatEnergy() {
-  try {
-    const res = await api('GET', '/globalchat/check-energy');
-    return res;
-  } catch (err) {
-    console.error('Energy check failed:', err);
-    return { canChat: false, energyBalance: 0, costPerMessage: 10 };
+// The composer mirrors the server's verdict: it is disabled only for a concrete reason.
+function chatUpdateComposer() {
+  const g = globalChatState;
+  const input = $('chatInput');
+  const sendBtn = $('chatSendBtn');
+  const note = $('chatEnergyNote');
+  const box = $('chatComposer');
+  if (!input || !sendBtn || !note || !box) return;
+
+  const me = g.me;
+  const mute = me && me.mute;
+  const noEnergy = !!me && !mute && me.canChat === false;
+  const offline = !g.available && !g.messages.length;
+  const blocked = !!mute || noEnergy || offline;
+  box.classList.toggle('blocked', blocked);
+  // Without Energy a member can still type (their draft is kept) — only sending waits.
+  input.disabled = !!mute || offline;
+  input.placeholder = mute ? 'You are muted' : offline ? 'Chat is unavailable right now' : noEnergy ? 'Write a message (needs Energy to send)' : (g.replyTo ? 'Write a reply…' : 'Message');
+  sendBtn.disabled = blocked || !input.value.trim();
+
+  const cost = me ? me.cost : 1;
+  const banner = $('chatEnergyBanner');
+  if (banner) {
+    banner.hidden = !noEnergy;
+    if (noEnergy) {
+      const need = Math.max(0, cost - me.energy);
+      $('chatBannerText').innerHTML = `⚡ A message costs <b>${cost} Energy</b> and you have <b>${me.energy}</b>${need ? ` — <b>${need} more</b> needed` : ''}.`;
+      const ad = $('chatBannerAd');
+      const offerable = adsOfferable();
+      ad.disabled = !offerable || g.adBusy;
+      ad.textContent = g.adBusy ? 'Loading ad…' : offerable ? '▶ Watch an ad' : 'Ads unavailable';
+    }
   }
+  if (mute) {
+    const until = mute.permanent ? '' : ` until ${new Date(mute.until).toLocaleString([], { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}`;
+    note.innerHTML = `🔇 You are muted${escapeHtml(until)}.${mute.reason ? ` Reason: ${escapeHtml(mute.reason)}.` : ''}`;
+  } else if (offline) {
+    note.textContent = '⚠️ Chat is temporarily unavailable. Please try again shortly.';
+  } else {
+    note.innerHTML = `⚡ <b>${me ? me.energy : '—'}</b> Energy · <b>${cost}</b> per message`;
+  }
+  const len = input.value.length;
+  if (len > CHAT_MAX_LEN - 80 && !blocked) note.innerHTML += ` · <span class="${len >= CHAT_MAX_LEN ? 'over' : ''}">${len}/${CHAT_MAX_LEN}</span>`;
+}
+
+// Energy changes anywhere in the app (an ad, the shop, a game) are mirrored into the chat at once.
+function chatOnEnergyChanged() {
+  const g = globalChatState;
+  const energy = state.energy && typeof state.energy.energy === 'number' ? state.energy.energy : null;
+  if (!g.me || energy == null) return;
+  g.me.energy = energy;
+  g.me.needed = Math.max(0, g.me.cost - energy);
+  g.me.canChat = energy >= g.me.cost && !g.me.mute;
+  if (chatTabActive()) { chatUpdateHeader(); chatUpdateComposer(); }
+}
+
+// "Watch an ad" from the out-of-Energy banner.
+async function chatWatchAd() {
+  const g = globalChatState;
+  if (g.adBusy) return;
+  g.adBusy = true;
+  chatUpdateComposer();
+  try {
+    await earnEnergy(null);
+  } finally {
+    g.adBusy = false;
+    chatNudge();              // pull the server's view straight away
+    chatOnEnergyChanged();
+    chatUpdateComposer();
+  }
+}
+
+function chatAutosize() {
+  const input = $('chatInput');
+  if (!input) return;
+  input.style.height = 'auto';
+  input.style.height = `${Math.min(input.scrollHeight, 128)}px`;
+}
+
+// ----- reply -----
+function chatStartReply(id) {
+  const m = chatFind(id);
+  if (!m || m.pending) return;
+  const g = globalChatState;
+  g.replyTo = { id: m.id, name: m.mine ? 'You' : m.name, text: m.text };
+  $('chatReplyName').textContent = g.replyTo.name;
+  $('chatReplyText').textContent = chatSnippet(m.text, 100);
+  $('chatReplyBar').hidden = false;
+  chatUpdateComposer();
+  $('chatInput')?.focus();
+}
+function chatCancelReply() {
+  globalChatState.replyTo = null;
+  const bar = $('chatReplyBar');
+  if (bar) bar.hidden = true;
+  chatUpdateComposer();
+}
+
+function chatGoTo(id) {
+  const c = $('chatMessages');
+  const el = c?.querySelector(`.chat-message[data-id="${CSS.escape(String(id))}"]`);
+  if (!el) { toast('That message is further back in the history.', { tone: 'info' }); return; }
+  el.scrollIntoView({ block: 'center', behavior: chatReducedMotion() ? 'auto' : 'smooth' });
+  el.classList.remove('flash');
+  void el.offsetWidth;
+  el.classList.add('flash');
+  setTimeout(() => el.classList.remove('flash'), 1400);
+}
+
+// ----- action sheet (tap / long-press a message) -----
+function closeChatSheet() {
+  const s = document.getElementById('chatSheet');
+  if (!s) return false;
+  s.remove();
+  return true;
+}
+
+function chatOpenSheet(id) {
+  const m = chatFind(id);
+  const g = globalChatState;
+  if (!m) return;
+  if (m.failed) { chatDeliver(m); return; }
+  closeChatSheet();
+  chatHaptic();
+  const me = g.me || { role: 'user' };
+  const grp = chatIsGroup();
+  const staffRank = chatRankOf(me.role);
+  const targetRank = chatRankOf(m.role);
+  // Global chat: admins > moderators > members. Group: the owner > admins > members.
+  const can = grp ? {
+    reply: !m.pending,
+    copy: true,
+    delete: !m.pending && (m.mine || (staffRank >= 1 && staffRank >= targetRank && m.role !== 'owner')),
+    mute: !m.pending && !m.mine && staffRank >= 1 && staffRank > targetRank,
+    kick: !m.pending && !m.mine && staffRank >= 1 && staffRank > targetRank,
+    pin: !m.pending && staffRank >= 1,
+    promote: !m.pending && me.role === 'owner' && !m.mine && m.role !== 'owner',
+  } : {
+    reply: !m.pending,
+    copy: true,
+    delete: !m.pending && (m.mine || me.role === 'admin' || (me.role === 'moderator' && m.role === 'user')),
+    mute: !m.pending && !m.mine && staffRank > targetRank,
+    kick: false,
+    pin: !m.pending && me.role === 'admin',
+    promote: !m.pending && me.role === 'admin' && !m.mine && m.role !== 'admin',
+  };
+  const pinned = g.pinned && String(g.pinned.id) === String(m.id);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'chat-sheet-wrap';
+  wrap.id = 'chatSheet';
+  const render = (view) => {
+    const rows = view === 'mute'
+      ? [['back', '‹', 'Back'], ['mute:10', '🔇', 'Mute 10 minutes'], ['mute:60', '🔇', 'Mute 1 hour'], ['mute:1440', '🔇', 'Mute 24 hours'], ['mute:10080', '🔇', 'Mute 7 days'], ['mute:perm', '⛔', 'Mute permanently', 'danger']]
+      : [
+        can.reply && ['reply', '↩', 'Reply'],
+        !m.mine && !m.pending && m.uid && ['profile', '👤', 'View profile'],
+        grp && !m.mine && !m.pending && ['report', '🚩', 'Report message'],
+        can.copy && ['copy', '⧉', 'Copy text'],
+        can.pin && ['pin', '📌', pinned ? 'Unpin message' : 'Pin message'],
+        can.delete && ['delete', '🗑', 'Delete', 'danger'],
+        can.mute && (g.muted.includes(m.uid) ? ['unmute', '🔊', 'Unmute member'] : ['mute', '🔇', 'Mute member…']),
+        can.kick && ['kick', '🚪', 'Remove from group'],
+        can.kick && ['ban', '⛔', 'Remove & ban', 'danger'],
+        can.promote && ['role', '🛡', grp ? (m.role === 'admin' ? 'Remove admin' : 'Make admin') : (m.role === 'moderator' ? 'Remove moderator' : 'Make moderator')],
+      ].filter(Boolean);
+    wrap.innerHTML = `
+      <div class="chat-sheet-dim" data-act="close"></div>
+      <div class="chat-sheet" role="dialog" aria-modal="true" aria-label="Message actions">
+        <div class="chat-sheet-grip" aria-hidden="true"></div>
+        <div class="chat-sheet-preview" style="--nh:${chatHue(m.uid || m.name)}"><b>${escapeHtml(m.mine ? 'You' : (m.name || 'Member'))} ${chatRoleBadge(m.role)}</b><span>${escapeHtml(chatSnippet(m.text, 110))}</span></div>
+        <div class="chat-sheet-list">
+          ${rows.map(([act, ico, label, tone]) => `<button type="button" class="chat-act ${tone || ''}" data-act="${act}"><span class="chat-act-ico" aria-hidden="true">${ico}</span><span>${label}</span></button>`).join('')}
+        </div>
+      </div>`;
+  };
+  render('main');
+  document.body.appendChild(wrap);
+  wrap.querySelector('.chat-act')?.focus();
+
+  wrap.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-act]');
+    if (!btn) return;
+    const act = btn.dataset.act;
+    if (act === 'close') return closeChatSheet();
+    if (act === 'mute') return render('mute');
+    if (act === 'back') return render('main');
+    closeChatSheet();
+    try {
+      if (act === 'reply') chatStartReply(m.id);
+      else if (act === 'profile') chatOpenMember(m.uid);
+      else if (act === 'report') {
+        await api('POST', `${chatRoomBase()}/report`, { messageId: m.id, reason: 'Reported from the app' });
+        toast('Thanks — the Deltix team will review it.', { tone: 'success' });
+      }
+      else if (act === 'copy') await chatCopy(m.text);
+      else if (act === 'delete') {
+        const ok = await askConfirm({ title: 'Delete this message?', message: m.mine ? 'It will be removed for everyone.' : 'It will be removed for everyone. This is logged.', confirmText: 'Delete', danger: true });
+        if (ok) { await api('DELETE', `${chatRoomBase()}/messages/${m.id}`); chatRemoveLocal(m.id); toast('Message deleted', { tone: 'success' }); }
+      } else if (act === 'pin') {
+        await api('POST', `${chatRoomBase()}/messages/${m.id}/pin`, { pinned: !pinned });
+        toast(pinned ? 'Message unpinned' : 'Message pinned', { tone: 'success' });
+        chatNudge();
+      } else if (act.startsWith('mute:')) {
+        const arg = act.slice(5);
+        await api('POST', grp ? `${chatRoomBase()}/members/${m.uid}/mute` : `/globalchat/messages/${m.id}/mute`, arg === 'perm' ? { permanent: true } : { minutes: Number(arg) });
+        toast('Member muted', { tone: 'success' });
+        chatNudge();
+      } else if (act === 'unmute') {
+        await api('POST', grp ? `${chatRoomBase()}/members/${m.uid}/unmute` : `/globalchat/messages/${m.id}/unmute`);
+        toast('Member unmuted', { tone: 'success' });
+        chatNudge();
+      } else if (act === 'kick' || act === 'ban') {
+        const ok = await askConfirm({ title: act === 'ban' ? 'Remove and ban this member?' : 'Remove this member?', message: act === 'ban' ? 'They will not be able to rejoin, even with the invite link.' : 'They can join again with the invite link.', confirmText: act === 'ban' ? 'Remove & ban' : 'Remove', danger: true });
+        if (ok) { await api('POST', `${chatRoomBase()}/members/${m.uid}/kick`, { ban: act === 'ban' }); toast(act === 'ban' ? 'Member banned' : 'Member removed', { tone: 'success' }); chatNudge(); }
+      } else if (act === 'role') {
+        if (grp) {
+          await api('POST', `${chatRoomBase()}/members/${m.uid}/role`, { role: m.role === 'admin' ? 'member' : 'admin' });
+          toast(m.role === 'admin' ? 'Admin removed' : 'Admin added', { tone: 'success' });
+        } else {
+          await api('POST', `/globalchat/messages/${m.id}/role`, { role: m.role === 'moderator' ? 'user' : 'moderator' });
+          toast(m.role === 'moderator' ? 'Moderator removed' : 'Moderator added', { tone: 'success' });
+        }
+        chatNudge();
+      }
+    } catch (err) {
+      toast(err.message || 'Action failed', { tone: 'error' });
+    }
+  });
+}
+
+async function chatCopy(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const t = document.createElement('textarea');
+    t.value = text; t.style.position = 'fixed'; t.style.opacity = '0';
+    document.body.appendChild(t); t.select();
+    try { document.execCommand('copy'); } catch {}
+    t.remove();
+  }
+  toast('Copied', { tone: 'success' });
+}
+
+// Forces an immediate resync so the result of an action shows at once.
+function chatNudge() { if (chatLive()) chatStart(); }
+
+// ----- member card (tap a name or avatar) -----
+function chatAgo(ms) {
+  const diff = Math.max(0, Date.now() - Number(ms));
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} h ago`;
+  const days = Math.floor(hrs / 24);
+  return days === 1 ? 'yesterday' : days < 7 ? `${days} days ago` : new Date(Number(ms)).toLocaleDateString([], { day: 'numeric', month: 'short' });
+}
+// 'o' online · 'h' hidden by the member · epoch-ms last seen · null never seen.
+function chatStatusText(st) {
+  if (st === 'o') return 'online';
+  if (st === 'h') return 'last seen recently';
+  if (typeof st === 'number') return `last seen ${chatAgo(st)}`;
+  return 'offline';
+}
+
+async function chatOpenMember(uid) {
+  if (!uid) return;
+  closeChatSheet();
+  const g = globalChatState;
+  const wrap = document.createElement('div');
+  wrap.className = 'chat-sheet-wrap';
+  wrap.id = 'chatSheet';
+  wrap.innerHTML = `<div class="chat-sheet-dim" data-act="close"></div><div class="chat-sheet chat-card" role="dialog" aria-modal="true" aria-label="Member profile"><div class="chat-sheet-grip" aria-hidden="true"></div><p class="chat-hint">Loading…</p></div>`;
+  document.body.appendChild(wrap);
+  wrap.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-act]');
+    if (!btn) return;
+    if (btn.dataset.act === 'close') closeChatSheet();
+    else if (btn.dataset.act === 'edit') { closeChatSheet(); openChatProfile(); }
+    else if (btn.dataset.act.startsWith('g:')) { closeChatSheet(); chatGroupMemberAction(btn.dataset.act.slice(2), uid, btn.dataset.role); }
+    else if (btn.dataset.act === 'mention') {
+      closeChatSheet();
+      const input = $('chatInput');
+      if (input && !input.disabled) { input.value = `${input.value}${input.value && !/\s$/.test(input.value) ? ' ' : ''}@${btn.dataset.handle} `; chatAutosize(); input.focus(); chatUpdateComposer(); }
+    }
+  });
+  try {
+    const mine = g.me && g.me.uid === uid;
+    const c = mine
+      ? { uid, name: g.me.nickname || g.me.displayName, handle: g.me.handle, avatar: state.avatar, role: g.me.role, status: 'o', mine: true }
+      : await api('GET', `${chatRoomBase()}/members/${encodeURIComponent(uid)}`, null, { retries: 0 });
+    if (!document.getElementById('chatSheet')) return;      // dismissed while loading
+    const handle = c.handle ? `<div class="chat-card-handle">@${escapeHtml(c.handle)}</div>` : '';
+    const dot = c.status === 'o' ? 'online' : '';
+    // Group moderation: admins act on members below them; only the owner names admins.
+    const myRank = chatRankOf(g.me && g.me.role);
+    const canModerate = chatIsGroup() && !mine && myRank >= 1 && myRank > chatRankOf(c.role);
+    const modRows = canModerate ? [
+      c.muted ? ['unmute', '🔊', 'Unmute'] : ['mute', '🔇', 'Mute for 1 hour'],
+      ['kick', '🚪', 'Remove from group'],
+      ['ban', '⛔', 'Remove & ban', 'danger'],
+    ] : [];
+    if (chatIsGroup() && !mine && g.me && g.me.role === 'owner' && c.role !== 'owner') modRows.push(['role', '🛡', c.role === 'admin' ? 'Remove admin' : 'Make admin']);
+    wrap.querySelector('.chat-sheet').innerHTML = `
+      <div class="chat-sheet-grip" aria-hidden="true"></div>
+      <div class="chat-card-head">
+        <div class="chat-card-avatar ${dot}" style="--nh:${chatHue(c.uid)}">${escapeHtml(c.avatar || '🦊')}</div>
+        <div class="chat-card-id">
+          <div class="chat-card-name">${escapeHtml(c.name || 'Member')} ${chatRoleBadge(c.role)}</div>
+          ${handle}
+          <div class="chat-card-status ${c.status === 'o' ? 'online' : ''}">${mine ? 'this is you' : chatStatusText(c.status)}</div>
+        </div>
+      </div>
+      ${c.muted ? '<div class="chat-card-note">🔇 This member is currently muted.</div>' : ''}
+      ${c.code ? `<div class="chat-card-note staff">Account code (staff only): <b>${escapeHtml(c.code)}</b></div>` : ''}
+      <div class="chat-sheet-list">
+        ${mine ? '<button type="button" class="chat-act" data-act="edit"><span class="chat-act-ico">✎</span><span>Edit my chat profile</span></button>' : ''}
+        ${c.handle && !mine ? `<button type="button" class="chat-act" data-act="mention" data-handle="${escapeHtml(c.handle)}"><span class="chat-act-ico">@</span><span>Mention @${escapeHtml(c.handle)}</span></button>` : ''}
+        ${modRows.map(([act, ico, label, tone]) => `<button type="button" class="chat-act ${tone || ''}" data-act="g:${act}" data-role="${escapeHtml(c.role || '')}"><span class="chat-act-ico">${ico}</span><span>${label}</span></button>`).join('')}
+        <button type="button" class="chat-act" data-act="close"><span class="chat-act-ico">✕</span><span>Close</span></button>
+      </div>`;
+  } catch (err) {
+    if (document.getElementById('chatSheet')) { closeChatSheet(); toast(err.message || 'Could not load this profile.', { tone: 'error' }); }
+  }
+}
+
+// ----- my chat profile: nickname · @username · privacy -----
+const chatProfileUi = { orig: null, usernameTimer: null, usernameSeq: 0, usernameOk: true };
+
+async function openChatProfile() {
+  const modal = $('chatProfileModal');
+  if (!modal) return;
+  modal.hidden = false;
+  $('cpError').textContent = '';
+  $('cpSave').disabled = true;
+  try {
+    const p = await api('GET', '/globalchat/profile', null, { retries: 0 });
+    chatProfileUi.orig = { nickname: p.nickname || '', username: p.username || '', hideStatus: !!p.hideStatus };
+    $('cpNickname').value = p.nickname || '';
+    $('cpNickname').placeholder = p.defaultName || 'Nickname';
+    $('cpUsername').value = p.username || '';
+    $('cpHide').checked = !!p.hideStatus;
+    $('cpPreviewAvatar').textContent = state.avatar || '🦊';
+    $('cpUsernameHint').textContent = '5–20 letters, numbers or _ — optional.';
+    $('cpUsernameHint').className = 'cp-hint';
+    chatProfileUi.usernameOk = true;
+    chatProfileRefresh();
+    $('cpNickname').focus();
+  } catch (err) {
+    modal.hidden = true;
+    toast(err.status === 404 ? 'Chat profiles are not available yet — please update the app or try again later.' : (err.message || 'Could not load your chat profile.'), { tone: 'error' });
+  }
+}
+
+function chatProfilePatch() {
+  const o = chatProfileUi.orig || { nickname: '', username: '', hideStatus: false };
+  const nickname = $('cpNickname').value.trim();
+  const username = $('cpUsername').value.trim().replace(/^@+/, '');
+  const hide = $('cpHide').checked;
+  const patch = {};
+  if (nickname !== o.nickname) patch.nickname = nickname || null;
+  if (username.toLowerCase() !== o.username.toLowerCase()) patch.username = username || null;
+  if (hide !== o.hideStatus) patch.hideStatus = hide;
+  return patch;
+}
+
+function chatProfileRefresh() {
+  const patch = chatProfileUi.orig ? chatProfilePatch() : {};
+  const nick = $('cpNickname').value.trim();
+  $('cpNickCount').textContent = `${Array.from(nick).length}/24`;
+  $('cpPreviewName').textContent = nick || $('cpNickname').placeholder || 'Member';
+  const uname = $('cpUsername').value.trim().replace(/^@+/, '');
+  $('cpPreviewHandle').textContent = uname ? `@${uname.toLowerCase()}` : '';
+  $('cpSave').disabled = !Object.keys(patch).length || !chatProfileUi.usernameOk || (nick.length === 1);
+}
+
+// Live "is this username free?" while typing (debounced; the server is the judge).
+function chatCheckUsername() {
+  const value = $('cpUsername').value.trim().replace(/^@+/, '');
+  const hint = $('cpUsernameHint');
+  clearTimeout(chatProfileUi.usernameTimer);
+  const same = chatProfileUi.orig && value.toLowerCase() === chatProfileUi.orig.username.toLowerCase();
+  if (!value || same) {
+    chatProfileUi.usernameOk = true;
+    hint.textContent = '5–20 letters, numbers or _ — optional.';
+    hint.className = 'cp-hint';
+    return chatProfileRefresh();
+  }
+  chatProfileUi.usernameOk = false;
+  hint.textContent = 'Checking…';
+  hint.className = 'cp-hint';
+  const seq = ++chatProfileUi.usernameSeq;
+  chatProfileUi.usernameTimer = setTimeout(async () => {
+    try {
+      const r = await api('GET', `/globalchat/username-check?u=${encodeURIComponent(value)}`, null, { retries: 0 });
+      if (seq !== chatProfileUi.usernameSeq) return;
+      chatProfileUi.usernameOk = !!r.available;
+      hint.textContent = r.available ? `@${r.value} is available` : (r.error || 'That username isn’t available.');
+      hint.className = `cp-hint ${r.available ? 'ok' : 'bad'}`;
+    } catch (err) {
+      if (seq !== chatProfileUi.usernameSeq) return;
+      chatProfileUi.usernameOk = true;           // could not check — the server decides on save
+      hint.textContent = '';
+    }
+    chatProfileRefresh();
+  }, 350);
+  chatProfileRefresh();
+}
+
+async function saveChatProfile() {
+  const patch = chatProfilePatch();
+  if (!Object.keys(patch).length) return;
+  const btn = $('cpSave');
+  btn.disabled = true;
+  $('cpError').textContent = '';
+  try {
+    const p = await api('PUT', '/globalchat/profile', patch, { retries: 0 });
+    const g = globalChatState;
+    if (g.me) { g.me.nickname = p.nickname; g.me.handle = p.username; g.me.hideStatus = p.hideStatus; g.me.displayName = p.displayName; }
+    $('chatProfileModal').hidden = true;
+    toast('Chat profile saved', { tone: 'success' });
+    chatNudge();
+  } catch (err) {
+    $('cpError').textContent = err.message || 'Could not save — please try again.';
+    btn.disabled = false;
+  }
+}
+
+function initChatProfileUi() {
+  if ($('chatProfileModal')?.dataset.wired) return;
+  const modal = $('chatProfileModal');
+  if (!modal) return;
+  modal.dataset.wired = '1';
+  $('cpNickname').addEventListener('input', chatProfileRefresh);
+  $('cpUsername').addEventListener('input', chatCheckUsername);
+  $('cpHide').addEventListener('change', chatProfileRefresh);
+  $('cpSave').addEventListener('click', saveChatProfile);
+  $('cpCancel').addEventListener('click', () => { modal.hidden = true; });
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.hidden = true; });
+  $('cpForm').addEventListener('submit', (e) => { e.preventDefault(); if (!$('cpSave').disabled) saveChatProfile(); });
+  $('chatProfileBtn')?.addEventListener('click', openChatProfile);
+  $('profileChat')?.addEventListener('click', openChatProfile);
+}
+
+// ----- applying server state -----
+function chatRemoveLocal(id) {
+  const g = globalChatState;
+  g.messages = g.messages.filter((m) => String(m.id) !== String(id));
+  for (const m of g.messages) if (m.reply && String(m.reply.id) === String(id)) m.reply = { ...m.reply, text: null };
+  if (g.pinned && String(g.pinned.id) === String(id)) g.pinned = null;
+  chatRenderAll();
+  chatUpdatePinBar();
+}
+
+function chatApplySync(res) {
+  const g = globalChatState;
+  const c = $('chatMessages');
+  const firstLoad = !g.loaded;
+  const stick = !c || chatNearBottom(c, 160);
+  let full = false;
+  const added = [];
+
+  if (res.reset) {
+    g.messages = Array.isArray(res.messages) ? res.messages : [];
+    g.pending = g.pending.filter((p) => !g.messages.some((m) => m.clientId === p.cid));
+    full = true;
+  } else {
+    for (const ev of res.events || []) {
+      if (ev.type === 'msg' && ev.message) {
+        const m = ev.message;
+        if (g.messages.some((x) => x.id === m.id)) continue;
+        const pi = m.clientId ? g.pending.findIndex((p) => p.cid === m.clientId) : -1;
+        if (pi >= 0) { g.pending.splice(pi, 1); full = true; }
+        g.messages.push(m);
+        added.push(m);
+      } else if (ev.type === 'role') {
+        for (const x of g.messages) if (x.uid === ev.uid) x.role = ev.role;
+        full = true;
+      } else if (ev.type === 'profile') {
+        // A member changed their nickname / @username: every message of theirs follows.
+        for (const x of g.messages) {
+          if (x.uid === ev.uid) { x.name = ev.name; x.handle = ev.handle || null; }
+          if (x.reply && x.reply.uid === ev.uid) x.reply = { ...x.reply, name: ev.name };
+        }
+        if (g.pinned && g.pinned.uid === ev.uid) g.pinned = { ...g.pinned, name: ev.name, handle: ev.handle || null };
+        full = true;
+      } else if (ev.type === 'del') {
+        const had = g.messages.some((x) => x.id === ev.id);
+        g.messages = g.messages.filter((x) => x.id !== ev.id);
+        for (const x of g.messages) if (x.reply && x.reply.id === ev.id) x.reply = { ...x.reply, text: null };
+        if (had) full = true;
+      }
+    }
+    if (g.messages.length > CHAT_DOM_MAX) { g.messages.splice(0, g.messages.length - CHAT_DOM_MAX); full = true; }
+  }
+  g.epoch = res.epoch;
+  g.rev = res.rev;
+  g.pinned = res.pinned || null;
+  const prevEnergy = g.me ? g.me.energy : null;
+  g.me = res.me || g.me;
+  // The sender's own live feed wakes the moment the message is stored, which is just BEFORE the
+  // Energy is charged, so it can carry the old balance. Right after a send, keep the newer local value.
+  if (res.me && prevEnergy != null && Date.now() - (g.energyLocalAt || 0) < 2500) {
+    g.me.energy = prevEnergy;
+    g.me.needed = Math.max(0, g.me.cost - prevEnergy);
+    g.me.canChat = prevEnergy >= g.me.cost && !g.me.mute;
+  }
+  if (res.group) g.group = res.group;
+  g.muted = Array.isArray(res.muted) ? res.muted : [];
+  if (res.presence) g.presence = { online: Number(res.presence.online) || 0, seen: res.presence.seen || {} };
+  g.loaded = true;
+  g.available = true;
+
+  if (full || firstLoad || g.pending.length) chatRenderAll({ stick: stick || firstLoad });
+  else for (const m of added) chatAppend(m);
+  chatPaintPresence();
+
+  const others = added.filter((m) => !m.mine);
+  if (others.length && !res.reset) {
+    if (stick) chatScrollToBottom(true);
+    else { g.unread += others.length; chatUpdateJump(); }
+  } else if (added.some((m) => m.mine) && !res.reset) {
+    chatScrollToBottom(true);
+  }
+  chatUpdateHeader();
+  chatUpdatePinBar();
+  chatUpdateComposer();
+  chatMarkSeen();
+}
+
+// Remembers the newest message the member has actually looked at, for the unread dots in the chat list.
+function chatMarkSeen() {
+  const g = globalChatState;
+  if (!chatTabActive() || g.listOpen) return;
+  const last = g.messages[g.messages.length - 1];
+  if (!last) return;
+  try { localStorage.setItem(`dltx_seen_${chatRoomKey()}`, String(last.id)); } catch {}
+}
+
+function chatUpdateJump() {
+  const g = globalChatState;
+  const c = $('chatMessages');
+  const jump = $('chatJump');
+  if (!c || !jump) return;
+  const far = !chatNearBottom(c, 200);
+  jump.hidden = !far;
+  const badge = $('chatJumpCount');
+  if (badge) { badge.hidden = !g.unread; badge.textContent = g.unread > 99 ? '99+' : String(g.unread); }
+}
+
+// ----- sending (optimistic, idempotent) -----
+async function chatSend() {
+  const g = globalChatState;
+  const input = $('chatInput');
+  if (!input || input.disabled) return;
+  const text = input.value.trim();
+  if (!text) return;
+  if (text.length > CHAT_MAX_LEN) { toast(`Message too long (max ${CHAT_MAX_LEN} characters)`); return; }
+
+  const cid = `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  const reply = g.replyTo;
+  const pending = {
+    id: `p-${cid}`, cid, pending: true, mine: true, name: 'You', avatar: state.avatar,
+    role: g.me?.role || 'user', text, ts: new Date().toISOString(),
+    reply: reply ? { id: reply.id, name: reply.name, text: reply.text } : null,
+  };
+  g.pending.push(pending);
+  input.value = '';
+  chatAutosize();
+  chatSaveDraft();
+  chatCancelReply();
+  chatAppend(pending);
+  chatScrollToBottom(true);
+  chatUpdateComposer();
+  input.focus();
+  await chatDeliver(pending);
+}
+
+async function chatDeliver(p, attempt = 0) {
+  const g = globalChatState;
+  const roomKey = chatRoomKey();      // the conversation this message belongs to (the member may switch away mid-send)
+  const base = chatRoomBase();
+  const stillHere = () => roomKey === chatRoomKey();
+  p.failed = false;
+  p.pending = true;
+  chatPaintOne(p);
+  try {
+    const res = await api('POST', `${base}/messages`, { text: p.text, replyTo: p.reply ? p.reply.id : undefined, clientId: p.cid, avatar: state.avatar }, { retries: 0 });
+    if (res.energyRemaining !== undefined) {
+      // state.energy is the full Energy snapshot — merge, never replace it.
+      adoptEnergy({ ...(state.energy || {}), energy: Number(res.energyRemaining) });
+      renderEnergy();
+    }
+    if (!stillHere()) return;           // delivered; the other conversation will show it when opened
+    g.pending = g.pending.filter((x) => x !== p);
+    if (res.message && !g.messages.some((m) => m.id === res.message.id)) g.messages.push(res.message);
+    g.messages.sort((a, b) => a.id - b.id);
+    if (res.energyRemaining !== undefined && g.me) {
+      g.me.energy = Number(res.energyRemaining); g.me.canChat = g.me.energy >= g.me.cost && !g.me.mute;
+      g.energyLocalAt = Date.now();
+      setTimeout(() => { if (chatLive()) chatNudge(); }, 2700);     // one authoritative refresh once the dust settles
+    }
+    chatRenderAll({ stick: true });
+    chatUpdateHeader();
+    chatUpdateComposer();
+  } catch (err) {
+    if (!stillHere()) return;
+    if (err.status === 429 && err.data?.code !== 'CHAT_FLOOD' && attempt < 3) { await chatSleep(1100); return chatDeliver(p, attempt + 1); }
+    if (err.status === 404 && err.data?.code === 'REPLY_NOT_FOUND' && p.reply) { p.reply = null; return chatDeliver(p, attempt); }
+    if ([400, 402, 403, 409, 429].includes(err.status)) {
+      // Refused outright (no Energy, muted, a link, a duplicate, too fast…): nothing was
+      // charged, and the text goes back into the box instead of being lost.
+      g.pending = g.pending.filter((x) => x !== p);
+      const input = $('chatInput');
+      if (input && !input.value) { input.value = p.text; chatAutosize(); }
+      if (g.me) {
+        if (err.status === 402) { g.me.canChat = false; if (err.data && Number.isFinite(Number(err.data.current))) g.me.energy = Number(err.data.current); }
+        else if (err.data?.mute) g.me.mute = err.data.mute;
+      }
+      const msg = err.status === 402 ? `⚡ You need ${g.me?.cost || 1} Energy to send a message.` : (err.message || 'That message couldn’t be sent.');
+      toast(msg, { tone: err.status === 403 || err.status === 402 ? 'warning' : 'error' });
+      chatRenderAll();
+      chatUpdateHeader();
+      chatUpdateComposer();
+      return;
+    }
+    p.pending = false;
+    p.failed = true;
+    chatPaintOne(p);
+    // Silent while an automatic re-send is going on, so a flaky link doesn't pile up toasts.
+    if (!p.silent) toast('Message not sent — it will be retried when you are back online, or tap it to retry. Your Energy was not used.', { tone: 'error' });
+    p.silent = false;
+  }
+}
+
+// After a reconnect, anything that failed to leave the phone is sent again. Delivery is
+// idempotent per clientId, so this can never double-send or double-charge.
+function chatResendFailed() {
+  for (const p of [...globalChatState.pending]) {
+    if (p.failed && !p.pending) { p.silent = true; chatDeliver(p); }
+  }
+}
+
+// Repaints a single (pending/failed) bubble in place.
+function chatPaintOne(p) {
+  const c = $('chatMessages');
+  const el = c?.querySelector(`.chat-message[data-id="${CSS.escape(String(p.id))}"]`);
+  if (!el) return;
+  el.classList.toggle('pending', !!p.pending);
+  el.classList.toggle('failed', !!p.failed);
+  const meta = el.querySelector('.chat-meta');
+  if (meta) {
+    meta.querySelector('.chat-tick')?.remove();
+    meta.insertAdjacentHTML('beforeend', p.failed ? '<span class="chat-tick err">!</span>' : p.pending ? '<span class="chat-tick wait">⏳</span>' : '<span class="chat-tick">✓</span>');
+  }
+}
+
+// ----- live sync loop (long-poll) -----
+async function chatSyncLoop(gen) {
+  const g = globalChatState;
+  while (gen === g.gen && state.token && chatLive()) {
+    if (document.hidden) { await chatSleep(800); continue; }
+    try {
+      // The first request after any (re)start is a quick one, so status, presence and
+      // missed messages refresh at once; only then does the sync park as a long-poll.
+      const wait = g.loaded && !g.fast ? 15 : 0;
+      g.fast = false;
+      const res = await api('GET', `${chatRoomBase()}/sync?since=${g.rev}&epoch=${encodeURIComponent(g.epoch || '')}&wait=${wait}`, null, { retries: 0 });
+      if (gen !== g.gen) return;
+      const recovered = g.failures > 0;
+      g.failures = 0;
+      chatApplySync(res);
+      if (recovered) chatResendFailed();
+    } catch (err) {
+      if (gen !== g.gen) return;
+      if (err.status === 401) return;
+      // Removed from a group, or the group was deleted: leave it instead of retrying forever.
+      if (chatIsGroup() && (err.status === 403 || err.status === 404)) { chatGroupGone(err); return; }
+      g.failures += 1;
+      g.available = g.messages.length > 0;
+      if (!g.loaded) { g.loaded = true; chatRenderAll(); }
+      chatUpdateHeader();
+      chatUpdateComposer();
+      await chatSleep(err.status === 404 ? 15000 : Math.min(10000, 800 * 2 ** Math.min(g.failures, 4)));
+    }
+  }
+  if (gen === g.gen) g.running = false;
+}
+
+function chatStart() {
+  const g = globalChatState;
+  g.gen += 1;
+  g.running = true;
+  g.fast = true;
+  chatSyncLoop(g.gen);
+}
+
+function stopChatPolling() {
+  const g = globalChatState;
+  g.gen += 1;
+  g.running = false;
+  // Leaving the chat must also dismiss the keyboard, or the navigation bar stays hidden.
+  const input = document.getElementById('chatInput');
+  if (input && document.activeElement === input) input.blur();
+}
+
+// Called on sign-out / account switch so nothing leaks between accounts.
+function chatReset() {
+  const g = globalChatState;
+  stopChatPolling();
+  Object.assign(g, {
+    messages: [], pending: [], pinned: null, muted: [], me: null, epoch: '', rev: 0, failures: 0,
+    available: true, loaded: false, replyTo: null, unread: 0, presence: { online: 0, seen: {} }, view: null, adBusy: false,
+    room: { type: 'global' }, group: null, groups: [], listOpen: false, roomChosen: false,
+  });
+  $('tab-chatroom')?.classList.remove('show-list');
+  const input = $('chatInput');
+  if (input) { input.value = ''; chatAutosize(); }
+  const c = $('chatMessages');
+  if (c) c.innerHTML = '<p class="chat-hint">Loading messages…</p>';
+  const bar = $('chatReplyBar');
+  if (bar) bar.hidden = true;
+  closeChatSheet();
+}
+
+// ----- gestures: tap = actions, long-press = actions, swipe right = reply -----
+function chatInitGestures(c) {
+  let st = null;
+  const done = () => {
+    if (!st) return;
+    clearTimeout(st.timer);
+    st.row.style.transform = '';
+    st.row.classList.remove('reply-ready', 'swiping');
+    st = null;
+  };
+  c.addEventListener('pointerdown', (e) => {
+    if (e.button > 0) return;
+    const row = e.target.closest('.chat-message');
+    if (!row) return;
+    st = { row, id: row.dataset.id, x: e.clientX, y: e.clientY, dx: 0, swiping: false, fired: false, ready: false };
+    st.timer = setTimeout(() => {
+      if (st && !st.swiping) { st.fired = true; chatOpenSheet(st.id); }
+    }, 480);
+  });
+  c.addEventListener('pointermove', (e) => {
+    if (!st) return;
+    st.dx = e.clientX - st.x;
+    const dy = e.clientY - st.y;
+    if (!st.swiping && Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(st.dx)) return done();
+    if (!st.swiping && st.dx > 14 && st.dx > Math.abs(dy) * 1.5) { st.swiping = true; clearTimeout(st.timer); st.row.classList.add('swiping'); }
+    if (st.swiping) {
+      const pull = Math.max(0, Math.min(st.dx, 76));
+      st.row.style.transform = `translateX(${pull}px)`;
+      const ready = pull >= 56;
+      if (ready && !st.ready) chatHaptic();
+      st.ready = ready;
+      st.row.classList.toggle('reply-ready', ready);
+    }
+  });
+  c.addEventListener('pointerup', (e) => {
+    if (!st) return;
+    const s = st;
+    clearTimeout(s.timer);
+    if (s.swiping) {
+      const doReply = s.ready;
+      done();
+      if (doReply) chatStartReply(s.id);
+      return;
+    }
+    const moved = Math.abs(e.clientX - s.x) > 8 || Math.abs(e.clientY - s.y) > 8;
+    done();
+    if (s.fired || moved) return;
+    // A plain tap on a quote jumps to the original; on a name or avatar it opens that
+    // member's card; anywhere else it opens the message actions.
+    const quote = e.target.closest?.('.chat-quote');
+    const who = e.target.closest?.('.chat-avatar, .chat-name');
+    if (quote) chatGoTo(quote.dataset.goto);
+    else if (who && who.dataset.uid) chatOpenMember(who.dataset.uid);
+    else chatOpenSheet(s.id);
+  });
+  c.addEventListener('pointercancel', done);
+  c.addEventListener('contextmenu', (e) => { if (e.target.closest('.chat-message')) e.preventDefault(); });
+  // Keyboard users: Enter / Space on a focused bubble opens the same actions.
+  c.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.classList?.contains('chat-bubble')) {
+      e.preventDefault();
+      chatOpenSheet(e.target.closest('.chat-message')?.dataset.id);
+    }
+  });
+}
+
+// ================= Chat rooms: the chat list, groups and invites =================
+const CHAT_ROOM_STORE = 'dltx_chat_room';
+
+function chatSavedRoom() {
+  try {
+    const d = JSON.parse(localStorage.getItem(CHAT_ROOM_STORE) || 'null');
+    if (d && d.o === chatDraftOwner() && d.r && d.r.type === 'group' && Number(d.r.id) > 0) return { type: 'group', id: Number(d.r.id), title: String(d.r.title || '').slice(0, 40) };
+  } catch {}
+  return { type: 'global' };
+}
+function chatSaveRoom(room) {
+  try { localStorage.setItem(CHAT_ROOM_STORE, JSON.stringify({ o: chatDraftOwner(), r: room })); } catch {}
+}
+
+// Drops the open conversation's data (not the drafts, and not the pointer to which room is open).
+function chatClearConversation() {
+  const g = globalChatState;
+  Object.assign(g, {
+    messages: [], pending: [], pinned: null, muted: [], me: null, epoch: '', rev: 0, failures: 0,
+    available: true, loaded: false, replyTo: null, unread: 0, presence: { online: 0, seen: {} }, view: null, group: null,
+  });
+  const input = $('chatInput');
+  if (input) { input.value = ''; chatAutosize(); }
+  const c = $('chatMessages');
+  if (c) c.innerHTML = '<p class="chat-hint">Loading messages…</p>';
+  const bar = $('chatReplyBar');
+  if (bar) bar.hidden = true;
+  closeChatSheet();
+}
+
+/** Opens a conversation: { type: 'global' } or { type: 'group', id, title }. */
+function chatOpenRoom(room) {
+  const g = globalChatState;
+  const next = room.type === 'group' ? { type: 'group', id: Number(room.id), title: String(room.title || '') } : { type: 'global' };
+  const same = g.room.type === next.type && g.room.id === next.id;
+  stopChatPolling();
+  chatSaveDraft();                       // keep what was typed in the conversation we are leaving
+  if (!same) { chatClearConversation(); g.room = next; }
+  chatSaveRoom(g.room);
+  g.listOpen = false;
+  $('tab-chatroom')?.classList.remove('show-list');
+  chatRestoreDraft();
+  chatUpdateHeader();
+  chatUpdatePinBar();
+  chatUpdateComposer();
+  if (g.loaded) chatRenderAll({ stick: true });
+  requestAnimationFrame(() => (g.loaded ? chatRestoreView() : chatScrollToBottom(false)));
+  chatStart();
+}
+
+/** The chat list: Global chat first, then my groups. */
+function chatShowList() {
+  const g = globalChatState;
+  chatSaveView();
+  chatSaveDraft();
+  stopChatPolling();
+  closeChatSheet();
+  g.listOpen = true;
+  $('tab-chatroom')?.classList.add('show-list');
+  chatPaintList();
+  chatLoadList();
+}
+
+// The member was removed from a group (or it was deleted): leave it instead of retrying forever.
+function chatGroupGone(err) {
+  const g = globalChatState;
+  const id = g.room.id;
+  toast((err && err.message) || 'This group is no longer available.', { tone: 'warning' });
+  g.groups = g.groups.filter((x) => x.id !== id);
+  g.room = { type: 'global' };
+  chatClearConversation();
+  chatSaveRoom(g.room);
+  chatShowList();
+}
+
+function chatAddGroupCard(card) {
+  const g = globalChatState;
+  g.groups = [card, ...g.groups.filter((x) => x.id !== card.id)];
+}
+
+async function chatLoadList() {
+  const g = globalChatState;
+  try {
+    const r = await api('GET', '/groups', null, { retries: 0 });
+    g.groups = Array.isArray(r.groups) ? r.groups : [];
+    g.groupsError = '';
+  } catch (err) {
+    if (err.status === 401) return;
+    g.groupsError = err.status === 404 ? 'Groups are not available yet — please update the app or try again later.' : (err.message || 'Could not load your groups.');
+  }
+  if (g.listOpen) chatPaintList();
+}
+
+const chatListTime = (ts) => {
+  const d = new Date(ts);
+  return d.toDateString() === new Date().toDateString() ? chatTime(ts) : d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+};
+const chatInitial = (title) => (Array.from(String(title || '#').trim())[0] || '#').toUpperCase();
+
+function chatPaintList() {
+  const g = globalChatState;
+  const box = $('chatRows');
+  if (!box) return;
+  const energy = state.energy && typeof state.energy.energy === 'number' ? state.energy.energy : null;
+  const chip = $('chatListEnergy');
+  if (chip) chip.textContent = energy == null ? '⚡ —' : `⚡ ${energy.toLocaleString()}`;
+  const rows = [`
+    <button type="button" class="chat-row" role="listitem" data-room="global">
+      <span class="chat-row-av global" aria-hidden="true">🌍</span>
+      <span class="chat-row-body"><span class="chat-row-top"><b class="chat-row-title">Deltix Global Chat</b></span><span class="chat-row-last">Everyone on Deltix Network</span></span>
+    </button>`];
+  for (const gr of g.groups) {
+    const seen = Number(localStorage.getItem(`dltx_seen_g${gr.id}`) || 0);
+    const unread = gr.last && gr.last.id > seen;
+    const roleTag = gr.role === 'owner' ? '<span class="chat-role owner">OWNER</span>' : gr.role === 'admin' ? '<span class="chat-role admin">ADMIN</span>' : '';
+    rows.push(`
+      <button type="button" class="chat-row ${unread ? 'unread' : ''}" role="listitem" data-room="g:${gr.id}" data-title="${escapeHtml(gr.title)}">
+        <span class="chat-row-av" style="--nh:${chatHue(String(gr.id))}" aria-hidden="true">${escapeHtml(chatInitial(gr.title))}</span>
+        <span class="chat-row-body">
+          <span class="chat-row-top"><b class="chat-row-title">${escapeHtml(gr.title)}</b>${roleTag}<span class="chat-row-time">${gr.last ? chatListTime(gr.last.ts) : ''}</span></span>
+          <span class="chat-row-last">${gr.last ? `<i>${escapeHtml(gr.last.name || 'Member')}:</i> ${escapeHtml(gr.last.text)}` : `${gr.memberCount.toLocaleString()} member${gr.memberCount === 1 ? '' : 's'} · no messages yet`}</span>
+        </span>
+        ${unread ? '<span class="chat-unread-dot" aria-label="New messages"></span>' : ''}
+      </button>`);
+  }
+  if (g.groupsError) rows.push(`<p class="chat-hint">${escapeHtml(g.groupsError)}</p>`);
+  else if (!g.groups.length) rows.push('<div class="chat-empty small"><div class="chat-empty-icon">👥</div><b>Start your own group</b><p>Create a group for your friends or team, or discover public groups to join.</p></div>');
+  box.innerHTML = rows.join('');
+}
+
+// ----- dialogs (a bottom sheet; Back and the dim area close it) -----
+function chatDialog(html, label) {
+  closeChatSheet();
+  const wrap = document.createElement('div');
+  wrap.className = 'chat-sheet-wrap';
+  wrap.id = 'chatSheet';
+  wrap.innerHTML = `<div class="chat-sheet-dim" data-act="close"></div><div class="chat-sheet chat-dialog" role="dialog" aria-modal="true" aria-label="${escapeHtml(label)}"><div class="chat-sheet-grip" aria-hidden="true"></div><div class="cd-body">${html}</div></div>`;
+  document.body.appendChild(wrap);
+  wrap.addEventListener('click', (e) => { if (e.target.closest('[data-act="close"]')) closeChatSheet(); });
+  const body = wrap.querySelector('.cd-body');
+  return { wrap, body, set(htmlNext) { body.innerHTML = htmlNext; } };
+}
+
+function chatOpenCreateGroup() {
+  const g = globalChatState;
+  const cost = g.me ? g.me.cost : 1;
+  const d = chatDialog(`
+    <h3 class="cd-title">New group</h3>
+    <p class="cd-sub">You become the group’s owner and admin. Every message costs ${cost} ⚡ Energy, for everyone.</p>
+    <label class="cp-label" for="cgTitle">Group name <span id="cgCount">0/40</span></label>
+    <input id="cgTitle" class="cp-input" type="text" maxlength="40" placeholder="e.g. Crypto Friends" autocomplete="off" enterkeyhint="next">
+    <label class="cp-label" for="cgAbout">Description <em>(optional)</em></label>
+    <textarea id="cgAbout" class="cp-input" rows="2" maxlength="200" placeholder="What is this group about?"></textarea>
+    <label class="cp-switch"><input type="checkbox" id="cgPublic"><span>Public group <small>Anyone can find and join it. Private groups are joined with an invite code.</small></span></label>
+    <p class="cp-error" id="cgError" role="alert"></p>
+    <div class="cp-btns"><button class="btn ghost" type="button" data-act="close">Cancel</button><button class="btn primary" id="cgCreate" type="button" disabled>Create group</button></div>`, 'New group');
+  const title = d.body.querySelector('#cgTitle');
+  const btn = d.body.querySelector('#cgCreate');
+  const err = d.body.querySelector('#cgError');
+  const refresh = () => { const n = Array.from(title.value.trim()).length; d.body.querySelector('#cgCount').textContent = `${n}/40`; btn.disabled = n < 3; };
+  title.addEventListener('input', refresh);
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    err.textContent = '';
+    try {
+      const r = await api('POST', '/groups', { title: title.value, about: d.body.querySelector('#cgAbout').value, isPublic: d.body.querySelector('#cgPublic').checked }, { retries: 0 });
+      chatAddGroupCard(r.group);
+      chatOpenRoom({ type: 'group', id: r.group.id, title: r.group.title });
+      toast(`“${r.group.title}” created — you are its owner.`, { tone: 'success' });
+      setTimeout(() => { if (chatIsGroup() && globalChatState.room.id === r.group.id) chatOpenGroupInfo(); }, 350);   // shows the invite code
+    } catch (e) {
+      err.textContent = e.message || 'Could not create the group.';
+      btn.disabled = false;
+    }
+  });
+  title.focus();
+}
+
+function chatGroupRowHtml(x) {
+  return `<div class="cd-item">
+    <span class="chat-row-av" style="--nh:${chatHue(String(x.id))}" aria-hidden="true">${escapeHtml(chatInitial(x.title))}</span>
+    <div class="cd-item-body"><b>${escapeHtml(x.title)}</b><span>${x.memberCount.toLocaleString()} member${x.memberCount === 1 ? '' : 's'}${x.about ? ` · ${escapeHtml(chatSnippet(x.about, 70))}` : ''}</span></div>
+    <button class="btn small ${x.joined ? 'ghost' : 'primary'}" type="button" data-join="${x.id}" data-title="${escapeHtml(x.title)}">${x.joined ? 'Open' : 'Join'}</button>
+  </div>`;
+}
+
+async function chatJoinGroup(btn, payload, titleHint) {
+  btn.disabled = true;
+  try {
+    const r = await api('POST', '/groups/join', payload, { retries: 0 });
+    chatAddGroupCard(r.group);
+    chatOpenRoom({ type: 'group', id: r.group.id, title: r.group.title || titleHint });
+  } catch (e) {
+    toast(e.message || 'Could not join this group.', { tone: 'error' });
+    btn.disabled = false;
+  }
+}
+
+function chatOpenDiscover() {
+  const d = chatDialog(`
+    <h3 class="cd-title">Discover groups</h3>
+    <input id="dcQuery" class="cp-input" type="search" placeholder="Search public groups" maxlength="40" autocomplete="off">
+    <div id="dcList" class="cd-list"><p class="chat-hint">Loading…</p></div>
+    <div class="cp-btns"><button class="btn ghost" type="button" data-act="close">Close</button></div>`, 'Discover groups');
+  const list = d.body.querySelector('#dcList');
+  const q = d.body.querySelector('#dcQuery');
+  let seq = 0; let timer = null;
+  const load = async () => {
+    const mine = ++seq;
+    try {
+      const r = await api('GET', `/groups/discover?q=${encodeURIComponent(q.value.trim())}`, null, { retries: 0 });
+      if (mine !== seq) return;
+      const gs = r.groups || [];
+      list.innerHTML = gs.length ? gs.map(chatGroupRowHtml).join('') : '<p class="chat-hint">No public groups found yet. Create the first one!</p>';
+    } catch (e) {
+      if (mine === seq) list.innerHTML = `<p class="chat-hint">${escapeHtml(e.status === 404 ? 'Groups are not available yet.' : (e.message || 'Could not load groups.'))}</p>`;
+    }
+  };
+  list.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-join]');
+    if (b) chatJoinGroup(b, { groupId: Number(b.dataset.join) }, b.dataset.title);
+  });
+  q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 300); });
+  load();
+}
+
+// Accepts the bare code or any text that ends with it (a pasted invite message).
+function chatExtractCode(text) {
+  const found = String(text || '').trim().toLowerCase().match(/[a-z0-9]{10}/g);
+  return found ? found[found.length - 1] : '';
+}
+
+function chatOpenJoin() {
+  const d = chatDialog(`
+    <h3 class="cd-title">Join with an invite code</h3>
+    <p class="cd-sub">Paste the code (or the whole invite message) you were sent.</p>
+    <input id="jcCode" class="cp-input" type="text" placeholder="Invite code" autocomplete="off" autocapitalize="none" spellcheck="false">
+    <div id="jcInfo" class="cd-list"></div>
+    <p class="cp-error" id="jcError" role="alert"></p>
+    <div class="cp-btns"><button class="btn ghost" type="button" data-act="close">Cancel</button><button class="btn primary" id="jcFind" type="button" disabled>Find group</button></div>`, 'Join with an invite code');
+  const input = d.body.querySelector('#jcCode');
+  const find = d.body.querySelector('#jcFind');
+  const err = d.body.querySelector('#jcError');
+  const info = d.body.querySelector('#jcInfo');
+  let code = '';
+  input.addEventListener('input', () => { code = chatExtractCode(input.value); find.disabled = !code; find.textContent = 'Find group'; info.innerHTML = ''; err.textContent = ''; find.dataset.step = ''; });
+  find.addEventListener('click', async () => {
+    err.textContent = '';
+    if (find.dataset.step === 'join') return chatJoinGroup(find, { code }, '');
+    find.disabled = true;
+    try {
+      const r = await api('GET', `/groups/invite/${encodeURIComponent(code)}`, null, { retries: 0 });
+      const x = r.group;
+      info.innerHTML = `<div class="cd-item"><span class="chat-row-av" style="--nh:${chatHue(String(x.id))}">${escapeHtml(chatInitial(x.title))}</span><div class="cd-item-body"><b>${escapeHtml(x.title)}</b><span>${x.memberCount.toLocaleString()} member${x.memberCount === 1 ? '' : 's'} · ${x.isPublic ? 'public' : 'private'} group${x.about ? ` · ${escapeHtml(chatSnippet(x.about, 70))}` : ''}</span></div></div>`;
+      find.textContent = 'Join group';
+      find.dataset.step = 'join';
+      find.disabled = false;
+    } catch (e) {
+      err.textContent = e.message || 'That invite code is not valid.';
+      find.disabled = false;
+    }
+  });
+  input.focus();
+}
+
+// ----- the open group: info, members, invite, settings -----
+const chatGroupData = () => globalChatState.group || globalChatState.groups.find((x) => x.id === globalChatState.room.id) || null;
+
+async function chatShareInvite(d) {
+  const text = `Join “${d.title}” on Deltix Network — open Chat › Join with code and enter: ${d.inviteCode}`;
+  try {
+    if (navigator.share) { await navigator.share({ text }); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  await chatCopy(text);
+}
+
+function chatOpenGroupInfo(view = 'main') {
+  const g = globalChatState;
+  if (!chatIsGroup()) return;
+  const info = chatGroupData();
+  if (!info) return;
+  const owner = (g.me && g.me.role === 'owner') || info.role === 'owner';
+  const dlg = chatDialog('', 'Group info');
+  const row = (act, ico, label, tone) => `<button type="button" class="chat-act ${tone || ''}" data-act="${act}"><span class="chat-act-ico" aria-hidden="true">${ico}</span><span>${label}</span></button>`;
+
+  const renderMain = () => {
+    const d = chatGroupData() || info;
+    dlg.set(`
+      <div class="cd-head"><span class="chat-row-av big" style="--nh:${chatHue(String(d.id))}" aria-hidden="true">${escapeHtml(chatInitial(d.title))}</span>
+        <div><h3 class="cd-title">${escapeHtml(d.title)}</h3><span class="cd-sub">${d.memberCount.toLocaleString()} member${d.memberCount === 1 ? '' : 's'} · ${d.isPublic ? 'public' : 'private'} group</span></div></div>
+      ${d.about ? `<p class="cd-about">${escapeHtml(d.about)}</p>` : ''}
+      ${d.inviteCode ? `<div class="cd-invite"><span>Invite code</span><b id="gdCode">${escapeHtml(d.inviteCode)}</b><button class="btn small ghost" type="button" data-act="copy-code">Copy</button><button class="btn small primary" type="button" data-act="share-code">Share</button></div>` : ''}
+      <div class="chat-sheet-list">
+        ${row('members', '👥', `Members (${d.memberCount.toLocaleString()})`)}
+        ${owner ? row('edit', '✎', 'Edit group') : ''}
+        ${row('report', '🚩', 'Report group')}
+        ${owner ? row('delete', '🗑', 'Delete group', 'danger') : row('leave', '🚪', 'Leave group', 'danger')}
+        ${row('close', '✕', 'Close')}
+      </div>`);
+  };
+
+  const renderMembers = async () => {
+    dlg.set('<h3 class="cd-title">Members</h3><div class="cd-list"><p class="chat-hint">Loading…</p></div>');
+    try {
+      const r = await api('GET', `${chatRoomBase()}/members`, null, { retries: 0 });
+      dlg.set(`<h3 class="cd-title">Members <span class="cd-count">${r.total}</span></h3>
+        <div class="cd-list">${r.members.map((m) => `
+          <button type="button" class="cd-item member" data-act="member" data-uid="${escapeHtml(m.uid)}">
+            <span class="chat-avatar ${m.status === 'o' ? 'online' : ''}" aria-hidden="true">${escapeHtml(m.avatar || '🦊')}</span>
+            <span class="cd-item-body"><b>${escapeHtml(m.name)}${m.me ? ' (you)' : ''} ${chatRoleBadge(m.role)}</b><span>${m.handle ? `@${escapeHtml(m.handle)} · ` : ''}${m.me ? 'online' : chatStatusText(m.status)}${m.muted ? ' · muted' : ''}</span></span>
+          </button>`).join('')}</div>
+        <div class="cp-btns"><button class="btn ghost" type="button" data-act="back">‹ Back</button></div>`);
+    } catch (e) {
+      dlg.set(`<p class="chat-hint">${escapeHtml(e.message || 'Could not load members.')}</p><div class="cp-btns"><button class="btn ghost" type="button" data-act="back">‹ Back</button></div>`);
+    }
+  };
+
+  const renderEdit = () => {
+    const d = chatGroupData() || info;
+    dlg.set(`
+      <h3 class="cd-title">Edit group</h3>
+      <label class="cp-label" for="geTitle">Group name <span id="geCount">${Array.from(d.title).length}/40</span></label>
+      <input id="geTitle" class="cp-input" type="text" maxlength="40" value="${escapeHtml(d.title)}" autocomplete="off">
+      <label class="cp-label" for="geAbout">Description</label>
+      <textarea id="geAbout" class="cp-input" rows="2" maxlength="200">${escapeHtml(d.about || '')}</textarea>
+      <label class="cp-switch"><input type="checkbox" id="gePublic" ${d.isPublic ? 'checked' : ''}><span>Public group <small>Anyone can find and join it.</small></span></label>
+      <button class="chat-act" type="button" data-act="rotate"><span class="chat-act-ico" aria-hidden="true">🔄</span><span>New invite code <small class="cd-note">(the old one stops working)</small></span></button>
+      <p class="cp-error" id="geError" role="alert"></p>
+      <div class="cp-btns"><button class="btn ghost" type="button" data-act="back">‹ Back</button><button class="btn primary" type="button" data-act="save-edit">Save</button></div>`);
+  };
+
+  const saveEdit = async (rotate) => {
+    const err = dlg.body.querySelector('#geError');
+    if (err) err.textContent = '';
+    try {
+      const patch = rotate ? { rotateInvite: true } : { title: dlg.body.querySelector('#geTitle').value, about: dlg.body.querySelector('#geAbout').value, isPublic: dlg.body.querySelector('#gePublic').checked };
+      const r = await api('PUT', chatRoomBase(), patch, { retries: 0 });
+      g.group = r.group;
+      g.room.title = r.group.title;
+      chatAddGroupCard(r.group);
+      chatUpdateHeader();
+      toast(rotate ? 'New invite code created' : 'Group updated', { tone: 'success' });
+      renderMain();
+    } catch (e) { if (err) err.textContent = e.message || 'Could not save.'; }
+  };
+
+  dlg.wrap.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-act]');
+    if (!btn) return;
+    const act = btn.dataset.act;
+    const d = chatGroupData() || info;
+    if (act === 'members') renderMembers();
+    else if (act === 'back') renderMain();
+    else if (act === 'edit') renderEdit();
+    else if (act === 'save-edit') saveEdit(false);
+    else if (act === 'rotate') saveEdit(true);
+    else if (act === 'copy-code') chatCopy(d.inviteCode);
+    else if (act === 'share-code') chatShareInvite(d);
+    else if (act === 'member') { const uid = btn.dataset.uid; closeChatSheet(); chatOpenMember(uid); }
+    else if (act === 'report') {
+      closeChatSheet();      // the confirm dialog sits below the sheet layer, so the sheet must go first
+      const ok = await askConfirm({ title: 'Report this group?', message: 'The Deltix team will review the group. Your report is confidential.', confirmText: 'Report' });
+      if (ok) { try { await api('POST', `${chatRoomBase()}/report`, { reason: 'Group reported from the app' }); toast('Thanks — the Deltix team will review it.', { tone: 'success' }); } catch (er) { toast(er.message || 'Could not send the report.', { tone: 'error' }); } }
+    } else if (act === 'leave' || act === 'delete') {
+      const del = act === 'delete';
+      closeChatSheet();
+      const ok = await askConfirm({ title: del ? 'Delete this group?' : 'Leave this group?', message: del ? 'The group and all its messages will be deleted for everyone. This cannot be undone.' : 'You can join again with the invite code.', confirmText: del ? 'Delete group' : 'Leave', danger: true });
+      if (!ok) return;
+      try {
+        await api(del ? 'DELETE' : 'POST', del ? chatRoomBase() : `${chatRoomBase()}/leave`, null, { retries: 0 });
+        g.groups = g.groups.filter((x) => x.id !== g.room.id);
+        g.room = { type: 'global' };
+        chatClearConversation();
+        chatSaveRoom(g.room);
+        toast(del ? 'Group deleted' : 'You left the group', { tone: 'success' });
+        chatShowList();
+      } catch (er) { toast(er.message || 'Could not do that.', { tone: 'error' }); }
+    }
+  });
+
+  if (view === 'members') renderMembers(); else renderMain();
+}
+
+// Moderation from a member's card inside a group.
+async function chatGroupMemberAction(kind, uid, role) {
+  const base = chatRoomBase();
+  try {
+    if (kind === 'mute') { await api('POST', `${base}/members/${uid}/mute`, { minutes: 60 }); toast('Member muted for 1 hour', { tone: 'success' }); }
+    else if (kind === 'unmute') { await api('POST', `${base}/members/${uid}/unmute`); toast('Member unmuted', { tone: 'success' }); }
+    else if (kind === 'kick' || kind === 'ban') {
+      const ban = kind === 'ban';
+      const ok = await askConfirm({ title: ban ? 'Remove and ban this member?' : 'Remove this member?', message: ban ? 'They will not be able to rejoin, even with the invite code.' : 'They can join again with the invite code.', confirmText: ban ? 'Remove & ban' : 'Remove', danger: true });
+      if (!ok) return;
+      await api('POST', `${base}/members/${uid}/kick`, { ban });
+      toast(ban ? 'Member banned' : 'Member removed', { tone: 'success' });
+    } else if (kind === 'role') {
+      await api('POST', `${base}/members/${uid}/role`, { role: role === 'admin' ? 'member' : 'admin' });
+      toast(role === 'admin' ? 'Admin removed' : 'Admin added', { tone: 'success' });
+    }
+    chatNudge();
+  } catch (e) { toast(e.message || 'Action failed', { tone: 'error' }); }
+}
+
+function initChatRoomsUi() {
+  const list = $('chatListView');
+  if (!list || list.dataset.wired) return;
+  list.dataset.wired = '1';
+  $('chatListBtn')?.addEventListener('click', chatShowList);
+  $('chatHeadMain')?.addEventListener('click', () => { if (chatIsGroup()) chatOpenGroupInfo(); });
+  $('chatNewGroup')?.addEventListener('click', chatOpenCreateGroup);
+  $('chatDiscover')?.addEventListener('click', chatOpenDiscover);
+  $('chatJoinCode')?.addEventListener('click', chatOpenJoin);
+  $('chatListEnergy')?.addEventListener('click', () => { if (typeof openShop === 'function') openShop(); });
+  $('chatRows')?.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-room]');
+    if (!row) return;
+    const key = row.dataset.room;
+    if (key === 'global') chatOpenRoom({ type: 'global' });
+    else chatOpenRoom({ type: 'group', id: Number(key.slice(2)), title: row.dataset.title || '' });
+  });
 }
 
 function renderGlobalChatroom() {
   const input = $('chatInput');
   const sendBtn = $('chatSendBtn');
-  
-  if (input && !input.dataset.initialized) {
-    input.dataset.initialized = 'true';
-    input.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendChatMessage();
-      }
+  const c = $('chatMessages');
+  if (!input || !sendBtn || !c) return;
+  const g = globalChatState;
+
+  if (!c.dataset.initialized) {
+    c.dataset.initialized = 'true';
+    chatInitGestures(c);
+    c.addEventListener('scroll', () => {
+      g.stick = chatNearBottom(c, 160);
+      if (g.stick) g.unread = 0;
+      chatUpdateJump();
+    }, { passive: true });
+    $('chatJump')?.addEventListener('click', () => { g.unread = 0; chatScrollToBottom(true); chatUpdateJump(); });
+    $('chatPinBar')?.addEventListener('click', (e) => chatGoTo(e.currentTarget.dataset.goto));
+    $('chatReplyCancel')?.addEventListener('click', chatCancelReply);
+    sendBtn.addEventListener('click', chatSend);
+    input.addEventListener('input', () => { chatAutosize(); chatUpdateComposer(); chatQueueDraftSave(); });
+    input.addEventListener('keydown', (e) => {
+      // Desktop: Enter sends, Shift+Enter breaks the line. Phones: Enter is a new line.
+      if (e.key === 'Enter' && !e.shiftKey && window.matchMedia?.('(pointer: fine)').matches) { e.preventDefault(); chatSend(); }
     });
+    input.addEventListener('focus', () => setTimeout(() => { if (g.stick !== false) chatScrollToBottom(false); }, 320));
+    window.visualViewport?.addEventListener('resize', () => { if (chatTabActive() && g.stick !== false) chatScrollToBottom(false); });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && chatLive()) chatStart(); });
+    window.addEventListener('online', () => { if (chatLive()) { g.failures = 0; chatStart(); chatResendFailed(); } });
+    window.addEventListener('offline', () => { if (chatLive()) { g.failures = Math.max(1, g.failures); chatUpdateHeader(); } });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) chatSaveView(); });
+    $('chatBannerAd')?.addEventListener('click', chatWatchAd);
+    $('chatBannerShop')?.addEventListener('click', () => { if (typeof openShop === 'function') openShop(); });
+    $('chatEnergyChip')?.addEventListener('click', () => { if (typeof openShop === 'function') openShop(); });
+    initChatProfileUi();
+    initChatRoomsUi();
   }
-  
-  if (sendBtn && !sendBtn.dataset.initialized) {
-    sendBtn.dataset.initialized = 'true';
-    sendBtn.addEventListener('click', sendChatMessage);
+
+  // The first time the tab opens, go back to where the member left off (a group or the global chat).
+  if (!g.roomChosen) {
+    g.roomChosen = true;
+    const saved = chatSavedRoom();
+    if (saved.type === 'group') { g.room = saved; chatUpdateHeader(); }
   }
-  
-  // Check energy and update UI
-  checkChatEnergy().then(energyInfo => {
-    if (!energyInfo.canChat) {
-      input.disabled = true;
-      sendBtn.disabled = true;
-      const note = $('chatEnergyNote');
-      if (note) {
-        note.innerHTML = `⚡ Insufficient energy. You need ${energyInfo.costPerMessage} energy per message. Current: ${energyInfo.energyBalance}. <a href="javascript:showTab('tab-earn')" style="color: var(--accent); cursor: pointer;">Earn more</a>`;
-      }
-    }
-  });
-  
-  loadGlobalChatMessages();
-  
-  if (globalChatState.loadTimer) {
-    clearInterval(globalChatState.loadTimer);
+  if (g.listOpen) {
+    $('tab-chatroom').classList.add('show-list');
+    chatPaintList();
+    chatLoadList();
+    return;
   }
-  globalChatState.loadTimer = setInterval(() => {
-    loadGlobalChatMessages();
-  }, 3000);
+  $('tab-chatroom').classList.remove('show-list');
+
+  // Re-entering the tab shows what is already cached straight away.
+  if (g.loaded) { chatRenderAll({ stick: true }); chatUpdateHeader(); chatUpdatePinBar(); }
+  chatRestoreDraft();
+  chatUpdateComposer();
+  requestAnimationFrame(() => (g.loaded ? chatRestoreView() : chatScrollToBottom(false)));
+  chatStart();
 }
 
-function escapeHtml(text) {
-  const map = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#039;'
-  };
-  return text.replace(/[&<>"']/g, m => map[m]);
+// ================= Predict: call the market, earn Energy =================
+// The server prices every call from its own live feed and settles it; the app only says which
+// coin, which direction and how long. Wins are collected with one atomic claim (paid once).
+const prPrice = (p) => {
+  const n = Number(p);
+  if (!Number.isFinite(n)) return '—';
+  if (n >= 1000) return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  if (n >= 1) return `$${n.toLocaleString(undefined, { maximumFractionDigits: 3 })}`;
+  return `$${n.toLocaleString(undefined, { maximumSignificantDigits: 4 })}`;
+};
+const prPct = (v) => (v == null || !Number.isFinite(Number(v)) ? '' : `${Number(v) >= 0 ? '+' : ''}${Number(v).toFixed(2)}%`);
+const prHorizonLabel = (m) => (m >= 1440 ? `${m / 1440} day` : m >= 60 ? `${m / 60} hour${m === 60 ? '' : 's'}` : `${m} min`);
+const prCoin = (id) => (predictState.markets ? predictState.markets.coins.find((c) => c.id === id) : null);
+function prRemaining(endsAt) {
+  const ms = new Date(endsAt).getTime() - Date.now();
+  if (ms <= 0) return 'Settling…';
+  const s = Math.ceil(ms / 1000);
+  const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); const sec = s % 60;
+  return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m ${String(sec).padStart(2, '0')}s`;
+}
+
+async function loadPredictMarkets() {
+  try {
+    predictState.markets = await api('GET', '/predict/markets', null, { retries: 0 });
+    predictState.marketsError = '';
+  } catch (e) {
+    predictState.marketsError = e.status === 404 ? 'Predictions are not available yet — please update the app or try again later.' : (e.data?.code === 'PREDICT_PAUSED' ? 'Predictions are paused for now. Check back soon.' : (e.message || 'Could not load prices.'));
+  }
+  paintPredict();
+}
+
+async function loadPredictMine() {
+  try {
+    predictState.mine = await api('GET', '/predict/mine', null, { retries: 0 });
+  } catch { /* keep what is shown */ }
+  paintPredict();
+  const c = predictState.mine && predictState.mine.claimable;
+  if (c && c.count > 0) collectPredictWins();
+}
+
+async function loadPredictBoard() {
+  try { predictState.board = await api('GET', '/predict/leaderboard', null, { retries: 0 }); } catch { /* optional */ }
+  paintPredictBoard();
+}
+
+// Pays every winning call, once. The server flips a one-time flag per win, so a double-tap or a retry can never pay twice.
+async function collectPredictWins() {
+  if (predictState.claiming) return;
+  predictState.claiming = true;
+  try {
+    const r = await api('POST', '/predict/claim', null, { retries: 0 });
+    if (r.energy > 0) {
+      adoptEnergy({ ...(state.energy || {}), energy: Number(r.balance) });
+      renderEnergy();
+      celebrate({ amount: r.energy, unit: 'Energy', icon: '📈', title: r.claimed > 1 ? `${r.claimed} predictions won!` : 'Prediction won!', subtitle: `You now have ${fmt(r.balance)} ⚡ total.`, duration: 2600 });
+      const mine = await api('GET', '/predict/mine', null, { retries: 0 }).catch(() => null);
+      if (mine) predictState.mine = mine;
+      paintPredict();
+    }
+  } catch { /* tried again at the next refresh */ } finally { predictState.claiming = false; }
+}
+
+function paintPredictChart() {
+  const box = $('prChart');
+  const coin = prCoin(predictState.coin);
+  if (!box || !coin) return;
+  const dark = !!document.documentElement.dataset.dark;
+  const symbol = coin.tv;
+  const key = `${symbol}|${dark}`;
+  const link = $('prTvLink');
+  if (link) link.href = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`;
+  if (predictState.lastChart === key && box.querySelector('iframe')) return;
+  predictState.lastChart = key;
+  // Low-end phones and data-saver mode load the chart only when asked (it is a full web page).
+  if (typeof CHAT_LITE !== 'undefined' && CHAT_LITE && !predictState.chartOn) {
+    box.innerHTML = '<button class="btn ghost pr-load-chart" type="button">Load live chart</button>';
+    box.querySelector('button').addEventListener('click', () => { predictState.chartOn = true; predictState.lastChart = ''; paintPredictChart(); });
+    return;
+  }
+  const src = `https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(symbol)}&interval=60&theme=${dark ? 'dark' : 'light'}&style=1&locale=en&hide_side_toolbar=1&allow_symbol_change=0&save_image=0&hideideas=1&withdateranges=1&timezone=Etc%2FUTC`;
+  box.innerHTML = `<iframe title="${escapeHtml(coin.name)} live chart" src="${src}" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>
+    <div class="pr-chart-fallback" hidden>The live chart needs an internet connection.</div>`;
+  if (navigator.onLine === false) box.querySelector('.pr-chart-fallback').hidden = false;
+}
+
+function paintPredict() {
+  const p = predictState;
+  const energy = state.energy && typeof state.energy.energy === 'number' ? state.energy.energy : null;
+  const chip = $('prEnergy');
+  if (chip) chip.textContent = energy == null ? '⚡ —' : `⚡ ${energy.toLocaleString()}`;
+
+  const banner = $('prBanner');
+  if (banner) {
+    const msg = p.marketsError || (p.markets && (!p.markets.pricesAvailable ? 'Live prices are unavailable right now. Try again in a minute.' : p.markets.stale ? 'Prices look out of date — they will refresh shortly.' : ''));
+    banner.hidden = !msg;
+    banner.textContent = msg || '';
+  }
+
+  // coin chips
+  const box = $('prCoins');
+  if (box && p.markets) {
+    const coins = p.markets.coins.filter((c) => p.filter === 'all' || c.dex);
+    if (!coins.some((c) => c.id === p.coin) && coins.length) p.coin = coins[0].id;
+    box.innerHTML = coins.map((c) => `
+      <button type="button" class="pr-coin ${c.id === p.coin ? 'active' : ''}" data-coin="${c.id}" role="option" aria-selected="${c.id === p.coin}">
+        <span class="pr-coin-top"><b>${c.id}</b>${c.dex ? '<i class="pr-dex">DEX</i>' : ''}</span>
+        <span class="pr-coin-price">${prPrice(c.price)}</span>
+        <span class="pr-coin-chg ${Number(c.change24h) >= 0 ? 'up' : 'down'}">${prPct(c.change24h) || '&nbsp;'}</span>
+      </button>`).join('');
+  }
+  document.querySelectorAll('.pr-pill').forEach((b) => b.classList.toggle('active', b.dataset.filter === p.filter));
+
+  // selected coin
+  const coin = prCoin(p.coin);
+  if (coin) {
+    $('prCoinName').textContent = coin.name;
+    $('prCoinSym').textContent = coin.id;
+    $('prCoinPrice').innerHTML = `${prPrice(coin.price)} <small class="${Number(coin.change24h) >= 0 ? 'up' : 'down'}">${prPct(coin.change24h)} 24h</small>`;
+    paintPredictChart();
+  }
+
+  // time frames
+  const hz = $('prHorizons');
+  if (hz && p.markets) {
+    hz.innerHTML = p.markets.horizons.map((h) => `<button type="button" class="pr-horizon ${h.minutes === p.horizon ? 'active' : ''}" data-h="${h.minutes}" role="radio" aria-checked="${h.minutes === p.horizon}"><b>${h.label}</b><span>+${h.reward} ⚡</span></button>`).join('');
+  }
+
+  // call buttons + the reason they might be unavailable
+  const mine = p.mine;
+  const used = mine ? mine.used : 0;
+  const perDay = (p.markets && p.markets.perDay) || (mine && mine.perDay) || 5;
+  const open = mine ? mine.active.find((a) => a.coin === p.coin) : null;
+  let why = '';
+  if (!p.markets || !p.markets.pricesAvailable || !coin || coin.price == null) why = 'Waiting for live prices…';
+  else if (used >= perDay) why = `You’ve used all ${perDay} calls for today. New ones open at 00:00 UTC.`;
+  else if (open) why = `You already have an open ${p.coin} call — it ends in ${prRemaining(open.endsAt)}.`;
+  const h = p.markets ? p.markets.horizons.find((x) => x.minutes === p.horizon) : null;
+  const ok = !why && !p.busy;
+  $('prUp').disabled = !ok;
+  $('prDown').disabled = !ok;
+  $('prHint').textContent = why || (h ? `Right call = +${h.reward} ⚡ Energy. ${perDay - used} of ${perDay} calls left today. Moves under ${p.markets.minMovePct}% are a tie (no win, no loss).` : '');
+
+  paintPredictStats();
+  paintPredictLists();
+}
+
+function paintPredictStats() {
+  const box = $('prStats');
+  const m = predictState.mine;
+  if (!box) return;
+  if (!m) { box.innerHTML = ''; return; }
+  const s = m.stats;
+  const cell = (v, l) => `<div class="pr-stat"><b>${v}</b><span>${l}</span></div>`;
+  box.innerHTML = cell(s.wins, 'Wins') + cell(s.winRate == null ? '—' : `${s.winRate}%`, 'Win rate') + cell(s.streak ? `🔥 ${s.streak}` : '0', 'Streak') + cell(`${m.used}/${m.perDay}`, 'Calls today');
+}
+
+function prStatusBadge(r) {
+  if (r.status === 'won') return `<span class="pr-badge won">WON +${r.rewardEnergy} ⚡</span>`;
+  if (r.status === 'lost') return '<span class="pr-badge lost">LOST</span>';
+  if (r.status === 'tie') return '<span class="pr-badge tie">TIE · refunded</span>';
+  if (r.status === 'void') return '<span class="pr-badge void">VOID · refunded</span>';
+  return '<span class="pr-badge open">OPEN</span>';
+}
+
+function paintPredictLists() {
+  const m = predictState.mine;
+  const act = $('prActive');
+  const rec = $('prRecent');
+  if (!act || !rec) return;
+  if (!m) { act.innerHTML = '<p class="chat-hint">Loading…</p>'; return; }
+  act.innerHTML = m.active.length ? m.active.map((a) => {
+    const cur = prCoin(a.coin);
+    const delta = cur && cur.price != null ? ((cur.price - a.entryPrice) / a.entryPrice) * 100 : null;
+    const winning = delta != null && ((a.direction === 'up' && delta > 0) || (a.direction === 'down' && delta < 0));
+    return `<div class="pr-row" data-ends="${escapeHtml(a.endsAt)}">
+      <span class="pr-dir ${a.direction}">${a.direction === 'up' ? '▲' : '▼'}</span>
+      <div class="pr-row-body"><b>${escapeHtml(a.coin)} ${a.direction.toUpperCase()} · ${prHorizonLabel(a.horizonMinutes)}</b>
+        <span>Entry ${prPrice(a.entryPrice)}${delta == null ? '' : ` · now ${prPct(delta)}`}</span></div>
+      <div class="pr-row-side"><span class="pr-eta">${prRemaining(a.endsAt)}</span>${delta == null ? '' : `<small class="${winning ? 'up' : 'down'}">${winning ? 'in the money' : 'behind'}</small>`}</div>
+    </div>`;
+  }).join('') : '<p class="chat-hint">No open calls. Pick a coin above and make one!</p>';
+  rec.innerHTML = m.recent.length ? m.recent.map((r) => `<div class="pr-row">
+      <span class="pr-dir ${r.direction}">${r.direction === 'up' ? '▲' : '▼'}</span>
+      <div class="pr-row-body"><b>${escapeHtml(r.coin)} ${r.direction.toUpperCase()} · ${prHorizonLabel(r.horizonMinutes)}</b>
+        <span>${prPrice(r.entryPrice)} → ${r.exitPrice == null ? 'no price' : prPrice(r.exitPrice)}${r.changePct == null ? '' : ` (${prPct(r.changePct)})`}</span></div>
+      <div class="pr-row-side">${prStatusBadge(r)}</div>
+    </div>`).join('') : '<p class="chat-hint">Your results will show up here.</p>';
+}
+
+function paintPredictBoard() {
+  const box = $('prBoard');
+  const b = predictState.board;
+  if (!box) return;
+  if (!b) { box.innerHTML = ''; return; }
+  box.innerHTML = b.top.length ? b.top.map((r) => `<div class="pr-row ${r.me ? 'me' : ''}">
+      <span class="pr-rank">${r.rank <= 3 ? ['🥇', '🥈', '🥉'][r.rank - 1] : r.rank}</span>
+      <div class="pr-row-body"><b>${escapeHtml(r.name)}${r.me ? ' (you)' : ''}</b><span>${r.wins} win${r.wins === 1 ? '' : 's'} of ${r.played} · ${r.winRate}%</span></div>
+    </div>`).join('') + (b.me && !b.top.some((r) => r.me) ? `<p class="chat-hint">You’re #${b.me.rank} this week (${b.me.wins} of ${b.me.played}).</p>` : '')
+    : '<p class="chat-hint">No settled calls yet this week — be the first on the board!</p>';
+}
+
+async function placePredict(direction) {
+  const p = predictState;
+  if (p.busy) return;
+  p.busy = true;
+  paintPredict();
+  try {
+    const r = await api('POST', '/predict', { coin: p.coin, direction, horizon: p.horizon }, { retries: 0 });
+    const x = r.prediction;
+    toast(`Called ${x.coin} ${direction.toUpperCase()} for ${prHorizonLabel(x.horizonMinutes)} at ${prPrice(x.entryPrice)}. Good luck! 🍀`, { tone: 'success' });
+    chatHaptic();
+    const mine = await api('GET', '/predict/mine', null, { retries: 0 }).catch(() => null);
+    if (mine) p.mine = mine;
+  } catch (e) {
+    toast(e.message || 'Could not place the call.', { tone: 'error' });
+    loadPredictMine();
+  } finally {
+    p.busy = false;
+    paintPredict();
+  }
+}
+
+function stopPredictPolling() {
+  clearInterval(predictState.poll); predictState.poll = null;
+  clearInterval(predictState.tick); predictState.tick = null;
+}
+
+function initPredictUi() {
+  const root = $('tab-predict');
+  if (!root || root.dataset.wired) return;
+  root.dataset.wired = '1';
+  $('prCoins').addEventListener('click', (e) => { const b = e.target.closest('[data-coin]'); if (b) { predictState.coin = b.dataset.coin; paintPredict(); } });
+  $('prHorizons').addEventListener('click', (e) => { const b = e.target.closest('[data-h]'); if (b) { predictState.horizon = Number(b.dataset.h); paintPredict(); } });
+  root.querySelector('.pr-filter').addEventListener('click', (e) => { const b = e.target.closest('[data-filter]'); if (b) { predictState.filter = b.dataset.filter; paintPredict(); } });
+  $('prUp').addEventListener('click', () => placePredict('up'));
+  $('prDown').addEventListener('click', () => placePredict('down'));
+  $('prEnergy').addEventListener('click', () => { if (typeof openShop === 'function') openShop(); });
+}
+
+function renderPredict() {
+  initPredictUi();
+  stopPredictPolling();
+  paintPredict();
+  if (!state.energy && state.token && typeof loadEnergy === 'function') loadEnergy().then(paintPredict).catch(() => {});
+  loadPredictMarkets().then(() => loadPredictMine());
+  loadPredictBoard();
+  // Prices and calls refresh every 30s — only while this screen is open and visible.
+  predictState.poll = setInterval(() => {
+    if (document.hidden || !$('tab-predict')?.classList.contains('active')) return;
+    loadPredictMarkets();
+    loadPredictMine();
+  }, 30000);
+  // A 1-second tick keeps the countdowns live without touching the network.
+  predictState.tick = setInterval(() => {
+    document.querySelectorAll('#prActive .pr-row[data-ends]').forEach((row) => {
+      const eta = row.querySelector('.pr-eta');
+      if (eta) eta.textContent = prRemaining(row.dataset.ends);
+    });
+  }, 1000);
 }
 
 function populateBookingPage() {
@@ -7713,10 +9749,11 @@ setTimeout(() => {
   if (window.enterApp && typeof window.enterApp === 'function') {
     const originalEnterApp = window.enterApp;
     window.enterApp = function() {
-      if (originalEnterApp) originalEnterApp.call(this);
+      const entering = originalEnterApp.apply(this, arguments);
       startWalletTimer();
       startNextEarnTimer();
       if (!window.newPagesPopulated) { populateNewPages(); window.newPagesPopulated = true; }
+      return entering;
     };
   }
   
