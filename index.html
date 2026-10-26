@@ -31,7 +31,7 @@
       <div class="topbar-right">
         <button class="refresh-btn sound-btn" id="soundBtn" title="Sound on/off" aria-label="Toggle sound">🔊</button>
         <button class="refresh-btn" id="refreshBtn" title="Refresh data" aria-label="Refresh">↻</button>
-        <button class="logout-btn" id="logoutBtn" title="Sign out of your account">Sign out</button>
+        <button class="logout-btn switch-btn" id="switchBtn" title="Switch between your accounts on this phone" aria-label="Switch account"><span aria-hidden="true">⇄</span> Switch</button>
       </div>
     </header>
 
@@ -43,6 +43,11 @@
         <p class="tagline">Mobile-first Proof of Stake. Stake, delegate &amp; govern — no mining rigs.</p>
       </div>
       <div class="card">
+        <div class="saved-accts" id="savedAccts" hidden>
+          <div class="saved-accts-title">Saved on this phone — tap to sign in, no code needed</div>
+          <div class="acct-list" id="savedAcctList"></div>
+          <div class="saved-accts-or">or use another email</div>
+        </div>
         <div class="auth-switch" role="tablist" aria-label="Sign in or sign up">
           <button class="auth-switch-btn active" id="authSignInBtn" data-mode="signin" role="tab" aria-selected="true">Sign in</button>
           <button class="auth-switch-btn" id="authSignUpBtn" data-mode="signup" role="tab" aria-selected="false">Sign up</button>
@@ -128,9 +133,10 @@
             </div>
           </div>
         </div>
-        <div class="action-row">
+        <div class="action-row action-row-3">
           <button class="btn primary pill-btn" id="sendBtn">↑ Send</button>
           <button class="btn ghost pill-btn" id="receiveBtn">↓ Receive</button>
+          <button class="btn ghost pill-btn" id="scanBtn" aria-label="Scan a wallet QR code">▣ Scan</button>
         </div>
 
         <div class="card next-earn-timer-card" id="walletTimerCard">
@@ -959,7 +965,7 @@
         </div>
         <ul class="disclosure">
           <li>Deltix Earn is completely separate from Arcade/Rewards — do both to earn more.</li>
-          <li>Pick a package: 100 Energy → 5 DLTX, 150 Energy → 7.5 DLTX or 200 Energy → 10 DLTX. Every package runs for 12 hours on the server clock.</li>
+          <li>Pick a package: 50 Energy → 5 DLTX, 75 Energy → 7.5 DLTX or 100 Energy → 10 DLTX. Every package runs for 12 hours on the server clock.</li>
           <li>A session's reward and Energy cost are locked in the moment you start it; only one session can run at a time.</li>
         </ul>
       </div>
@@ -1195,7 +1201,7 @@
         <div class="pr-hero">
           <div class="pr-hero-text">
             <div class="pr-hero-title">Call the market 📈</div>
-            <div class="pr-hero-sub">Pick a coin, call it UP or DOWN, and earn Energy when you’re right. Free to play — no stake.</div>
+            <div class="pr-hero-sub" id="prHeroSub">Pick a coin, choose how much Energy to stake, and call it UP or DOWN. Right call: you win. Wrong call: the stake is lost.</div>
           </div>
           <button class="chat-energy-chip" id="prEnergy" type="button" aria-label="Open Energy shop">⚡ —</button>
         </div>
@@ -1212,16 +1218,32 @@
             <div class="pr-price" id="prCoinPrice">—</div>
           </div>
           <div class="pr-chart" id="prChart"></div>
-          <a class="pr-tv-link" id="prTvLink" href="#" target="_blank" rel="noopener">Open full chart on TradingView ↗</a>
+          <div class="pr-chart-actions">
+            <button type="button" class="btn ghost small" id="prChartExpand" aria-label="Open the chart full screen">⤢ Full screen chart</button>
+            <a class="pr-tv-link" id="prTvLink" href="#" target="_blank" rel="noopener">Open on TradingView ↗</a>
+          </div>
         </div>
         <div class="pr-card pr-form">
           <div class="pr-label">How long?</div>
           <div class="pr-horizons" id="prHorizons" role="radiogroup" aria-label="Time frame"></div>
+          <div class="pr-stake" id="prStakeBox">
+            <div class="pr-label">How much Energy? <span class="pr-stake-range" id="prStakeRange"></span></div>
+            <div class="pr-stepper">
+              <button type="button" class="pr-step" id="prMinus" aria-label="Decrease stake">−</button>
+              <label class="pr-stake-field"><span aria-hidden="true">⚡</span>
+                <input id="prStake" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-label="Energy to stake" value="10" />
+              </label>
+              <button type="button" class="pr-step" id="prPlus" aria-label="Increase stake">+</button>
+            </div>
+            <div class="pr-quick" id="prQuick" role="group" aria-label="Quick amounts"></div>
+            <div class="pr-preview" id="prPreview" aria-live="polite"></div>
+          </div>
           <div class="pr-call">
             <button class="pr-btn up" id="prUp" type="button"><span class="pr-btn-ico" aria-hidden="true">▲</span><span>UP</span></button>
             <button class="pr-btn down" id="prDown" type="button"><span class="pr-btn-ico" aria-hidden="true">▼</span><span>DOWN</span></button>
           </div>
           <p class="pr-hint" id="prHint"></p>
+          <button type="button" class="btn ghost small pr-getenergy" id="prGetEnergy" hidden>⚡ Get more Energy</button>
         </div>
         <h3 class="pr-h">Your open calls</h3>
         <div class="pr-list" id="prActive"><p class="chat-hint">Loading…</p></div>
@@ -1229,7 +1251,15 @@
         <div class="pr-list" id="prRecent"></div>
         <h3 class="pr-h">This week’s top callers</h3>
         <div class="pr-list" id="prBoard"></div>
-        <p class="pr-disclaimer">For fun and status only — not financial advice. Energy is an in-app point with no cash value. Each call is priced and settled by Deltix from live market data (CoinGecko, Coinbase). Charts by TradingView.</p>
+        <p class="pr-disclaimer">Staking is optional and uses Energy only — an in-app point with no cash value. You can lose the Energy you stake. Not financial advice. Each call is priced and settled by Deltix from live market data (CoinGecko, Coinbase). Charts by TradingView.</p>
+      </div>
+
+      <div class="pr-fullchart" id="prFullChart" hidden role="dialog" aria-modal="true" aria-label="Full screen chart">
+        <div class="pr-fullchart-bar">
+          <b id="prFullTitle">Chart</b>
+          <button type="button" class="btn small" id="prFullClose">✕ Close</button>
+        </div>
+        <div class="pr-fullchart-body" id="prFullBody"></div>
       </div>
 
       <div class="modal-backdrop cp-modal" id="chatProfileModal" hidden>
@@ -1594,6 +1624,21 @@
     </div>
   </div>
 
+  <!-- Switch account sheet: accounts saved on this phone -->
+  <div class="modal-backdrop acct-modal" id="acctModal" hidden>
+    <div class="acct-card" role="dialog" aria-modal="true" aria-labelledby="acctTitle">
+      <div class="acct-head">
+        <h3 id="acctTitle">Switch account</h3>
+        <button class="acct-close" id="acctClose" type="button" aria-label="Close">✕</button>
+      </div>
+      <p class="cp-sub">Accounts saved on this phone. Tap one to switch — no email code needed.</p>
+      <div class="acct-list" id="acctList"></div>
+      <p class="hint" id="acctHint" aria-live="polite"></p>
+      <button class="btn primary" id="acctAdd" type="button">＋ Add another account</button>
+      <button class="btn ghost" id="logoutBtn" type="button" title="Sign out of this account and forget it on this phone">Sign out of this account</button>
+    </div>
+  </div>
+
   <!-- Delete account modal -->
   <div class="modal-backdrop" id="deleteModal" hidden>
     <div class="modal">
@@ -1627,12 +1672,47 @@
     </div>
   </div>
 
+  <!-- Receive: my wallet QR code -->
+  <div class="modal-backdrop" id="receiveModal" hidden>
+    <div class="modal qr-card" role="dialog" aria-modal="true" aria-labelledby="receiveTitle">
+      <h3 id="receiveTitle">Receive $DLTX</h3>
+      <p class="cp-sub">Ask the sender to scan this code in the Deltix app (Wallet → Send → Scan), or share your address.</p>
+      <div class="qr-box" id="receiveQr" role="img" aria-label="QR code of your wallet address"></div>
+      <div class="qr-addr" id="receiveAddr"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="receiveCopy" type="button">Copy address</button>
+        <button class="btn primary" id="receiveShare" type="button">Share</button>
+      </div>
+      <button class="btn ghost" id="receiveClose" type="button">Close</button>
+    </div>
+  </div>
+
+  <!-- Scan: read a wallet QR code with the camera -->
+  <div class="modal-backdrop" id="scanModal" hidden>
+    <div class="modal qr-card" role="dialog" aria-modal="true" aria-labelledby="scanTitle">
+      <h3 id="scanTitle">Scan wallet QR</h3>
+      <div class="scan-view" id="scanView">
+        <video id="scanVideo" playsinline muted></video>
+        <div class="scan-frame" aria-hidden="true"></div>
+      </div>
+      <p class="hint" id="scanHint" aria-live="polite">Point the camera at a Deltix wallet QR code.</p>
+      <div class="modal-actions">
+        <label class="btn ghost scan-file" for="scanFile">🖼 Pick image</label>
+        <button class="btn ghost" id="scanClose" type="button">Cancel</button>
+      </div>
+      <input type="file" id="scanFile" accept="image/*" hidden />
+    </div>
+  </div>
+
   <!-- Send modal -->
   <div class="modal-backdrop" id="sendModal" hidden>
     <div class="modal">
       <h3>Send $DLTX</h3>
       <label for="sendTo">Recipient address</label>
-      <input id="sendTo" type="text" placeholder="0x…" autocomplete="off" spellcheck="false" />
+      <div class="bot-input-row">
+        <input id="sendTo" type="text" placeholder="0x…" autocomplete="off" spellcheck="false" />
+        <button class="btn ghost" id="sendScanBtn" type="button" title="Scan a wallet QR code" aria-label="Scan a wallet QR code">▣ Scan</button>
+      </div>
       <label for="sendAmount">Amount ($DLTX)</label>
       <div class="bot-input-row">
         <input id="sendAmount" type="number" min="0" step="any" placeholder="0" />

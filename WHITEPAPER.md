@@ -156,7 +156,7 @@ mobile-first application where:
 | Referral activation | Referred user verifies and stakes at least 50 $DLTX of earned (non-bonus) value |
 | Referral reward lock | Transferable after 180 days; stakeable and spendable in-app immediately |
 | Ambassador threshold | 3 activated referrals + 500 $DLTX self-staked |
-| P2P Marketplace | DLTX/USDT (BNB Chain BEP-20), platform escrow, 1% buyer fee + 1% seller fee, 90-minute trade window |
+| P2P Marketplace | DLTX/USDT (BNB Chain BEP-20), platform escrow, 1% buyer fee + 1% seller fee, 30-minute trade window |
 | Governance | Deltix DAO, stake-weighted voting (1 staked $DLTX = 1 vote) |
 | DAO proposal threshold | 100 $DLTX self-staked; 7-day voting period; 100 voted $DLTX quorum |
 | Accounts per device | 4 |
@@ -439,7 +439,7 @@ trade is between two users, and Deltix's role is escrow agent and referee.
 
 ### 8.3 Trade Window and Cancellation
 
-Each order carries a **90-minute** payment window shown to both parties. A buyer may cancel any
+Each order carries a **30-minute** payment window shown to both parties. A buyer may cancel any
 time before verification. A seller may cancel only after the window has elapsed with no payment
 marked. A background sweeper returns escrow on orders that expire unpaid. Orders with a marked
 payment or an open dispute are **never** cancelled by the clock; only a moderator can resolve them.
@@ -642,7 +642,7 @@ Deltix publishes what is **actually running** separately from what is **planned*
 **P2P Marketplace**
 
 - DLTX/USDT marketplace on BNB Chain with platform escrow, on-chain USDT verification,
-  moderator approval, dual 1% fees with immutable commission snapshots, 90-minute trade window,
+  moderator approval, dual 1% fees with immutable commission snapshots, 30-minute trade window,
   automatic expiry of unpaid orders, moderator availability and reassignment, order history,
   dispute handling, moderator controls, and escrow reconciliation.
 

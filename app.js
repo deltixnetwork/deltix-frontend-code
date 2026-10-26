@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.18.0';
+const APP_VERSION = '1.19.0';
 const $ = (id) => document.getElementById(id);
 
 // Stable per-phone identifier sent with every request (X-Device-Id) — the
@@ -68,7 +68,10 @@ const globalChatState = {
 
 // Predict screen state — declared up here for the same reason: showTab() (which stops the Predict
 // timers) runs during boot, before the Predict section further down is evaluated.
-const predictState = { markets: null, mine: null, board: null, coin: 'BTC', horizon: 60, filter: 'all', busy: false, claiming: false, poll: null, tick: null, loaded: false, lastChart: '' };
+const predictState = { markets: null, mine: null, board: null, coin: 'BTC', horizon: 60, filter: 'all', busy: false, claiming: false, poll: null, tick: null, loaded: false, lastChart: '', stake: 10 };
+// Accounts saved on this phone so a member can switch without a new email code (declared early: showScreen() paints them).
+const SAVED_ACCOUNTS_KEY = 'dltx_accounts';
+const MAX_SAVED_ACCOUNTS = 4;   // the same cap as accounts per device
 
 // ---------- API helper ----------
 // Self-healing session: if the server ever reports the session/wallet as
@@ -186,6 +189,7 @@ async function api(method, path, body, { retries = method === 'GET' ? 3 : 0 } = 
       const puzzleModal = $('puzzleModal');
       if (puzzleModal && !puzzleModal.hidden && typeof window.closePuzzle === 'function') window.closePuzzle();
       if (state.token) {
+        if (typeof forgetAccount === 'function') forgetAccount(state.email);   // that login is dead; it needs a new code
         clearAccountSession();
         showScreen('screen-email');
         toast('Your session has expired — please sign in again.');
@@ -265,6 +269,8 @@ function onAppResumed() {
   lastResumeAt = Date.now();
   checkAppVersion();
   flushPendingCompletions();
+  // Back from the background: make sure a fresh rewarded ad is ready (a stale or failed one is replaced).
+  if (state.token && typeof preloadRewardedAd === 'function' && adsReady && !adState.playing) preloadRewardedAd();
   if (state.token && $('screen-main')?.classList.contains('active')) {
     refreshCurrentView({ silent: true });
     loadEarn();
@@ -354,6 +360,7 @@ function showScreen(id) {
   $('topbar').hidden = !authed;
   document.body.classList.toggle('authed', authed);
   closeSidenav();
+  if (id === 'screen-email' && typeof paintSavedLogin === 'function') paintSavedLogin();
   if (!authed) {
     document.body.classList.remove('has-ad-banner');
     const cap = window.Capacitor;
@@ -1033,6 +1040,7 @@ $('verifyBtn').addEventListener('click', async () => {
     localStorage.setItem('dltx_token', r.token);
     if (r.user && r.user.email) state.email = r.user.email;
     if (state.email) localStorage.setItem('dltx_email', state.email);
+    rememberAccount(state.email, r.token);
     toast(r.message || 'Welcome!');
     await enterApp();
   } catch (e) {
@@ -1044,10 +1052,155 @@ $('verifyBtn').addEventListener('click', async () => {
 });
 
 $('logoutBtn').addEventListener('click', () => {
+  forgetAccount(state.email);          // signing out forgets this account on this phone; the others stay saved
+  closeAcctSheet();
   clearAccountSession();
   showScreen('screen-email');
   setAuthMode('signin');
 });
+
+// ---------- Saved accounts: switch without an email code ----------
+// Each account's login token is kept on this phone only (the same place the active session already lives).
+// Switching checks the token with the server first; a dead one is dropped and that account needs a new code.
+function savedAccounts() {
+  try {
+    const list = JSON.parse(localStorage.getItem(SAVED_ACCOUNTS_KEY) || '[]');
+    return (Array.isArray(list) ? list : []).filter((a) => a && typeof a.email === 'string' && typeof a.token === 'string').slice(0, MAX_SAVED_ACCOUNTS);
+  } catch { return []; }
+}
+function writeSavedAccounts(list) {
+  try { localStorage.setItem(SAVED_ACCOUNTS_KEY, JSON.stringify(list.slice(0, MAX_SAVED_ACCOUNTS))); } catch { /* private mode */ }
+}
+const sameEmail = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+function rememberAccount(email, token) {
+  if (!email || !token) return;
+  const list = savedAccounts();
+  const i = list.findIndex((a) => sameEmail(a.email, email));
+  if (i >= 0) list[i] = { ...list[i], token };                          // same spot, fresh token
+  else {
+    if (list.length >= MAX_SAVED_ACCOUNTS) list.pop();                  // full: make room for the account just signed in
+    list.push({ email: String(email).trim().toLowerCase(), token, at: Date.now() });
+  }
+  writeSavedAccounts(list);
+}
+function forgetAccount(email) {
+  if (!email) return;
+  writeSavedAccounts(savedAccounts().filter((a) => !sameEmail(a.email, email)));
+}
+
+function acctRowHtml(a, { current = false, removable = false } = {}) {
+  const initial = escapeHtml((a.email || '?').trim().charAt(0).toUpperCase());
+  return `<div class="acct-row ${current ? 'current' : ''}">
+    <button type="button" class="acct-pick" data-email="${escapeHtml(a.email)}" ${current ? 'aria-current="true"' : ''}>
+      <span class="acct-av" aria-hidden="true">${initial}</span>
+      <span class="acct-meta"><b>${escapeHtml(a.email)}</b><small>${current ? '✓ Signed in now' : 'Tap to switch'}</small></span>
+    </button>
+    ${removable ? `<button type="button" class="acct-remove" data-remove="${escapeHtml(a.email)}" aria-label="Remove ${escapeHtml(a.email)} from this phone" title="Remove from this phone">✕</button>` : ''}
+  </div>`;
+}
+
+function paintAcctSheet() {
+  const list = savedAccounts();
+  const box = $('acctList');
+  if (!box) return;
+  box.innerHTML = list.length
+    ? list.map((a) => { const cur = state.token && a.token === state.token; return acctRowHtml(a, { current: cur, removable: !cur }); }).join('')
+    : '<p class="chat-hint">No other accounts saved on this phone yet.</p>';
+  const add = $('acctAdd');
+  if (add) {
+    const full = list.length >= MAX_SAVED_ACCOUNTS;
+    add.disabled = full;
+    $('acctHint').textContent = full ? `This phone holds up to ${MAX_SAVED_ACCOUNTS} accounts. Remove one to add another.` : '';
+  }
+}
+function openAcctSheet() {
+  if (state.token && state.email) rememberAccount(state.email, state.token);   // make sure the active account is in the list
+  paintAcctSheet();
+  $('acctModal').hidden = false;
+}
+function closeAcctSheet() { const m = $('acctModal'); if (m) m.hidden = true; }
+
+// The sign-in screen lists saved accounts too, so signing back in is one tap.
+function paintSavedLogin() {
+  const box = $('savedAccts');
+  if (!box) return;
+  const list = savedAccounts();
+  box.hidden = list.length === 0;
+  $('savedAcctList').innerHTML = list.map((a) => acctRowHtml(a)).join('');
+}
+
+let switchingAccount = false;
+async function switchAccount(email) {
+  if (switchingAccount) return;
+  const target = savedAccounts().find((a) => sameEmail(a.email, email));
+  if (!target) return;
+  if (state.token && target.token === state.token) { closeAcctSheet(); return; }
+  switchingAccount = true;
+  const hint = $('acctHint');
+  const say = (msg) => { if (hint) hint.textContent = msg; };
+  say('Switching…');
+  try {
+    // Check the saved token directly (not through api(), whose 401 handling would sign the CURRENT account out).
+    let status = 0;
+    try {
+      const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+      const timer = ctrl ? setTimeout(() => ctrl.abort(), 12000) : null;
+      const res = await fetch(API + '/energy', {
+        headers: { 'Content-Type': 'application/json', 'X-Deltix-Client': 'deltix-app', 'X-App-Version': APP_VERSION, 'X-Device-Id': getDeviceId(), Authorization: 'Bearer ' + target.token },
+        ...(ctrl ? { signal: ctrl.signal } : {}),
+      });
+      if (timer) clearTimeout(timer);
+      status = res.status;
+    } catch { status = -1; }
+    if (status === -1 || status >= 500 || status === 429) { say('Could not reach Deltix. Check your connection and try again — you are still signed in.'); return; }
+    if (status === 401 || status === 403 || status === 404 || status === 423) {
+      forgetAccount(target.email);
+      paintAcctSheet(); paintSavedLogin();
+      say(`${target.email} needs a new email code. Use “Add another account” to sign in again.`);
+      toast('That account’s saved login has expired. Sign in with a code to add it back.', { tone: 'error' });
+      return;
+    }
+    if (state.token && state.email) rememberAccount(state.email, state.token);
+    clearAccountSession();                                   // wipes every on-screen trace of the previous account
+    state.token = target.token;
+    state.email = target.email;
+    localStorage.setItem('dltx_token', target.token);
+    localStorage.setItem('dltx_email', target.email);
+    closeAcctSheet();
+    say('');
+    toast(`Switched to ${target.email}`, { tone: 'success' });
+    await enterApp();
+  } finally {
+    switchingAccount = false;
+  }
+}
+
+function addAnotherAccount() {
+  if (savedAccounts().length >= MAX_SAVED_ACCOUNTS && !(state.token && savedAccounts().some((a) => a.token === state.token))) return;
+  if (state.token && state.email) rememberAccount(state.email, state.token);
+  closeAcctSheet();
+  clearAccountSession();            // saved accounts stay; only the active session is released
+  showScreen('screen-email');
+  setAuthMode('signin');
+  toast('Enter the email of the account you want to add.', { tone: 'info' });
+}
+
+$('switchBtn')?.addEventListener('click', openAcctSheet);
+$('acctClose')?.addEventListener('click', closeAcctSheet);
+$('acctAdd')?.addEventListener('click', addAnotherAccount);
+$('acctModal')?.addEventListener('click', (e) => { if (e.target === e.currentTarget) closeAcctSheet(); });
+$('acctList')?.addEventListener('click', async (e) => {
+  const rm = e.target.closest('[data-remove]');
+  if (rm) {
+    const email = rm.dataset.remove;
+    const okGo = await askConfirm({ title: 'Remove from this phone?', message: `${email} will be signed out here. You will need a new email code to sign in to it again.`, confirmText: 'Remove' });
+    if (okGo) { forgetAccount(email); paintAcctSheet(); }
+    return;
+  }
+  const pick = e.target.closest('[data-email]');
+  if (pick) switchAccount(pick.dataset.email);
+});
+$('savedAcctList')?.addEventListener('click', (e) => { const pick = e.target.closest('[data-email]'); if (pick) switchAccount(pick.dataset.email); });
 
 // ---------- Account deletion (required by Apple 5.1.1(v) / Play policy) ----------
 $('deleteAccountBtn').addEventListener('click', () => {
@@ -1069,6 +1222,7 @@ $('confirmDelete').addEventListener('click', async () => {
   try {
     await api('DELETE', '/auth/account');
     $('deleteModal').hidden = true;
+    forgetAccount(state.email);
     clearAccountSession();
     showScreen('screen-email');
     setAuthMode('signup');
@@ -1146,6 +1300,8 @@ async function enterApp() {
     state.email = emailFromToken(state.token);
     if (state.email) localStorage.setItem('dltx_email', state.email);
   }
+  // Sessions from before account switching existed join the saved list the first time they open.
+  if (state.token && state.email) rememberAccount(state.email, state.token);
   renderProfile();
   // Start the shared earn clock; the server session is fetched right after
   // login so the Wallet card and the Earn page show the same remaining time.
@@ -1894,9 +2050,203 @@ $('sendMaxBtn')?.addEventListener('click', () => {
 });
 $('receiveBtn').addEventListener('click', () => {
   if (!state.address) return;
-  navigator.clipboard?.writeText(state.address);
-  toast('Your address was copied — share it to receive $DLTX');
+  openReceiveModal();
 });
+
+// ---------- Wallet QR codes: show mine, scan someone else's ----------
+// The code holds only the plain 0x address, so any wallet app can read it too. The two small libraries
+// (vendor/) load on first use so they cost nothing at startup.
+const loadedScripts = {};
+function loadScriptOnce(src) {
+  if (!loadedScripts[src]) {
+    loadedScripts[src] = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = () => { delete loadedScripts[src]; s.remove(); reject(new Error(`Could not load ${src}`)); };
+      document.head.appendChild(s);
+    });
+  }
+  return loadedScripts[src];
+}
+
+/**
+ * Pulls ONE wallet address out of scanned text. Accepts a bare address or a payment link such as
+ * "deltix:0x…" or "ethereum:0x…@56". A longer hex string (a transaction hash or a private key) must never be
+ * mistaken for an address, and two different addresses in one code are refused as ambiguous.
+ */
+function addressFromQr(text) {
+  const found = new Map();   // lower-case form -> as written, so the same address twice counts once
+  const re = /(?:^|[^0-9a-zA-Z])(0x[a-fA-F0-9]{40})(?![0-9a-zA-Z])/g;
+  let m;
+  while ((m = re.exec(String(text || ''))) !== null) found.set(m[1].toLowerCase(), m[1]);
+  return found.size === 1 ? [...found.values()][0] : null;
+}
+
+async function openReceiveModal() {
+  const addr = state.address;
+  if (!addr) return;
+  $('receiveAddr').textContent = addr;
+  const box = $('receiveQr');
+  box.innerHTML = '<p class="chat-hint">Preparing your code…</p>';
+  $('receiveModal').hidden = false;
+  $('receiveShare').hidden = typeof navigator.share !== 'function';
+  try {
+    await loadScriptOnce('vendor/qrcode.js');
+    const qr = qrcode(0, 'M');
+    qr.addData(addr);
+    qr.make();
+    // Dark modules on a white card with a quiet border, whatever the theme, so every scanner can read it.
+    box.innerHTML = qr.createSvgTag({ cellSize: 6, margin: 4, scalable: true });
+    const svg = box.querySelector('svg');
+    if (svg) { svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('shape-rendering', 'crispEdges'); }
+  } catch {
+    box.innerHTML = '<p class="chat-hint">The code could not be drawn. You can still copy your address.</p>';
+  }
+}
+$('receiveClose')?.addEventListener('click', () => { $('receiveModal').hidden = true; });
+/** Copies text even where the browser blocks the clipboard API (falls back to a hidden field). Returns true on success. */
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* try the older way */ }
+  try {
+    const t = document.createElement('textarea');
+    t.value = text; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;top:-100px;opacity:0';
+    document.body.appendChild(t); t.select();
+    const ok = document.execCommand('copy');
+    t.remove();
+    return ok;
+  } catch { return false; }
+}
+$('receiveCopy')?.addEventListener('click', async () => {
+  if (!state.address) return;
+  const ok = await copyText(state.address);
+  toast(ok ? 'Your address was copied — share it to receive $DLTX' : 'Could not copy automatically. Press and hold the address to copy it.', { tone: ok ? 'success' : 'error' });
+});
+$('receiveShare')?.addEventListener('click', async () => {
+  if (!state.address || typeof navigator.share !== 'function') return;
+  try { await navigator.share({ title: 'My Deltix wallet', text: state.address }); } catch { /* cancelled */ }
+});
+
+const scanState = { stream: null, timer: 0, onAddress: null, lastText: '', lastAt: 0, canvas: null };
+function setScanHint(msg, error = false) {
+  const h = $('scanHint');
+  if (!h) return;
+  h.textContent = msg;
+  h.className = error ? 'hint error' : 'hint';
+}
+function stopScanner() {
+  clearTimeout(scanState.timer); scanState.timer = 0;
+  if (scanState.stream) { scanState.stream.getTracks().forEach((t) => { try { t.stop(); } catch { /* already stopped */ } }); scanState.stream = null; }
+  const v = $('scanVideo');
+  if (v) { try { v.pause(); } catch { /* none */ } v.srcObject = null; }
+}
+/** Closes the scanner if it is open (used by Back too). Returns true when it was open. */
+function closeScanner() {
+  const m = $('scanModal');
+  if (!m || m.hidden) return false;
+  stopScanner();
+  m.hidden = true;
+  return true;
+}
+function finishScan(address) {
+  const cb = scanState.onAddress;
+  closeScanner();
+  if (cb) cb(address);
+}
+function handleScannedText(text) {
+  const now = Date.now();
+  if (text === scanState.lastText && now - scanState.lastAt < 1800) return false;   // the same frame again: don't flash the message
+  scanState.lastText = text; scanState.lastAt = now;
+  const addr = addressFromQr(text);
+  if (!addr) { setScanHint('That QR code does not hold a wallet address. Try another one.', true); return false; }
+  if (state.address && addr.toLowerCase() === state.address.toLowerCase()) { setScanHint('That is your own wallet address. Scan someone else’s code.', true); return false; }
+  finishScan(addr);
+  return true;
+}
+function decodeFrame(source, w, h, tries = 'dontInvert') {
+  if (!scanState.canvas) scanState.canvas = document.createElement('canvas');
+  const c = scanState.canvas;
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(source, 0, 0, w, h);
+  const img = ctx.getImageData(0, 0, w, h);
+  const hit = window.jsQR ? window.jsQR(img.data, w, h, { inversionAttempts: tries }) : null;
+  return hit ? hit.data : null;
+}
+function scanTick() {
+  const v = $('scanVideo');
+  if (!scanState.stream || !v || $('scanModal').hidden) return;
+  if (v.readyState >= 2 && v.videoWidth) {
+    const scale = Math.min(1, 640 / Math.max(v.videoWidth, v.videoHeight));   // small frames keep low-end phones smooth
+    const text = decodeFrame(v, Math.round(v.videoWidth * scale), Math.round(v.videoHeight * scale));
+    if (text && handleScannedText(text)) return;
+  }
+  scanState.timer = setTimeout(scanTick, 120);
+}
+async function openScanner(onAddress) {
+  scanState.onAddress = onAddress;
+  scanState.lastText = '';
+  $('scanModal').hidden = false;
+  setScanHint('Point the camera at a Deltix wallet QR code.');
+  $('scanView').hidden = false;
+  try { await loadScriptOnce('vendor/jsQR.js'); } catch { $('scanView').hidden = true; setScanHint('The scanner could not load. Check your connection, or paste the address instead.', true); return; }
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+    $('scanView').hidden = true;
+    setScanHint('The camera is not available here. Use “Pick image”, or paste the address.', true);
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    if ($('scanModal').hidden) { stream.getTracks().forEach((t) => t.stop()); return; }   // closed while asking for permission
+    scanState.stream = stream;
+    const v = $('scanVideo');
+    v.srcObject = stream;
+    await v.play().catch(() => {});
+    scanTick();
+  } catch (e) {
+    $('scanView').hidden = true;
+    const denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
+    setScanHint(denied
+      ? 'Camera access is off. Allow the camera for Deltix in your phone settings, or use “Pick image”.'
+      : e && e.name === 'NotFoundError' ? 'No camera was found. Use “Pick image”, or paste the address.' : 'The camera could not start. Use “Pick image”, or paste the address.', true);
+  }
+}
+$('scanClose')?.addEventListener('click', closeScanner);
+$('scanModal')?.addEventListener('click', (e) => { if (e.target === e.currentTarget) closeScanner(); });
+$('scanFile')?.addEventListener('change', async (e) => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    await loadScriptOnce('vendor/jsQR.js');
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+    URL.revokeObjectURL(url);
+    const scale = Math.min(1, 1400 / Math.max(img.naturalWidth, img.naturalHeight));
+    const text = decodeFrame(img, Math.max(1, Math.round(img.naturalWidth * scale)), Math.max(1, Math.round(img.naturalHeight * scale)), 'attemptBoth');
+    if (!text) { setScanHint('No QR code was found in that picture. Try a clearer one.', true); return; }
+    scanState.lastText = '';
+    handleScannedText(text);
+  } catch { setScanHint('That picture could not be read.', true); }
+});
+// The camera must never stay on in the background.
+document.addEventListener('visibilitychange', () => { if (document.hidden && scanState.stream) closeScanner(); });
+
+function openSendWithAddress(addr) {
+  $('sendBtn').click();
+  $('sendTo').value = addr;
+  $('sendHint').className = 'hint';
+  toast('Address scanned — enter the amount to send.', { tone: 'success' });
+  setTimeout(() => $('sendAmount')?.focus(), 150);
+}
+$('scanBtn')?.addEventListener('click', () => openScanner(openSendWithAddress));
+$('sendScanBtn')?.addEventListener('click', () => openScanner((addr) => {
+  $('sendTo').value = addr;
+  $('sendHint').className = 'hint';
+  toast('Address scanned.', { tone: 'success' });
+  $('sendAmount')?.focus();
+}));
 $('cancelSend').addEventListener('click', () => ($('sendModal').hidden = true));
 $('sendAmount').addEventListener('input', updateSendPreview);
 $('confirmSend').addEventListener('click', async () => {
@@ -2856,7 +3206,10 @@ let rewardedLoadPromise = null;
 const AD_LOAD_TIMEOUT_MS = 15000;   // an ad that has not loaded by now is treated as unavailable
 const AD_SHOW_TIMEOUT_MS = 12000;   // …and one that has not appeared after show() is treated as failed
 const AD_HARD_TIMEOUT_MS = 5 * 60000; // nothing may keep the UI waiting longer than this
-const adState = { status: 'idle', failures: 0, retryTimer: null, nonce: null, session: null, preparedWithSsv: false, playing: false, lastError: '' };
+const adState = { status: 'idle', failures: 0, retryTimer: null, nonce: null, session: null, preparedWithSsv: false, playing: false, showing: false, preparedAt: 0, lastError: '' };
+const AD_STALE_MS = 50 * 60000;     // a loaded rewarded ad expires after about an hour; reload before then
+const AD_REWARD_GRACE_MS = 3000;    // the reward event can trail the "closed" event on slow phones
+const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 const withTimeout = (promise, ms, label) => new Promise((resolve, reject) => {
   const t = setTimeout(() => reject(new Error(label)), ms);
   Promise.resolve(promise).then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
@@ -2943,7 +3296,12 @@ async function ensureAdSession() {
 /** Fetches the next rewarded ad in the background; opt-in taps fall back to
  *  a fresh load only when the preload hasn't landed yet. */
 function preloadRewardedAd() {
-  if (!ADS_ENABLED || rewardedLoaded) return Promise.resolve(rewardedLoaded);
+  if (!ADS_ENABLED) return Promise.resolve(rewardedLoaded);
+  // A loaded ad that has been sitting for too long would fail to show; throw it away and fetch a fresh one.
+  if (rewardedLoaded && Date.now() - adState.preparedAt > AD_STALE_MS) { rewardedLoaded = false; adState.nonce = null; }
+  if (rewardedLoaded) return Promise.resolve(true);
+  // Never start a second load while an ad is on screen: it can replace the ad being shown and lose its reward.
+  if (adState.showing) return Promise.resolve(false);
   if (rewardedLoadPromise) return rewardedLoadPromise;
   const cap = window.Capacitor;
   const AdMob = cap && cap.Plugins && cap.Plugins.AdMob;
@@ -2958,6 +3316,7 @@ function preloadRewardedAd() {
     await withTimeout(AdMob.prepareRewardVideoAd(options), AD_LOAD_TIMEOUT_MS, 'load-timeout');
     adState.nonce = nonce;
     adState.preparedWithSsv = Boolean(withSsv);
+    adState.preparedAt = Date.now();
     adState.status = 'ready';
     adState.failures = 0;
     rewardedLoaded = true;
@@ -4891,7 +5250,7 @@ function p2pRenderSteps(status) {
 
 // Payment window from the SERVER deadline (the same clock the cancel/timeout
 // rules use) — no client-side guess. Both parties see the same countdown.
-function p2pStartPayTimer(o, { role = 'buyer', moderatorCode = null, windowMinutes = 90 } = {}) {
+function p2pStartPayTimer(o, { role = 'buyer', moderatorCode = null, windowMinutes = 30 } = {}) {
   const el = $('p2pPayTimer');
   const deadline = new Date(o.paymentDeadlineAt || (new Date(o.createdAt).getTime() + windowMinutes * 60 * 1000)).getTime();
   const meta = `<span class="p2p-paytimer-meta">${moderatorCode ? `Moderator <b>${escapeHtml(moderatorCode)}</b> · ` : ''}Escrow <b>${fmt(o.amountDltx)} DLTX secured</b></span>`;
@@ -7003,6 +7362,7 @@ async function playRewardedAdDetailed() {
 
   return new Promise((resolve) => {
     let earned = false;
+    let dismissed = false;
     let settled = false;
     const handles = [];
     const timers = [];
@@ -7018,27 +7378,32 @@ async function playRewardedAdDetailed() {
       rewardedLoaded = false;
       adState.nonce = null;
       adState.playing = false;
+      adState.showing = false;
       resolve(result(reason === 'earned', reason, reason === 'earned' ? nonce : null));
-      preloadRewardedAd();   // line up the next ad straight away
+      // Line up the next ad, but let the ad screen finish closing first.
+      setTimeout(() => { if (!adState.playing) preloadRewardedAd(); }, 1200);
     };
 
     (async () => {
       try {
         // Listener registration is asynchronous; install all handlers before
         // loading/showing so quick callbacks cannot be lost.
-        handles.push(await AdMob.addListener('onRewardedVideoAdReward', () => { earned = true; }));
+        handles.push(await AdMob.addListener('onRewardedVideoAdReward', () => { earned = true; if (dismissed) finish('earned'); }));
         handles.push(await AdMob.addListener('onRewardedVideoAdShowed', () => { clearTimeout(showTimer); }));
-        // Dismissal is the end of the ad. A short grace lets a late reward event land first.
+        // Dismissal is the end of the ad. A grace period lets a late reward event land first.
         handles.push(await AdMob.addListener('onRewardedVideoAdDismissed', () => {
-          if (earned) finish('earned'); else later(() => finish(earned ? 'earned' : 'closed'), 700);
+          dismissed = true;
+          if (earned) finish('earned'); else later(() => finish(earned ? 'earned' : 'closed'), AD_REWARD_GRACE_MS);
         }));
         handles.push(await AdMob.addListener('onRewardedVideoAdFailedToShow', () => finish('failed_to_show')));
-        handles.push(await AdMob.addListener('onRewardedVideoAdFailedToLoad', () => { if (!rewardedLoaded) finish('unavailable'); }));
+        // A failed *load* is reported through the load call itself (below). It must never end an ad that is already playing.
+        handles.push(await AdMob.addListener('onRewardedVideoAdFailedToLoad', () => { adState.lastError = 'no-fill'; }));
         if (settled) return;
         later(() => finish(earned ? 'earned' : 'timeout'), AD_HARD_TIMEOUT_MS);
 
-        // Reuse an in-flight preload rather than starting a competing load.
+        // Reuse an in-flight preload rather than starting a competing load. One quick second try covers a passing no-fill.
         let ready = rewardedLoaded || (await preloadRewardedAd());
+        if (!ready && !settled && navigator.onLine !== false) { await sleepMs(1500); ready = await preloadRewardedAd(); }
         // When the server asks for proof of the ad, the ad must have been loaded WITH it.
         const session = await ensureAdSession();
         const needsSsv = session.mode && session.mode !== 'off';
@@ -7047,9 +7412,10 @@ async function playRewardedAdDetailed() {
         if (!ready) { finish(adState.lastError === 'load-timeout' ? 'timeout' : 'unavailable'); return; }
 
         rewardedLoaded = false;
+        adState.showing = true;
         showTimer = later(() => finish('failed_to_show'), AD_SHOW_TIMEOUT_MS);
         const item = await AdMob.showRewardVideoAd();
-        if (item) earned = true; // the plugin resolves only when the user actually earned the reward
+        if (item) { earned = true; if (dismissed) finish('earned'); } // the plugin resolves only when the user actually earned the reward
       } catch (error) {
         console.warn('[ads] rewarded ad could not be shown', error);
         finish('failed_to_show');
@@ -7339,6 +7705,8 @@ function closeTransientOverlay() {
 
 function closeTopOverlay() {
   if (closeTransientOverlay()) return true;
+  if (typeof closeScanner === 'function' && closeScanner()) return true;
+  if (typeof closePredictFullChart === 'function' && closePredictFullChart()) return true;
   for (const id of ['p2pImgModal', 'p2pTraderModal', 'p2pEditModal', 'swapModal', 'dappModal', 'stakeModal', 'edDelegateModal', 'edUndelegateModal', 'sendModal', 'deleteModal', 'p2pCreateModal', 'p2pOfferModal', 'p2pOrderModal']) {
     const el = document.getElementById(id);
     if (el && !el.hidden) {
@@ -7503,8 +7871,8 @@ function populateSocialMediaPage() {
     { name: 'Discord', icon: '🔵', desc: 'Community Chat', action: 'openDiscord', active: true },
     { name: 'Telegram', icon: '✈️', desc: 'Official Channel', action: 'openTelegram', active: true },
     { name: 'WhatsApp', icon: '💬', desc: 'Message Us', action: 'openWhatsApp', active: true },
-    { name: 'YouTube', icon: '📺', desc: 'Coming Soon', action: null, active: false },
-    { name: 'Instagram', icon: '📷', desc: 'Coming Soon', action: null, active: false },
+    { name: 'YouTube', icon: '📺', desc: '@DigitalGold22', action: 'openYouTube', active: true },
+    { name: 'Instagram', icon: '📷', desc: '@anet_deltix', action: 'openInstagram', active: true },
   ];
   
   const communityGrid = $('communitySocialGrid');
@@ -7530,6 +7898,8 @@ const OFFICIAL_LINKS = {
   discord: 'https://discord.com/invite/xw8k3cgREy',
   whatsapp: 'https://wa.me/19253007638',
   telegram: 'https://t.me/A_Network_Community',
+  youtube: 'https://www.youtube.com/@DigitalGold22',
+  instagram: 'https://www.instagram.com/anet_deltix',
   xProfile: (username) => `https://x.com/${username}`,
 };
 
@@ -7694,6 +8064,16 @@ function openTelegram() {
 // WhatsApp - official Deltix contact, +1 (925) 300-7638
 function openWhatsApp() {
   openExternalLink(OFFICIAL_LINKS.whatsapp);
+}
+
+// YouTube - the YouTube app when installed, browser otherwise
+function openYouTube() {
+  openExternalLink(OFFICIAL_LINKS.youtube);
+}
+
+// Instagram - straight to the profile: the Instagram app when installed, browser otherwise
+function openInstagram() {
+  openExternalLink(OFFICIAL_LINKS.instagram);
 }
 
 function openChat() {
@@ -9303,7 +9683,8 @@ function paintPredictChart() {
   if (!box || !coin) return;
   const dark = !!document.documentElement.dataset.dark;
   const symbol = coin.tv;
-  const key = `${symbol}|${dark}`;
+  const interval = PR_CHART_INTERVAL[predictState.horizon] || '60';
+  const key = `${symbol}|${dark}|${interval}`;
   const link = $('prTvLink');
   if (link) link.href = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`;
   if (predictState.lastChart === key && box.querySelector('iframe')) return;
@@ -9314,15 +9695,63 @@ function paintPredictChart() {
     box.querySelector('button').addEventListener('click', () => { predictState.chartOn = true; predictState.lastChart = ''; paintPredictChart(); });
     return;
   }
-  const src = `https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(symbol)}&interval=60&theme=${dark ? 'dark' : 'light'}&style=1&locale=en&hide_side_toolbar=1&allow_symbol_change=0&save_image=0&hideideas=1&withdateranges=1&timezone=Etc%2FUTC`;
-  box.innerHTML = `<iframe title="${escapeHtml(coin.name)} live chart" src="${src}" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>
+  box.innerHTML = `<iframe title="${escapeHtml(coin.name)} live chart" src="${prChartSrc(symbol, dark, interval)}" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>
     <div class="pr-chart-fallback" hidden>The live chart needs an internet connection.</div>`;
   if (navigator.onLine === false) box.querySelector('.pr-chart-fallback').hidden = false;
 }
 
+// A clean chart: no side or top toolbar, legend or volume bars, and the candle size follows the time frame.
+const PR_CHART_INTERVAL = { 15: '5', 30: '15', 60: '30', 300: '60', 1440: '240' };
+function prChartSrc(symbol, dark, interval) {
+  return `https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(symbol)}&interval=${interval}&theme=${dark ? 'dark' : 'light'}&style=1&locale=en`
+    + '&hide_side_toolbar=1&hide_top_toolbar=1&hide_legend=1&hidevolume=1&allow_symbol_change=0&save_image=0&hideideas=1&withdateranges=0&timezone=Etc%2FUTC';
+}
+
+function openPredictFullChart() {
+  const coin = prCoin(predictState.coin);
+  const box = $('prFullChart');
+  if (!coin || !box) return;
+  const dark = !!document.documentElement.dataset.dark;
+  $('prFullTitle').textContent = `${coin.name} · ${coin.id}`;
+  $('prFullBody').innerHTML = `<iframe title="${escapeHtml(coin.name)} live chart, full screen" src="${prChartSrc(coin.tv, dark, PR_CHART_INTERVAL[predictState.horizon] || '60')}" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>`;
+  box.hidden = false;
+  document.body.classList.add('pr-full-open');
+}
+function closePredictFullChart() {
+  const box = $('prFullChart');
+  if (!box || box.hidden) return false;
+  box.hidden = true;
+  $('prFullBody').innerHTML = '';
+  document.body.classList.remove('pr-full-open');
+  return true;
+}
+
+// ----- staking -----
+const prStakeCfg = () => { const s = predictState.markets && predictState.markets.stakes; return s && s.enabled ? s : null; };
+const prPayout = (stake, cfg) => Math.max(stake + 1, Math.round((stake * cfg.payoutPct) / 100));   // same rule as the server
+function prClampStake(v) {
+  const c = prStakeCfg();
+  const n = Math.floor(Number(v));
+  const lo = c ? c.min : 1;
+  const hi = c ? c.max : 100;
+  if (!Number.isFinite(n)) return lo;
+  return Math.min(hi, Math.max(lo, n));
+}
+// Small steps near the bottom, bigger ones higher up; going up then down returns to the same value.
+function prStepStake(v, dir) {
+  const step = dir > 0 ? (v >= 50 ? 10 : v >= 10 ? 5 : 1) : (v > 50 ? 10 : v > 10 ? 5 : 1);
+  return prClampStake(v + dir * step);
+}
+function prSetStake(v, { repaint = true } = {}) {
+  predictState.stake = prClampStake(v);
+  try { localStorage.setItem('dltx_pr_stake', String(predictState.stake)); } catch { /* private mode */ }
+  if (repaint) paintPredict();
+}
+const prEnergyNow = () => (state.energy && typeof state.energy.energy === 'number' ? state.energy.energy : null);
+
 function paintPredict() {
   const p = predictState;
-  const energy = state.energy && typeof state.energy.energy === 'number' ? state.energy.energy : null;
+  const energy = prEnergyNow();
   const chip = $('prEnergy');
   if (chip) chip.textContent = energy == null ? '⚡ —' : `⚡ ${energy.toLocaleString()}`;
 
@@ -9356,10 +9785,35 @@ function paintPredict() {
     paintPredictChart();
   }
 
+  const sc = prStakeCfg();
+  if (p.markets && !p.horizonChosen && !p.markets.horizons.some((x) => x.minutes === p.horizon) && p.markets.horizons.length) p.horizon = p.markets.horizons[0].minutes;
+
   // time frames
   const hz = $('prHorizons');
   if (hz && p.markets) {
-    hz.innerHTML = p.markets.horizons.map((h) => `<button type="button" class="pr-horizon ${h.minutes === p.horizon ? 'active' : ''}" data-h="${h.minutes}" role="radio" aria-checked="${h.minutes === p.horizon}"><b>${h.label}</b><span>+${h.reward} ⚡</span></button>`).join('');
+    hz.innerHTML = p.markets.horizons.map((h) => `<button type="button" class="pr-horizon ${h.minutes === p.horizon ? 'active' : ''}" data-h="${h.minutes}" role="radio" aria-checked="${h.minutes === p.horizon}"><b>${h.label}</b>${sc ? '' : `<span>+${h.reward} ⚡</span>`}</button>`).join('');
+  }
+
+  // stake picker
+  const stakeBox = $('prStakeBox');
+  if (stakeBox) stakeBox.hidden = !sc;
+  const heroSub = $('prHeroSub');
+  if (heroSub) heroSub.textContent = sc
+    ? 'Pick a coin, choose how much Energy to stake, and call it UP or DOWN. Right call: you win. Wrong call: the stake is lost.'
+    : 'Pick a coin, call it UP or DOWN, and earn Energy when you’re right. Free to play — no stake.';
+  if (sc) {
+    const input = $('prStake');
+    if (input && document.activeElement !== input) input.value = String(p.stake);
+    $('prStakeRange').textContent = `${sc.min}–${sc.max} ⚡`;
+    $('prMinus').disabled = p.stake <= sc.min || p.busy;
+    $('prPlus').disabled = p.stake >= sc.max || p.busy;
+    const quickMax = Math.max(sc.min, Math.min(sc.max, energy == null ? sc.max : Math.floor(energy)));
+    const quick = [5, 10, 25, 50].filter((v) => v >= sc.min && v <= sc.max);
+    $('prQuick').innerHTML = quick.map((v) => `<button type="button" class="pr-chipq ${p.stake === v ? 'active' : ''}" data-q="${v}">${v}</button>`).join('')
+      + `<button type="button" class="pr-chipq ${p.stake === quickMax && !quick.includes(quickMax) ? 'active' : ''}" data-q="${quickMax}">Max ${quickMax}</button>`;
+    const payout = prPayout(prClampStake(p.stake), sc);
+    const shown = prClampStake(p.stake);
+    $('prPreview').innerHTML = `<span class="pr-win">Win <b>+${payout - shown} ⚡</b> <small>(${payout} back)</small></span><span class="pr-lose">Lose <b>−${shown} ⚡</b></span>`;
   }
 
   // call buttons + the reason they might be unavailable
@@ -9367,15 +9821,27 @@ function paintPredict() {
   const used = mine ? mine.used : 0;
   const perDay = (p.markets && p.markets.perDay) || (mine && mine.perDay) || 5;
   const open = mine ? mine.active.find((a) => a.coin === p.coin) : null;
+  const short = sc && energy != null && energy < p.stake ? p.stake - energy : 0;
+  const badStake = sc && !(Number.isInteger(p.stake) && p.stake >= sc.min && p.stake <= sc.max);
   let why = '';
   if (!p.markets || !p.markets.pricesAvailable || !coin || coin.price == null) why = 'Waiting for live prices…';
   else if (used >= perDay) why = `You’ve used all ${perDay} calls for today. New ones open at 00:00 UTC.`;
   else if (open) why = `You already have an open ${p.coin} call — it ends in ${prRemaining(open.endsAt)}.`;
+  else if (badStake) why = `Choose between ${sc.min} and ${sc.max} Energy.`;
+  else if (short) why = `You have ⚡ ${fmt(energy)} but this call needs ⚡ ${fmt(p.stake)} — ${fmt(short)} more to go.`;
   const h = p.markets ? p.markets.horizons.find((x) => x.minutes === p.horizon) : null;
   const ok = !why && !p.busy;
   $('prUp').disabled = !ok;
   $('prDown').disabled = !ok;
-  $('prHint').textContent = why || (h ? `Right call = +${h.reward} ⚡ Energy. ${perDay - used} of ${perDay} calls left today. Moves under ${p.markets.minMovePct}% are a tie (no win, no loss).` : '');
+  const getBtn = $('prGetEnergy');
+  if (getBtn) getBtn.hidden = !short;
+  let hint = why;
+  if (!hint && h) {
+    hint = sc
+      ? `${perDay - used} of ${perDay} calls left today. Moves under ${p.markets.minMovePct}% are a tie — your stake comes back.`
+      : `Right call = +${h.reward} ⚡ Energy. ${perDay - used} of ${perDay} calls left today. Moves under ${p.markets.minMovePct}% are a tie (no win, no loss).`;
+  }
+  $('prHint').textContent = hint || '';
 
   paintPredictStats();
   paintPredictLists();
@@ -9387,15 +9853,19 @@ function paintPredictStats() {
   if (!box) return;
   if (!m) { box.innerHTML = ''; return; }
   const s = m.stats;
-  const cell = (v, l) => `<div class="pr-stat"><b>${v}</b><span>${l}</span></div>`;
-  box.innerHTML = cell(s.wins, 'Wins') + cell(s.winRate == null ? '—' : `${s.winRate}%`, 'Win rate') + cell(s.streak ? `🔥 ${s.streak}` : '0', 'Streak') + cell(`${m.used}/${m.perDay}`, 'Calls today');
+  const cell = (v, l, cls = '') => `<div class="pr-stat ${cls}"><b>${v}</b><span>${l}</span></div>`;
+  const net = Number(s.netEnergy) || 0;
+  box.innerHTML = cell(s.wins, 'Wins') + cell(s.winRate == null ? '—' : `${s.winRate}%`, 'Win rate')
+    + (prStakeCfg() ? cell(`${net > 0 ? '+' : ''}${net} ⚡`, 'Net Energy', net > 0 ? 'up' : net < 0 ? 'down' : '') : cell(s.streak ? `🔥 ${s.streak}` : '0', 'Streak'))
+    + cell(`${m.used}/${m.perDay}`, 'Calls today');
 }
 
 function prStatusBadge(r) {
-  if (r.status === 'won') return `<span class="pr-badge won">WON +${r.rewardEnergy} ⚡</span>`;
-  if (r.status === 'lost') return '<span class="pr-badge lost">LOST</span>';
-  if (r.status === 'tie') return '<span class="pr-badge tie">TIE · refunded</span>';
-  if (r.status === 'void') return '<span class="pr-badge void">VOID · refunded</span>';
+  const stake = Number(r.stake) || 0;
+  if (r.status === 'won') return `<span class="pr-badge won">WON +${stake ? r.rewardEnergy - stake : r.rewardEnergy} ⚡</span>`;
+  if (r.status === 'lost') return `<span class="pr-badge lost">LOST${stake ? ` −${stake} ⚡` : ''}</span>`;
+  if (r.status === 'tie') return `<span class="pr-badge tie">TIE · ${stake ? `${stake} ⚡ back` : 'refunded'}</span>`;
+  if (r.status === 'void') return `<span class="pr-badge void">VOID · ${stake ? `${stake} ⚡ back` : 'refunded'}</span>`;
   return '<span class="pr-badge open">OPEN</span>';
 }
 
@@ -9412,7 +9882,8 @@ function paintPredictLists() {
     return `<div class="pr-row" data-ends="${escapeHtml(a.endsAt)}">
       <span class="pr-dir ${a.direction}">${a.direction === 'up' ? '▲' : '▼'}</span>
       <div class="pr-row-body"><b>${escapeHtml(a.coin)} ${a.direction.toUpperCase()} · ${prHorizonLabel(a.horizonMinutes)}</b>
-        <span>Entry ${prPrice(a.entryPrice)}${delta == null ? '' : ` · now ${prPct(delta)}`}</span></div>
+        <span>Entry ${prPrice(a.entryPrice)}${delta == null ? '' : ` · now ${prPct(delta)}`}</span>
+        ${a.stake ? `<span class="pr-row-stake">Stake ⚡ ${fmt(a.stake)} · win ⚡ ${fmt(a.potentialEnergy)}</span>` : ''}</div>
       <div class="pr-row-side"><span class="pr-eta">${prRemaining(a.endsAt)}</span>${delta == null ? '' : `<small class="${winning ? 'up' : 'down'}">${winning ? 'in the money' : 'behind'}</small>`}</div>
     </div>`;
   }).join('') : '<p class="chat-hint">No open calls. Pick a coin above and make one!</p>';
@@ -9439,17 +9910,29 @@ function paintPredictBoard() {
 async function placePredict(direction) {
   const p = predictState;
   if (p.busy) return;
+  const sc = prStakeCfg();
+  if (sc && !(Number.isInteger(p.stake) && p.stake >= sc.min && p.stake <= sc.max)) { toast(`Choose between ${sc.min} and ${sc.max} Energy.`, { tone: 'error' }); return; }
+  const stake = sc ? p.stake : undefined;
   p.busy = true;
   paintPredict();
   try {
-    const r = await api('POST', '/predict', { coin: p.coin, direction, horizon: p.horizon }, { retries: 0 });
+    const r = await api('POST', '/predict', { coin: p.coin, direction, horizon: p.horizon, ...(sc ? { stake } : {}) }, { retries: 0 });
     const x = r.prediction;
-    toast(`Called ${x.coin} ${direction.toUpperCase()} for ${prHorizonLabel(x.horizonMinutes)} at ${prPrice(x.entryPrice)}. Good luck! 🍀`, { tone: 'success' });
+    if (typeof r.energyRemaining === 'number') {
+      adoptEnergy({ ...(state.energy || {}), energy: r.energyRemaining });
+      renderEnergy();
+    }
+    toast(`${x.stake ? `⚡ ${fmt(x.stake)} staked: ` : ''}${x.coin} ${direction.toUpperCase()} for ${prHorizonLabel(x.horizonMinutes)} at ${prPrice(x.entryPrice)}. Good luck! 🍀`, { tone: 'success' });
     chatHaptic();
     const mine = await api('GET', '/predict/mine', null, { retries: 0 }).catch(() => null);
     if (mine) p.mine = mine;
   } catch (e) {
-    toast(e.message || 'Could not place the call.', { tone: 'error' });
+    if (e.code === 'INSUFFICIENT_ENERGY' && e.data) {
+      toast(`You need ⚡ ${fmt(e.data.required)} for this call — you have ⚡ ${fmt(e.data.current)}. Get more Energy to continue.`, { tone: 'error' });
+      loadEnergy(undefined, { force: true }).catch(() => {}).then(paintPredict);
+    } else {
+      toast(e.message || 'Could not place the call.', { tone: 'error' });
+    }
     loadPredictMine();
   } finally {
     p.busy = false;
@@ -9466,12 +9949,43 @@ function initPredictUi() {
   const root = $('tab-predict');
   if (!root || root.dataset.wired) return;
   root.dataset.wired = '1';
+  try { predictState.stake = Number(localStorage.getItem('dltx_pr_stake')) || predictState.stake; } catch { /* default */ }
   $('prCoins').addEventListener('click', (e) => { const b = e.target.closest('[data-coin]'); if (b) { predictState.coin = b.dataset.coin; paintPredict(); } });
-  $('prHorizons').addEventListener('click', (e) => { const b = e.target.closest('[data-h]'); if (b) { predictState.horizon = Number(b.dataset.h); paintPredict(); } });
+  $('prHorizons').addEventListener('click', (e) => { const b = e.target.closest('[data-h]'); if (b) { predictState.horizon = Number(b.dataset.h); predictState.horizonChosen = true; paintPredict(); } });
   root.querySelector('.pr-filter').addEventListener('click', (e) => { const b = e.target.closest('[data-filter]'); if (b) { predictState.filter = b.dataset.filter; paintPredict(); } });
   $('prUp').addEventListener('click', () => placePredict('up'));
   $('prDown').addEventListener('click', () => placePredict('down'));
   $('prEnergy').addEventListener('click', () => { if (typeof openShop === 'function') openShop(); });
+  $('prGetEnergy').addEventListener('click', () => { if (typeof openShop === 'function') openShop(); });
+  $('prMinus').addEventListener('click', () => prSetStake(prStepStake(predictState.stake, -1)));
+  $('prPlus').addEventListener('click', () => prSetStake(prStepStake(predictState.stake, 1)));
+  $('prQuick').addEventListener('click', (e) => { const b = e.target.closest('[data-q]'); if (b) prSetStake(Number(b.dataset.q)); });
+  const input = $('prStake');
+  // Digits only; the value is clamped when the member finishes typing, so a half-typed number is never rewritten under their thumb.
+  input.addEventListener('input', () => {
+    input.value = input.value.replace(/\D+/g, '').slice(0, 4);
+    if (input.value !== '') { predictState.stake = Number(input.value); paintStakeDependents(); }
+  });
+  const commit = () => prSetStake(input.value === '' ? predictState.stake : input.value);
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
+  $('prChartExpand').addEventListener('click', openPredictFullChart);
+  $('prFullClose').addEventListener('click', closePredictFullChart);
+}
+
+// While typing: refresh the preview and the buttons without rewriting the field.
+function paintStakeDependents() {
+  const sc = prStakeCfg();
+  if (!sc) return;
+  const stake = predictState.stake;
+  const valid = stake >= sc.min && stake <= sc.max;
+  const payout = prPayout(prClampStake(stake), sc);
+  const s = prClampStake(stake);
+  $('prPreview').innerHTML = `<span class="pr-win">Win <b>+${payout - s} ⚡</b> <small>(${payout} back)</small></span><span class="pr-lose">Lose <b>−${s} ⚡</b></span>`;
+  if (!valid) $('prHint').textContent = `Choose between ${sc.min} and ${sc.max} Energy.`;
+  const energy = prEnergyNow();
+  const blocked = !valid || (energy != null && energy < stake);
+  if (blocked) { $('prUp').disabled = true; $('prDown').disabled = true; }
 }
 
 function renderPredict() {

@@ -3992,6 +3992,17 @@ function updateInstantBal() {
   if (bal) bal.textContent = `⚡ ${instantEnergy()} Energy`;
 }
 
+// A natural break after a finished Energy-game round (Instant games, Coin Flip, Take It or Risk It, Energy Wire):
+// every second round, after the result has been seen, and never more than the shared 40 s interstitial gap.
+let energyRoundsSinceAd = 0;
+function maybeGameInterstitial() {
+  if (typeof showRewardInterstitial !== 'function') return;
+  energyRoundsSinceAd += 1;
+  if (energyRoundsSinceAd < 2) return;
+  energyRoundsSinceAd = 0;
+  setTimeout(() => { try { showRewardInterstitial(); } catch { /* ads never break a game */ } }, 2600);
+}
+
 /** Shared play call. Returns the server result, or null on error (toasted). */
 async function playInstant(id, g) {
   const have = instantEnergy();
@@ -4005,6 +4016,7 @@ async function playInstant(id, g) {
     if (typeof state !== 'undefined' && state.energy) state.energy.energy = r.energy;
     updateInstantBal();
     if (window.renderEnergy) window.renderEnergy();
+    maybeGameInterstitial();
     return r;
   } catch (e) {
     if (e.status === 401) return null; // session expired — app.js handles it
@@ -4771,6 +4783,7 @@ function renderCases(mount, g) {
       subtitle: r.capped ? `Daily cap reached — ${r.energyAwarded} of ${res.amount} paid.` : `You now have ${r.energy} ⚡ total.`,
     });
     if (!bigWin) { try { ArcadeSound.lose(); } catch {} }
+    maybeGameInterstitial();
   }
 
   playBtn.addEventListener('click', async () => {
@@ -5132,6 +5145,7 @@ function renderWire(mount, g) {
       (window.celebrate || toast)({ amount: r.energyAwarded, unit: '⚡ Energy', title: 'Energy collected!', subtitle: r.capped ? `Daily Energy Wire cap reached — ${r.energyAwarded} of ${r.banked} paid.` : `You now have ${r.energy} ⚡ total.`, icon: '⚡', duration: 2400 });
     } catch (e) { if (e.status !== 401) toast(e.message); return load(); }
     showPanels(); hud();
+    maybeGameInterstitial();
   });
   $w('.wire-continue').addEventListener('click', async () => {
     if (phase !== 'checkpoint') return;
@@ -5168,6 +5182,7 @@ function renderWire(mount, g) {
       showMsg(r.forfeited > 0 ? `Run ended — ⚡${r.forfeited} lost.` : 'Run ended.', 'muted');
     } catch (e) { if (e.status !== 401) toast(e.message); return load(); }
     showPanels(); hud();
+    maybeGameInterstitial();
   });
 
   load();
