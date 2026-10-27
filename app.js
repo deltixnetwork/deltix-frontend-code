@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.19.0';
+const APP_VERSION = '1.19.1';
 const $ = (id) => document.getElementById(id);
 
 // Stable per-phone identifier sent with every request (X-Device-Id) — the
@@ -7820,7 +7820,7 @@ function populateNewPages() {
 function populateSocialMediaPage() {
   // X Accounts with Follow & Earn Feature
   const xAccounts = [
-    { handle: '@DeltixOfficial', username: 'DeltixOfficial', desc: 'Official Main Account', verified: true },
+    { handle: '@DigitalGold1979', username: 'DigitalGold1979', desc: 'Official Main Account', verified: true },
     { handle: '@Deltix_Official', username: 'Deltix_Official', desc: 'Community Updates', verified: true },
     { handle: '@Crypmatrx', username: 'Crypmatrx', desc: 'Crypto News & Insights', verified: false },
     { handle: '@Queen_Anet', username: 'Queen_Anet', desc: 'Team & Leadership', verified: false },

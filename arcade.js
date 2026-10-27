@@ -4922,7 +4922,7 @@ function renderWire(mount, g) {
     $w('.wire-next').textContent = nxt ? `Next ⚡${nxt.reward} · ${(nxt.windowMs / 1000).toFixed(1)}s window` : 'Wire complete';
     if (cfg) {
       $w('.wire-rounds').textContent = `${cfg.roundsLeft} round${cfg.roundsLeft === 1 ? '' : 's'} left today`;
-      $w('.wire-limits').textContent = `${cfg.maxRoundsPerDay} rounds/day · ⚡${cfg.dailyEnergyCap}/day from this game`;
+      $w('.wire-limits').textContent = `${cfg.maxRoundsPerDay} rounds/day · ⚡${cfg.dailyEnergyCap}/day from this game${cfg.energyCapLeft <= 0 ? ' — today’s limit reached' : ''}`;
       nodes.forEach((n, i) => {
         n.querySelector('small').textContent = `⚡${cfg.checkpoints[i].reward}`;
         n.classList.toggle('done', Boolean(run) && i < run.checkpoint && run.status !== 'ended');
@@ -4943,7 +4943,9 @@ function renderWire(mount, g) {
     holdBtn.hidden = phase === 'checkpoint' || phase === 'broken';
     if (phase === 'idle' || phase === 'done') {
       holdBtn.disabled = false;
-      holdBtn.textContent = phase === 'done' ? `↻ PLAY AGAIN — ⚡${cfg ? cfg.entryCost : g.cost}` : `⚡ START — ⚡${cfg ? cfg.entryCost : g.cost}`;
+      // Once today's cap is used up nothing more can be paid, so don't invite another ⚡ fee; tapping explains why.
+      const capUsed = Boolean(cfg) && cfg.energyCapLeft <= 0;
+      holdBtn.textContent = capUsed ? '✅ Daily limit reached' : phase === 'done' ? `↻ PLAY AGAIN — ⚡${cfg ? cfg.entryCost : g.cost}` : `⚡ START — ⚡${cfg ? cfg.entryCost : g.cost}`;
     } else if (phase === 'moving') {
       holdBtn.disabled = false;
       holdBtn.textContent = '✋ HOLD';
@@ -5006,6 +5008,7 @@ function renderWire(mount, g) {
   function applyRun(r) {
     run = r.run || run;
     if (typeof r.roundsLeft === 'number' && cfg) cfg.roundsLeft = r.roundsLeft;
+    if (typeof r.energyCapLeft === 'number' && cfg) cfg.energyCapLeft = r.energyCapLeft;
     syncEnergy(r.energy);
   }
 
@@ -5078,6 +5081,8 @@ function renderWire(mount, g) {
   async function startRun() {
     if (phase !== 'idle' && phase !== 'done') return;
     if (cfg && cfg.roundsLeft <= 0) { toast(`Daily limit reached — ${cfg.maxRoundsPerDay} rounds per day. Come back tomorrow!`); return; }
+    // The server refuses (and charges nothing) once today's cap is used up; say so here without a round trip.
+    if (cfg && cfg.energyCapLeft <= 0) { toast(`Daily Energy limit reached — Energy Wire pays up to ⚡${cfg.dailyEnergyCap} a day. Come back tomorrow!`); return; }
     const have = instantEnergy();
     if (have < (cfg ? cfg.entryCost : g.cost)) { toast(`Not enough Energy — ⚡${cfg ? cfg.entryCost : g.cost} needed to start.`); return; }
     phase = 'awaiting';
