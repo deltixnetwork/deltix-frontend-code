@@ -5307,6 +5307,12 @@ async function openP2pOrder(id, { moderator = false } = {}) {
     p2p.chatTick = 0;
     $('p2pOrderTitle').textContent = `Order #${o.id} ${o.simulation ? '· SIMULATION' : ''}`;
     p2pRenderSteps(o.status);
+    // Live on-chain verification state (server-driven): none | pending | verified | failed.
+    const ver = o.usdtVerification || { status: o.usdtVerified ? 'verified' : (o.usdtTxHash ? 'pending' : 'none') };
+    const payLabel = ver.status === 'verified' ? 'Verified ✅'
+      : ver.status === 'failed' ? 'Could not verify ⚠️'
+        : ver.status === 'pending' ? (ver.automatic === false ? 'Marked by buyer ⏳' : 'Confirming on-chain ⏳')
+          : 'Awaiting';
     $('p2pOrderDetails').innerHTML = `
       <div class="row"><span>Status</span><b>${p2pStatusChip(o.status)}</b></div>
       <div class="row"><span>Amount</span><b>${fmt(o.amountDltx)} DLTX @ ${o.priceUsdt}</b></div>
@@ -5314,7 +5320,8 @@ async function openP2pOrder(id, { moderator = false } = {}) {
       <div class="row"><span>Buyer receives</span><b>${fmt(o.buyerReceivesDltx)} DLTX (−${o.feePercent}%)</b></div>
       <div class="row"><span>Seller receives</span><b>${fmt(o.sellerReceivesUsdt)} USDT (−1%)</b></div>
       ${o.buyerCode || o.sellerCode ? `<div class="row"><span>Parties</span><b>${p2pCodeChip(o.buyerCode, 'Buyer')} ${p2pCodeChip(o.sellerCode, 'Seller')}</b></div>` : ''}
-      <div class="row"><span>USDT payment</span><b>${o.usdtVerified ? 'Verified ✅' : (o.usdtTxHash ? 'Submitted ⏳' : 'Awaiting')}</b></div>
+      <div class="row"><span>USDT payment</span><b>${payLabel}</b></div>
+      ${ver.reason && ver.status !== 'verified' ? `<div class="row"><span>On-chain check</span><b class="${ver.status === 'failed' ? 'p2p-danger-t' : 'muted'}">${escapeHtml(ver.reason)}${ver.status === 'pending' && ver.automatic !== false ? ' · re-checked every minute' : ''}</b></div>` : ''}
       ${o.role !== 'buyer' && o.sellerPayoutAddress ? `<div class="row"><span>Payout to</span><b class="p2p-addr-inline" title="Locked when this trade was created">${escapeHtml(o.sellerPayoutAddress.slice(0, 10))}…${escapeHtml(o.sellerPayoutAddress.slice(-6))} 🔒</b></div>` : ''}
       <div class="row"><span>Moderator</span><b>${o.moderatorAssigned ? (o.moderatorApproved ? 'Approved ✅' : 'Assigned') : 'Pending assignment'}</b></div>
       ${o.status === 'cancelled' ? `<div class="row"><span>Cancelled</span><b>${o.cancelledBy === 'system:timeout' ? 'Payment window expired' : (String(o.cancelledBy || '').startsWith('user:') ? (o.cancelledBy === `user:${o.buyerId}` ? 'by buyer' : 'by seller') : '')} · ${p2pWhen(o.closedAt)}</b></div>` : ''}
@@ -5366,6 +5373,8 @@ async function openP2pOrder(id, { moderator = false } = {}) {
     if (payable) {
       $('p2pDepositAddr').textContent = o.usdtDepositAddress || '';
       $('p2pTxHash').value = o.usdtTxHash || '';
+      // After the hash is marked, the button only forces an immediate re-check.
+      $('p2pSubmitTx').textContent = o.usdtTxHash ? 'Re-check now' : 'Submit';
     }
     // Cancel rule comes from the server (buyer: before payment verified;
     // seller: only after the payment window elapsed with nothing marked).
@@ -5384,7 +5393,22 @@ async function openP2pOrder(id, { moderator = false } = {}) {
     releaseBtn.disabled = false;
     releaseBtn.textContent = `RELEASE ${fmt(o.amountDltx)} DLTX`;
     $('p2pOrderDispute').hidden = !(o.role !== 'moderator' && !['completed', 'cancelled', 'refunded', 'disputed', 'under_review', 'escalated'].includes(o.status));
-    $('p2pOrderHint').textContent = r.dispute ? `Dispute open: ${r.dispute.reason}` : (sellerWaiting ? `The buyer has until ${new Date(o.paymentDeadlineAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} to pay. If nothing is marked by then, you can cancel and your DLTX unlocks automatically.` : (canRelease ? 'The buyer has marked payment. Check that the USDT really arrived before releasing — a release cannot be undone.' : ''));
+    // Hint priority: open dispute → on-chain verification state → seller timing/release guidance.
+    const verifyHint = (() => {
+      if (!['usdt_submitted', 'usdt_verifying'].includes(o.status)) return '';
+      if (o.role === 'buyer') {
+        if (ver.status === 'failed') return `⚠️ Your payment could not be verified on-chain: ${ver.reason || 'mismatch'}. If you did pay, check the hash and press "Re-check now"; otherwise open a dispute so a moderator can review.`;
+        return ver.automatic === false
+          ? '⏳ Payment marked. The seller will confirm receipt and release, or the moderator will verify — no further action needed.'
+          : '⏳ Payment marked — we are confirming your USDT on BNB Chain automatically (re-checked every minute). No need to resubmit.';
+      }
+      if (o.role === 'seller') {
+        if (ver.status === 'failed') return `⚠️ The buyer's payment could not be verified on-chain (${ver.reason || 'mismatch'}). Do NOT release unless you have confirmed the USDT arrived — open a dispute if nothing was received.`;
+        return 'The buyer marked payment and on-chain verification is in progress. Only release after you have confirmed the USDT really arrived — a release cannot be undone.';
+      }
+      return '';
+    })();
+    $('p2pOrderHint').textContent = r.dispute ? `Dispute open: ${r.dispute.reason}` : (verifyHint || (sellerWaiting ? `The buyer has until ${new Date(o.paymentDeadlineAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} to pay. If nothing is marked by then, you can cancel and your DLTX unlocks automatically.` : (canRelease ? 'The buyer has marked payment. Check that the USDT really arrived before releasing — a release cannot be undone.' : '')));
     // Moderator controls load their richer review endpoint.
     $('p2pModBlock').hidden = true;
     if (moderator || o.role === 'moderator') {
@@ -5396,7 +5420,7 @@ async function openP2pOrder(id, { moderator = false } = {}) {
           <div class="row"><span>Seller</span><b>${p2pCodeChip(m.seller.profile?.referralCode || ('#' + m.seller.id))} ${m.seller.kycVerified ? 'KYC ✅' : 'KYC ❌'}</b></div>
           <div class="row"><span>Escrow</span><b>${m.escrow.held ? `🔒 ${fmt(m.escrow.amountDltx)} DLTX held` : 'released / returned'} · ${escapeHtml(m.escrow.status)}</b></div>
           <div class="row"><span>Timeline</span><b class="p2p-timeline">created ${p2pWhen(m.timeline.createdAt)}${m.timeline.paymentMarkedAt ? ` · paid ${p2pWhen(m.timeline.paymentMarkedAt)}` : ` · pay by ${p2pWhen(m.timeline.paymentDeadlineAt)}`}${m.timeline.usdtVerifiedAt ? ` · verified ${p2pWhen(m.timeline.usdtVerifiedAt)}` : ''}${m.timeline.disputedAt ? ` · disputed ${p2pWhen(m.timeline.disputedAt)}` : ''}${m.timeline.closedAt ? ` · closed ${p2pWhen(m.timeline.closedAt)}` : ''}</b></div>
-          <div class="row"><span>USDT tx</span><b>${m.usdt.txHash ? m.usdt.txHash.slice(0, 18) + '…' : '—'}</b></div>
+          <div class="row"><span>USDT tx</span><b>${m.usdt.txHash ? m.usdt.txHash.slice(0, 18) + '…' : '—'}${m.usdt.verification && m.usdt.txHash ? ` · ${m.usdt.verification.status === 'verified' ? 'verified ✅' : m.usdt.verification.status === 'failed' ? `<span class="p2p-danger-t">check failed ⚠️ ${escapeHtml(m.usdt.verification.reason || '')}</span>` : `confirming ⏳ ${escapeHtml(m.usdt.verification.reason || '')}`}` : ''}</b></div>
           <div class="row"><span>Payout due</span><b>${fmt(m.usdt.sellerPayoutDue)} USDT → ${m.usdt.sellerPayoutAddress ? escapeHtml(m.usdt.sellerPayoutAddress.slice(0, 12)) + '…' : 'no wallet!'} ${m.usdt.sellerPayoutAddressSource === 'snapshot' ? '🔒 locked at trade time' : (m.usdt.sellerPayoutAddressSource === 'live' ? '⚠️ live wallet (legacy order)' : '')}</b></div>
           ${m.usdt.sellerCurrentAddress && m.usdt.sellerCurrentAddress !== m.usdt.sellerPayoutAddress ? `<div class="row"><span>⚠️ Seller changed wallet</span><b>now ${escapeHtml(m.usdt.sellerCurrentAddress.slice(0, 12))}… — pay the LOCKED address above</b></div>` : ''}
           <div class="row"><span>📞 Buyer contact</span><b>${m.contacts?.buyer ? p2pContactLink(m.contacts.buyer) : '<span class="p2p-chip p2p-chip-bad">missing</span>'}</b></div>
@@ -5456,14 +5480,19 @@ function p2pDayLabel(d) {
 
 async function loadP2pChat(orderId) {
   const r = await api('GET', `/p2p/orders/${orderId}/messages`);
-  // Every ~30s the poll also refreshes status so the timeline + tracker stay live.
+  // Every ~30s the poll also refreshes status so the timeline + tracker stay live;
+  // a status / on-chain verification change re-renders the whole room (the
+  // background verifier confirms payments without any action from the buyer).
   p2p.chatTick = (p2p.chatTick || 0) + 1;
   if (p2p.chatTick % 6 === 0) {
     try {
       const d = await api('GET', `/p2p/orders/${orderId}`);
+      const sigOf = (o) => `${o?.status}|${o?.usdtVerification?.status}|${o?.usdtVerification?.reason || ''}|${o?.moderatorId || ''}`;
+      const changed = sigOf(p2p.order) !== sigOf(d.order);
       p2p.order = d.order;
       p2p.orderEvents = d.events || [];
       p2pRenderSteps(d.order.status);
+      if (changed && !$('p2pOrderModal').hidden) { openP2pOrder(orderId, { moderator: d.order.role === 'moderator' }); return; }
     } catch { /* keep last known state */ }
   }
   const msgs = r.messages || [];
@@ -5571,13 +5600,24 @@ $('p2pCopyAddr')?.addEventListener('click', async () => {
 $('p2pSubmitTx')?.addEventListener('click', async () => {
   if (!p2p.order) return;
   const txHash = $('p2pTxHash').value.trim();
+  if (!txHash) { $('p2pOrderHint').textContent = 'Paste the transaction hash of your USDT transfer first (0x followed by 64 characters).'; return; }
+  const btn = $('p2pSubmitTx');
+  btn.disabled = true;
+  let hint = '';
   try {
     const r = await api('POST', `/p2p/orders/${p2p.order.id}/usdt`, { txHash });
-    toast(r.note || 'Payment verified', { tone: 'success', title: 'USDT verified' });
-    openP2pOrder(p2p.order.id);
+    // Pending = payment MARKED, confirmation continues server-side (not an error).
+    if (r.pending) toast(r.note || 'Payment marked — confirming on-chain automatically.', { tone: 'info', title: 'Payment marked' });
+    else toast(r.note || 'Payment verified', { tone: 'success', title: 'USDT verified' });
   } catch (e) {
-    $('p2pOrderHint').textContent = e.message;
+    hint = e.message;
+    toast(e.message, { tone: 'error', title: e.code === 'BAD_TX_HASH' ? 'Check the hash' : 'Payment not verified' });
+  } finally {
+    btn.disabled = false;
   }
+  // Always re-read the order: the state changed even when verification did not pass yet.
+  await openP2pOrder(p2p.order.id);
+  if (hint) $('p2pOrderHint').textContent = hint;
 });
 $('p2pOrderCancel')?.addEventListener('click', async () => {
   if (!p2p.order) return;
