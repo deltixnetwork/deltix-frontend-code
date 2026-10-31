@@ -4477,8 +4477,6 @@ async function loadP2pWalletSettings() {
     if (codeEl && state.refCode) codeEl.innerHTML = `🆔 Your public trader ID: <b>${escapeHtml(state.refCode)}</b> — shown on your ads so partners and moderators can identify you.`;
   } catch { /* keep last state */ }
   loadP2pEscrow();
-  const dltx = $('p2pDltxOfficial');
-  if (dltx) dltx.textContent = p2p.status?.platformDltxAddress || '';
 }
 
 // Escrow position: what is locked vs what open trades need; the difference is
@@ -4508,17 +4506,10 @@ $('p2pEscrowRelease')?.addEventListener('click', async () => {
     loadWallet();
   } catch (err) { toast(err.message, { tone: 'error' }); }
 });
-$('p2pDltxCopy')?.addEventListener('click', async () => {
-  try { await navigator.clipboard.writeText($('p2pDltxOfficial').textContent); toast('Official DLTX wallet address copied', { tone: 'success' }); }
-  catch { toast('Copy failed — long-press the address instead', { tone: 'error' }); }
-});
-$('p2pDltxSend')?.addEventListener('click', () => {
-  const addr = $('p2pDltxOfficial').textContent.trim();
-  if (!addr) return;
-  $('sendBtn').click();
-  $('sendTo').value = addr;
-  $('sendHint').textContent = `Sending to the OFFICIAL Deltix P2P wallet · ${$('sendHint').textContent}`;
-});
+// (The "DLTX official wallet" Copy/Send card was removed on 2026-10-31: traders
+// never send DLTX to the platform — escrow is a lien on their own wallet — and
+// the button led a seller to transfer his coins there by mistake. The server
+// now refuses such sends with P2P_PLATFORM_WALLET as well.)
 
 $('p2pMyWalletSave')?.addEventListener('click', async () => {
   const input = $('p2pMyWallet');
