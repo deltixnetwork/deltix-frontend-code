@@ -280,7 +280,14 @@
             <div class="p2p-bid-row"><button class="btn ghost" id="p2pEscrowRelease" hidden>Release to transferable</button></div>
             <p class="hint">DLTX backing an open trade stays locked until that trade completes or is cancelled. Anything left over from a finished trade is released here — straight back to your transferable balance.</p>
             <label class="p2p-settings-gap">🛡 How escrow works</label>
-            <p class="hint"><b>You never need to send DLTX anywhere to trade.</b> When a buyer accepts your SELL ad, the DLTX is locked inside <b>your own wallet</b> automatically and released to the buyer only when the trade completes. Anyone — in chat, by email or on social media — asking you to “deposit” or “send DLTX to Deltix” to sell is a scammer. Deltix moderators will never ask you to transfer DLTX.</p>
+            <p class="hint"><b>To sell on the P2P market you never send DLTX anywhere.</b> When a buyer accepts your SELL ad, the DLTX is locked inside <b>your own wallet</b> automatically and released to the buyer only when the trade completes.</p>
+            <label class="p2p-settings-gap">◆ Deltix platform wallet <span class="pill">moderator-assisted trades only</span></label>
+            <div class="p2p-deposit-row">
+              <code id="p2pDltxOfficial" class="p2p-addr"></code>
+              <button class="btn ghost" id="p2pDltxCopy">Copy</button>
+              <button class="btn ghost" id="p2pDltxSend">Send</button>
+            </div>
+            <p class="hint">⚠️ Send DLTX here <b>only when a Deltix moderator asks you to inside a trade</b>, and always enter the trade reference the moderator gives you. Sending without a moderator's instruction does <b>not</b> create a sale — your coins will sit there until support returns them. Deltix moderators never ask for DLTX by email, chat or social media, and never ask for your seed phrase.</p>
             <p class="hint" id="p2pMyCode"></p>
           </div>
         </div>
@@ -1713,6 +1720,9 @@
         <input id="sendAmount" type="number" min="0" step="any" placeholder="0" />
         <button class="btn ghost" id="sendMaxBtn" type="button" title="Send everything transferable (fee included)">Max</button>
       </div>
+      <div class="p2p-paytimer late" id="sendPlatformWarn" hidden>⚠️ <b>This is the Deltix P2P platform wallet.</b> Only send here if a Deltix moderator asked you to <b>inside a trade</b>. Sending without a moderator's instruction does NOT create a sale — your coins will sit there until support returns them. Enter the trade reference your moderator gave you below.</div>
+      <label for="sendMemo" id="sendMemoLabel">Note / trade reference (optional)</label>
+      <input id="sendMemo" type="text" maxlength="140" placeholder="e.g. order #123 · moderator DLTX-XXXXXX" autocomplete="off" />
       <div class="supply-list" id="sendPreview"></div>
       <ul class="disclosure">
         <li>Only your <b>transferable</b> balance can be sent — staked $DLTX, the welcome bonus, time-locked referral rewards and P2P escrow stay locked.</li>

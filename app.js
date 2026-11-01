@@ -2026,11 +2026,30 @@ function updateSendPreview() {
     .join('');
 }
 
+// The Deltix P2P platform wallet only receives DLTX in moderator-assisted trades.
+// Sending there shows a strong warning and makes the trade reference mandatory
+// (the server enforces it too for this app version) so every deposit is traceable.
+function isPlatformWalletAddress(addr) {
+  const p = p2p.status?.platformDltxAddress;
+  return Boolean(p) && String(p).toLowerCase() === String(addr || '').trim().toLowerCase();
+}
+function updateSendPlatformWarning() {
+  const warn = $('sendPlatformWarn');
+  const label = $('sendMemoLabel');
+  if (!warn || !label) return;
+  const toPlatform = isPlatformWalletAddress($('sendTo').value);
+  warn.hidden = !toPlatform;
+  label.textContent = toPlatform ? 'Trade reference from your moderator (required)' : 'Note / trade reference (optional)';
+}
+$('sendTo')?.addEventListener('input', updateSendPlatformWarning);
+
 $('sendBtn').addEventListener('click', () => {
   $('sendTo').value = '';
   $('sendAmount').value = '';
+  if ($('sendMemo')) $('sendMemo').value = '';
   $('sendPreview').innerHTML = '';
   $('sendHint').className = 'hint';
+  updateSendPlatformWarning();
   const s = state.balances || {};
   const sendable = currentSendable();
   const u = s.transferUnlock || {};
@@ -2237,6 +2256,7 @@ function openSendWithAddress(addr) {
   $('sendBtn').click();
   $('sendTo').value = addr;
   $('sendHint').className = 'hint';
+  updateSendPlatformWarning();
   toast('Address scanned — enter the amount to send.', { tone: 'success' });
   setTimeout(() => $('sendAmount')?.focus(), 150);
 }
@@ -2244,6 +2264,7 @@ $('scanBtn')?.addEventListener('click', () => openScanner(openSendWithAddress));
 $('sendScanBtn')?.addEventListener('click', () => openScanner((addr) => {
   $('sendTo').value = addr;
   $('sendHint').className = 'hint';
+  updateSendPlatformWarning();
   toast('Address scanned.', { tone: 'success' });
   $('sendAmount')?.focus();
 }));
@@ -2252,6 +2273,7 @@ $('sendAmount').addEventListener('input', updateSendPreview);
 $('confirmSend').addEventListener('click', async () => {
   const toAddress = $('sendTo').value.trim();
   const amount = Number($('sendAmount').value);
+  const memo = ($('sendMemo')?.value || '').trim().slice(0, 140);
   const hint = $('sendHint');
   hint.className = 'hint';
   if (!/^0x[a-fA-F0-9]{40}$/.test(toAddress)) {
@@ -2264,12 +2286,28 @@ $('confirmSend').addEventListener('click', async () => {
     hint.classList.add('error');
     return;
   }
+  if (isPlatformWalletAddress(toAddress)) {
+    if (memo.length < 4) {
+      hint.textContent = 'Enter the trade reference your moderator gave you. Only send here when a Deltix moderator asked you to inside a trade.';
+      hint.classList.add('error');
+      $('sendMemo')?.focus();
+      return;
+    }
+    const okGo = await askConfirm({
+      title: 'Send to the Deltix platform wallet?',
+      message: 'Only continue if a Deltix moderator asked you to send DLTX inside a trade. This does NOT create a sale by itself. Transfers are final.',
+      rows: [['Amount', `${fmt(amount)} $DLTX`], ['Trade reference', memo]],
+      confirmText: 'A moderator asked me — send',
+      danger: true,
+    });
+    if (!okGo) return;
+  }
   $('confirmSend').disabled = true;
   try {
     // One key per confirmed send — the server refuses accidental duplicates
     // (double taps, network retries) carrying the same key.
     const idempotencyKey = (window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    const r = await api('POST', '/wallet/send', { toAddress, amount, idempotencyKey });
+    const r = await api('POST', '/wallet/send', { toAddress, amount, idempotencyKey, ...(memo ? { memo } : {}) });
     $('sendModal').hidden = true;
     toast(`Sent ${fmt(r.amount)} $DLTX · ${fmt(r.feeBurned)} burned`);
     await Promise.all([loadWallet(), loadTx(), loadStats()]);
@@ -4477,6 +4515,8 @@ async function loadP2pWalletSettings() {
     if (codeEl && state.refCode) codeEl.innerHTML = `🆔 Your public trader ID: <b>${escapeHtml(state.refCode)}</b> — shown on your ads so partners and moderators can identify you.`;
   } catch { /* keep last state */ }
   loadP2pEscrow();
+  const dltx = $('p2pDltxOfficial');
+  if (dltx) dltx.textContent = p2p.status?.platformDltxAddress || '';
 }
 
 // Escrow position: what is locked vs what open trades need; the difference is
@@ -4506,10 +4546,21 @@ $('p2pEscrowRelease')?.addEventListener('click', async () => {
     loadWallet();
   } catch (err) { toast(err.message, { tone: 'error' }); }
 });
-// (The "DLTX official wallet" Copy/Send card was removed on 2026-10-31: traders
-// never send DLTX to the platform — escrow is a lien on their own wallet — and
-// the button led a seller to transfer his coins there by mistake. The server
-// now refuses such sends with P2P_PLATFORM_WALLET as well.)
+// Platform wallet card (moderator-assisted trades): the Send button opens the
+// normal send modal, which detects this address, shows the warning and
+// requires the moderator's trade reference as the memo.
+$('p2pDltxCopy')?.addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('p2pDltxOfficial').textContent); toast('Platform wallet address copied — only send here when a moderator asks you inside a trade', { tone: 'info' }); }
+  catch { toast('Copy failed — long-press the address instead', { tone: 'error' }); }
+});
+$('p2pDltxSend')?.addEventListener('click', () => {
+  const addr = $('p2pDltxOfficial').textContent.trim();
+  if (!addr) return;
+  $('sendBtn').click();
+  $('sendTo').value = addr;
+  updateSendPlatformWarning();
+  setTimeout(() => $('sendMemo')?.focus(), 150);
+});
 
 $('p2pMyWalletSave')?.addEventListener('click', async () => {
   const input = $('p2pMyWallet');
