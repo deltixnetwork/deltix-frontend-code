@@ -8329,11 +8329,30 @@ const chatRankOf = (role) => (chatIsGroup() ? CHAT_GROUP_RANK : CHAT_RANK)[role]
 const CHAT_GROUP_GAP_MS = 5 * 60 * 1000;
 const CHAT_MAX_LEN = 500;
 // Low-end phones and slow links keep a shorter list on screen and skip decorative effects.
+// Weak GPUs are the other trigger: Play vitals for 1.19.1 were dominated by "Unresponsive
+// GPU" ANRs on Mali / PowerVR / small Adreno parts, so the renderer is probed once (and
+// remembered) and those phones get the same lite graphics (styles.css `html.lite`).
+const WEAK_GPU_RE = /Mali-4\d\d|Mali-T\d{3}|Mali-G3\d|Mali-G5\d|Mali-G6\d MC[12]\b|PowerVR (Rogue )?G[EM]\d|PowerVR SGX|Adreno \(TM\) [1-5]\d\d|Adreno \(TM\) 6[01]\d|VideoCore|Vivante|SwiftShader|llvmpipe/i;
+function weakGpuDetected() {
+  try {
+    const cached = localStorage.getItem('dltx_gfx');
+    if (cached === 'weak' || cached === 'ok') return cached === 'weak';
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl', { failIfMajorPerformanceCaveat: false }) || canvas.getContext('experimental-webgl');
+    if (!gl) { localStorage.setItem('dltx_gfx', 'weak'); return true; }
+    const info = gl.getExtension('WEBGL_debug_renderer_info');
+    const renderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL) || '') : '';
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    const weak = WEAK_GPU_RE.test(renderer);
+    localStorage.setItem('dltx_gfx', weak ? 'weak' : 'ok');
+    return weak;
+  } catch { return false; }
+}
 const CHAT_LITE = (() => {
   try {
     const c = navigator.connection || {};
     return (navigator.deviceMemory && navigator.deviceMemory <= 2) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2)
-      || c.saveData === true || /(^|-)2g$/.test(c.effectiveType || '');
+      || c.saveData === true || /(^|-)2g$/.test(c.effectiveType || '') || weakGpuDetected();
   } catch { return false; }
 })();
 if (CHAT_LITE) document.documentElement.classList.add('lite');

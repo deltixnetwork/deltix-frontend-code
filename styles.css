@@ -4940,6 +4940,26 @@ html[data-dark] .cp-preview-av { background: #17223c; }
 html.lite .chat-message, html.lite .chat-sheet, html.lite .chat-sheet-dim, html.lite .chat-bubble { animation: none !important; transition: none !important; }
 html.lite .chat-bubble, html.lite .chat-sheet, html.lite .cp-card, html.lite .chat-banner, html.lite .tabbar { box-shadow: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
 
+/* ---- Lite graphics for weak GPUs (Mali-4xx/T/G3x/G5x, PowerVR GE, Adreno ≤6xx) ----
+   Play vitals for 1.19.1 were dominated by "Unresponsive GPU / native lock contention"
+   ANRs: the UI thread waiting on the render thread stuck in the GPU driver. The two
+   always-on-screen blurs (sticky top bar + tab bar, re-composited on every scroll
+   frame) and the looping decorative animations are the heaviest GPU work the app
+   does, so on those phones they are turned off; nothing functional changes. */
+html.lite .topbar, html.lite .tabbar, html.lite .ptr-pill, html.lite .address, html.lite .reward-pop, html.lite .modal-overlay, html.lite .modal-backdrop {
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+}
+html.lite .topbar { background: #fff; }
+html.lite .tabbar { background: #fff; }
+html[data-dark].lite .topbar, html[data-dark].lite .tabbar { background: #111a2e; }
+html.lite .rp-confetti, html.lite .rp-badge::after, html.lite .mbox-rays { display: none !important; }
+html.lite .mh-icon, html.lite .mystery-hour, html.lite .ms-rocket, html.lite .ms-stars, html.lite .mstep.available .mstep-emoji, html.lite .plane-icon,
+html.lite .rain-drop, html.lite .reward-icon, html.lite .rp-icon, html.lite .smash-diamond svg, html.lite .vault-img.vault-shake, html.lite .vkey.available img,
+html.lite .wheel-buddy, html.lite .ladder-step.ready, html.lite .ludo-token.pick, html.lite .board .cell.win, html.lite .box-visual.box-shake .mbox {
+  animation: none !important;
+}
+html.lite .rp-badge, html.lite .rp-confetti i { will-change: auto !important; }
+
 @media (max-width: 400px) {
   .chat-head-avatar { display: none; }   /* decorative — the title needs the room next to the Energy chip and profile button */
 }
