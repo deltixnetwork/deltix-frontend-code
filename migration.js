@@ -14,6 +14,9 @@
 const MIG_SDK_SRC = 'vendor/deltix-wallet-sdk.js';
 const MIG_MIN_PASSWORD = 10;
 const MIG_KEYSTORE_PREFIX = 'deltix-keystore:';   // same constant as the SDK (KEYSTORE_KEY_PREFIX)
+const MIG_PATH_PREFIX = 'deltix-claim-path:';     // which wallet slot (HD path) of the phrase a linked address uses
+const MIG_SLOTS = 10;                              // slots offered in the picker (1..10); the device cap is 4 accounts
+const MIG_SCAN_SLOTS = 20;                         // slots tried when restoring a linked address from a phrase
 const MIG_REST_TIMEOUT_MS = 12000;
 
 const migState = {
@@ -24,6 +27,7 @@ const migState = {
   mnemonic: null,    // only while the flow is open; cleared on close
   wallet: null,      // unlocked SDK wallet while the flow is open; destroy()ed on close
   network: null,
+  slot: 0,           // 0-based wallet slot of the phrase (hdPathForAccount(slot)); shown 1-based
   challenge: null,   // { nonce, message, expiresAt } for the sign step
   expectAddress: null, // restore flow: the phrase must derive this address
   busy: false,
@@ -32,6 +36,13 @@ const migState = {
 const migShort = (a) => (a && a.length > 20 ? `${a.slice(0, 11)}…${a.slice(-6)}` : a || '');
 const migKeystoreId = (address) => `claim-${address}`;
 const migHasKeystore = (address) => !!address && localStorage.getItem(MIG_KEYSTORE_PREFIX + migKeystoreId(address)) !== null;
+const migSavedPath = (address) => (address ? localStorage.getItem(MIG_PATH_PREFIX + address) : null);
+const migSavePath = (address, hdPath) => { try { localStorage.setItem(MIG_PATH_PREFIX + address, hdPath); } catch { /* storage full: the restore scan finds it again */ } };
+/** "slot 3 · m/44'/118'/2'/0/0" for a path produced by hdPathForAccount; a custom path is shown as-is. */
+function migSlotLabel(hdPath) {
+  const m = /^m\/44'\/\d+'\/(\d+)'\/0\/0$/.exec(hdPath || '');
+  return m ? `wallet slot ${Number(m[1]) + 1} · ${hdPath}` : (hdPath || 'unknown slot');
+}
 
 async function migSdk() {
   await loadScriptOnce(MIG_SDK_SRC);
@@ -123,6 +134,7 @@ function renderMigrationCard() {
   sub.textContent = 'Your legacy balance will be allocated to this address at genesis. Keep the recovery phrase safe — it is the only key.';
   const address = escapeHtml(claim.address);
   const stored = migHasKeystore(claim.address);
+  const savedPath = migSavedPath(claim.address);
   let balance;
   if (!l1.live) balance = '<span class="v">chain not live yet</span>';
   else if (!migState.native) balance = '<span class="v">loading…</span>';
@@ -131,6 +143,7 @@ function renderMigrationCard() {
   body.innerHTML = `
     <div class="mig-row"><span class="k">Chain</span><span class="v mono">${escapeHtml(claim.chainId || claims.chainId)}</span></div>
     <div class="mig-row"><span class="k">Linked address</span><span class="v mono" title="${address}">${escapeHtml(migShort(claim.address))}</span></div>
+    <div class="mig-row"><span class="k">Phrase slot</span><span class="v mono">${savedPath ? escapeHtml(migSlotLabel(savedPath)) : 'unknown on this phone'}</span></div>
     <div class="mig-row"><span class="k">Native balance</span>${balance}</div>
     <div class="mig-row"><span class="k">Recovery phrase on this phone</span><span class="v">${stored ? 'encrypted copy saved' : 'not stored'}</span></div>
     <div class="mig-actions">
@@ -141,7 +154,7 @@ function renderMigrationCard() {
       ${l1.live ? '<button class="btn ghost" type="button" id="migRefreshBal">Refresh balance</button>' : ''}
       ${l1.explorerUrl ? `<a class="btn ghost" href="${escapeHtml(l1.explorerUrl)}/#/account/${address}" target="_blank" rel="noopener" style="text-align:center">Explorer ↗</a>` : ''}
     </div>
-    <p class="mig-note">Linked on ${escapeHtml(new Date(claim.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' }))}. A linked address cannot be changed from the app; if you lost the phrase, contact support <b>before</b> genesis.</p>`;
+    <p class="mig-note">Linked on ${escapeHtml(new Date(claim.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' }))}. A linked address cannot be changed from the app; if you lost the phrase, contact support <b>before</b> genesis.${savedPath ? ' Several Deltix accounts can share one recovery phrase — each account uses its own slot.' : ''}</p>`;
   $('migCopyAddr').onclick = async () => {
     const ok = await copyText(claim.address);
     toast(ok ? 'Native address copied' : 'Could not copy automatically. Press and hold the address to copy it.', { tone: ok ? 'success' : 'error' });
@@ -200,6 +213,7 @@ const MIG_PROGRESS = { intro: 0, create: 1, confirm: 1, import: 1, protect: 2, s
 function openMigrationModal(step) {
   migResetSecrets();
   migState.challenge = null;
+  migState.slot = 0;
   if (step !== 'import') migState.expectAddress = null;
   $('migrationModal').hidden = false;
   migSetHint('');
@@ -272,7 +286,8 @@ function migRenderIntro(host) {
         <li><b>Nothing moves now.</b> You only prove that the address is yours by signing a short message.</li>
         <li>One address per account. It cannot be changed from the app afterwards.</li>
         <li>The 24-word recovery phrase <b>is</b> the wallet. Deltix never sees it and cannot restore it. Lose it and the balance allocated to that address is lost.</li>
-        <li>Chain: <code>${escapeHtml(c.chainId)}</code> · derivation path <code>${escapeHtml(c.hdPath || "m/44'/118'/0'/0/0")}</code></li>
+        <li><b>Several Deltix accounts?</b> Use <b>one</b> recovery phrase for all of them: link the first account with a new phrase (wallet slot 1), then in each other account choose "I already have a recovery phrase", enter the same phrase and pick the next slot (2, 3, 4…). Every account gets its own address; the same address cannot be linked twice.</li>
+        <li>Chain: <code>${escapeHtml(c.chainId)}</code> · derivation path <code>${escapeHtml(c.hdPath || "m/44'/118'/0'/0/0")}</code> (slot 1)</li>
       </ul>
       <button class="mig-choice primary" type="button" id="migChooseCreate">
         <span class="ic">✨</span>
@@ -293,8 +308,9 @@ async function migStartCreate() {
   try {
     const sdk = await migSdk();
     migState.network = migNetwork(sdk);
+    migState.slot = 0;
     migState.mnemonic = sdk.generateMnemonic();
-    migState.wallet = await sdk.Wallet.fromMnemonic(migState.mnemonic, migState.network);
+    migState.wallet = await sdk.Wallet.fromMnemonic(migState.mnemonic, migState.network, { hdPath: sdk.hdPathForAccount(0) });
     migRender('create');
   } catch (e) {
     migSetHint(e.message || 'Could not create the wallet.', true);
@@ -318,8 +334,9 @@ function migRenderCreate(host) {
       ${migWordsHtml(words, 'Tap to reveal — make sure nobody is watching')}
       <div class="mig-kv">
         <div><span>Your native address</span><span>${escapeHtml(migState.wallet.address)}</span></div>
-        <div><span>Path</span><span>${escapeHtml(migState.wallet.hdPath)}</span></div>
+        <div><span>Phrase slot</span><span>${escapeHtml(migSlotLabel(migState.wallet.hdPath))}</span></div>
       </div>
+      <p>Have other Deltix accounts? Keep this one phrase: in each other account choose "I already have a recovery phrase", enter it and pick slot 2, 3, 4… — one phrase to back up, one address per account.</p>
       <label class="check-row" for="migWroteDown"><input type="checkbox" id="migWroteDown" /><span>I have written down all 24 words, in order, and stored them somewhere safe and offline.</span></label>
       <div class="modal-actions">
         <button class="btn ghost" type="button" id="migBackIntro">Back</button>
@@ -373,36 +390,47 @@ function migRenderConfirm(host) {
 
 function migRenderImport(host) {
   const expect = migState.expectAddress;
+  const slotOptions = Array.from({ length: MIG_SLOTS }, (_, i) => `<option value="${i}"${i === migState.slot ? ' selected' : ''}>Slot ${i + 1}${i === 0 ? ' (default)' : ''}</option>`).join('');
   host.innerHTML = `
     <div class="mig-step">
       <h4>${expect ? 'Restore your linked wallet' : 'Import a recovery phrase'}</h4>
       <p>${expect
-    ? `Enter the recovery phrase of your linked address <code>${escapeHtml(migShort(expect))}</code> to keep an encrypted copy on this phone.`
+    ? `Enter the recovery phrase of your linked address <code>${escapeHtml(migShort(expect))}</code> to keep an encrypted copy on this phone. The slot is found automatically.`
     : 'Enter the 12–24 words separated by spaces. The phrase is processed on this phone only and never sent anywhere.'}</p>
-      <textarea id="migPhrase" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="word1 word2 word3 …"></textarea>
-      <div class="mig-kv" id="migImportPreview" hidden><div><span>Address</span><span id="migImportAddr"></span></div><div><span>Path</span><span id="migImportPath"></span></div></div>
+      <textarea id="migPhrase" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="word1 word2 word3 …">${migState.mnemonic && !expect ? escapeHtml(migState.mnemonic) : ''}</textarea>
+      ${expect ? '' : `
+      <label for="migSlot">Wallet slot of this phrase</label>
+      <select id="migSlot">${slotOptions}</select>
+      <p>One phrase can serve all your Deltix accounts: use a different slot for each account. Slot 1 is the usual choice for your first account.</p>`}
+      <div class="mig-kv" id="migImportPreview" hidden><div><span>Address</span><span id="migImportAddr"></span></div><div><span>Slot</span><span id="migImportPath"></span></div></div>
       <div class="modal-actions">
         <button class="btn ghost" type="button" id="migBackIntro2">${expect ? 'Cancel' : 'Back'}</button>
         <button class="btn primary" type="button" id="migImportBtn">Continue</button>
       </div>
     </div>`;
-  $('migBackIntro2').onclick = () => { if (expect) closeMigrationModal(); else migRender('intro'); };
+  $('migBackIntro2').onclick = () => { if (expect) closeMigrationModal(); else { migResetSecrets(); migRender('intro'); } };
   const ta = $('migPhrase');
+  const sel = $('migSlot');
+  const prefix = (migState.status.claims.prefix || 'dltx');
   const preview = async () => {
     const sdk = await migSdk().catch(() => null);
-    if (!sdk) return;
+    const box = $('migImportPreview');
+    if (!sdk || !box || migState.step !== 'import') return;   // debounced call after the step changed
     const text = ta.value;
-    if (!sdk.validateMnemonic(text)) { $('migImportPreview').hidden = true; return; }
+    if (!sdk.validateMnemonic(text) || expect) { box.hidden = true; return; }
     try {
-      const acc = await sdk.deriveAccount(sdk.normalizeMnemonic(text), { prefix: (migState.status.claims.prefix || 'dltx') });
-      acc.privkey.fill(0);
+      const hdPath = sdk.hdPathForAccount(Number(sel.value));
+      const [acc] = await sdk.deriveAddresses(sdk.normalizeMnemonic(text), { prefix, hdPaths: [hdPath] });
+      if (!$('migImportAddr')) return;
       $('migImportAddr').textContent = acc.address;
-      $('migImportPath').textContent = acc.hdPath;
-      $('migImportPreview').hidden = false;
-    } catch { $('migImportPreview').hidden = true; }
+      $('migImportPath').textContent = migSlotLabel(acc.hdPath);
+      box.hidden = false;
+    } catch { box.hidden = true; }
   };
   let t = 0;
   ta.oninput = () => { clearTimeout(t); t = setTimeout(preview, 350); };
+  if (sel) sel.onchange = () => { migState.slot = Number(sel.value); preview(); };
+  if (ta.value) preview();
   $('migImportBtn').onclick = async () => {
     const btn = $('migImportBtn');
     migBusy(btn, true, 'Checking…');
@@ -411,14 +439,23 @@ function migRenderImport(host) {
       const text = ta.value;
       if (!sdk.validateMnemonic(text)) throw new Error('That is not a valid recovery phrase. Check the spelling and the word order (12, 15, 18, 21 or 24 words).');
       migState.network = migNetwork(sdk);
-      migState.mnemonic = sdk.normalizeMnemonic(text);
-      const w = await sdk.Wallet.fromMnemonic(migState.mnemonic, migState.network);
-      if (expect && w.address !== expect) {
-        w.destroy();
-        migState.mnemonic = null;
-        throw new Error(`This phrase opens ${migShort(w.address)}, not your linked address ${migShort(expect)}. Only the phrase of the linked address can be restored here.`);
+      const mnemonic = sdk.normalizeMnemonic(text);
+      let hdPath;
+      if (expect) {
+        // Restore: find which slot of this phrase derives the linked address.
+        const paths = Array.from({ length: MIG_SCAN_SLOTS }, (_, i) => sdk.hdPathForAccount(i));
+        const hit = (await sdk.deriveAddresses(mnemonic, { prefix, hdPaths: paths })).find((x) => x.address === expect);
+        if (!hit) throw new Error(`This phrase does not open your linked address ${migShort(expect)} in any of its first ${MIG_SCAN_SLOTS} wallet slots. Only the phrase of the linked address can be restored here.`);
+        hdPath = hit.hdPath;
+        migState.slot = paths.indexOf(hdPath);
+      } else {
+        migState.slot = sel ? Number(sel.value) : 0;
+        hdPath = sdk.hdPathForAccount(migState.slot);
       }
+      const w = await sdk.Wallet.fromMnemonic(mnemonic, migState.network, { hdPath });
+      migState.mnemonic = mnemonic;
       migState.wallet = w;
+      if (expect) migSavePath(expect, hdPath);
       ta.value = '';
       migRender('protect');
     } catch (e) {
@@ -427,7 +464,6 @@ function migRenderImport(host) {
     }
   };
 }
-
 function migRenderProtect(host) {
   const restoreOnly = !!migState.expectAddress;
   host.innerHTML = `
@@ -455,7 +491,7 @@ function migRenderProtect(host) {
     try {
       const sdk = await migSdk();
       const id = migKeystoreId(migState.wallet.address);
-      const vault = new sdk.WalletVault(new sdk.WebCryptoStore(), migState.network, { id });
+      const vault = new sdk.WalletVault(new sdk.WebCryptoStore(), migState.network, { id, hdPath: migState.wallet.hdPath });
       if (await vault.exists()) await vault.wipe();   // same address ⇒ same phrase: replacing is safe
       const w = await vault.restore(migState.mnemonic, pw1);
       migState.wallet.destroy();
@@ -463,6 +499,7 @@ function migRenderProtect(host) {
       $('migPw1').value = '';
       $('migPw2').value = '';
       if (restoreOnly) {
+        migSavePath(w.address, w.hdPath);
         toast('Encrypted phrase saved on this phone', { tone: 'success' });
         closeMigrationModal();
         renderMigrationCard();
@@ -493,6 +530,7 @@ function migRenderSign(host) {
       <p>You sign the message below with the new wallet. The signature proves you control <code>${escapeHtml(migShort(migState.wallet.address))}</code>; it is not a transaction and cannot move anything.</p>
       <div class="mig-kv">
         <div><span>Address</span><span>${escapeHtml(migState.wallet.address)}</span></div>
+        <div><span>Phrase slot</span><span>${escapeHtml(migSlotLabel(migState.wallet.hdPath))}</span></div>
         <div><span>Chain</span><span>${escapeHtml(c.chainId)}</span></div>
         <div><span>Valid until</span><span id="migExpires">…</span></div>
       </div>
@@ -527,6 +565,7 @@ async function migSubmitClaim() {
       pubkey: sig.pub_key.value,
     });
     migState.claim = { address: out.address, chainId: out.chainId, createdAt: out.createdAt, status: out.status };
+    migSavePath(out.address, migState.wallet.hdPath);
     migRender('done');
     migResetSecrets();
     renderMigrationCard();
@@ -536,6 +575,15 @@ async function migSubmitClaim() {
       migState.challenge = null;
       migSetHint('The message expired. A new one was prepared — tap Sign & link again.', true);
       migRequestChallenge().catch((err) => migSetHint(err.message, true));
+    } else if (e.code === 'ADDRESS_ALREADY_CLAIMED') {
+      // The same slot of a shared phrase is already linked to another Deltix account: pick another slot.
+      const used = migState.slot + 1;
+      migState.challenge = null;
+      if (migState.wallet) { migState.wallet.destroy(); migState.wallet = null; }
+      migState.slot = Math.min(migState.slot + 1, MIG_SLOTS - 1);
+      migRender('import');
+      migSetHint(`That address (wallet slot ${used}) is already linked to another Deltix account. Pick a different slot for this account.`, true);
+      return;
     } else if (e.code === 'USER_ALREADY_CLAIMED') {
       migSetHint('This account already has a linked address.', true);
       loadMigrationStatus();
@@ -548,16 +596,18 @@ async function migSubmitClaim() {
 
 function migRenderDone(host) {
   const claim = migState.claim;
+  const savedPath = migSavedPath(claim.address);
   host.innerHTML = `
     <div class="mig-step">
       <div class="mig-done">
         <div class="big">✅</div>
         <h4>Address linked</h4>
-        <p>Your account is now bound to <code>${escapeHtml(migShort(claim.address))}</code>. At genesis, your legacy balance is allocated to this address.</p>
+        <p>Your account is now bound to <code>${escapeHtml(migShort(claim.address))}</code>${savedPath ? ` (${escapeHtml(migSlotLabel(savedPath))})` : ''}. At genesis, your legacy balance is allocated to this address.</p>
       </div>
       <ul class="disclosure">
         <li>Nothing has moved. Your in-app balance keeps working until the migration date is announced.</li>
         <li>Your recovery phrase is the only key. ${migHasKeystore(claim.address) ? 'An encrypted copy is on this phone; the written copy is still the real backup.' : 'No copy was kept on this phone — keep the written phrase safe.'}</li>
+        <li>Other Deltix accounts? Link each one with the <b>same phrase</b> and a <b>different slot</b> ("I already have a recovery phrase").</li>
         <li>Questions? The Deltix assistant and support can see that a claim exists, never the key.</li>
       </ul>
       <button class="btn primary" type="button" id="migDoneBtn">Done</button>
@@ -586,7 +636,7 @@ function migRenderReveal(host) {
     try {
       const sdk = await migSdk();
       const network = migNetwork(sdk);
-      const vault = new sdk.WalletVault(new sdk.WebCryptoStore(), network, { id: migKeystoreId(claim.address) });
+      const vault = new sdk.WalletVault(new sdk.WebCryptoStore(), network, { id: migKeystoreId(claim.address), hdPath: migSavedPath(claim.address) || undefined });
       const phrase = await vault.revealMnemonic($('migRevealPw').value);
       $('migRevealPw').value = '';
       const words = phrase.split(' ');
