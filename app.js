@@ -1566,6 +1566,12 @@ function renderBalances() {
       ? `0x${'•'.repeat(6)}…${'•'.repeat(4)}`
       : shortAddr(w.address);
   }
+  // Primary mode: the balance card IS the native chain (w.source === 'l1'); a member without a linked address
+  // sees the archived in-app ledger (w.legacy === true). Both are labelled so nobody mistakes one for the other.
+  const lbl = document.querySelector('.balance-lbl');
+  if (lbl) {
+    lbl.textContent = w.source === 'l1' ? `Total balance · Deltix chain${w.chainId ? ` (${w.chainId})` : ''}` : w.legacy ? 'Total balance · archived in-app ledger (migrated)' : 'Total balance';
+  }
   const eye = $('privacyToggle');
   if (eye) {
     eye.textContent = hide ? '🙈' : '👁';
@@ -2048,6 +2054,8 @@ function updateSendPlatformWarning() {
 $('sendTo')?.addEventListener('input', updateSendPlatformWarning);
 
 $('sendBtn').addEventListener('click', () => {
+  // Primary mode with sends lifted onto the chain: the native Send flow (device-signed) replaces the legacy transfer.
+  if (typeof migLegacyClosed === 'function' && migLegacyClosed('sends')) { if (typeof openMigrationModal === 'function') openMigrationModal('send'); return; }
   $('sendTo').value = '';
   $('sendAmount').value = '';
   if ($('sendMemo')) $('sendMemo').value = '';
@@ -2329,6 +2337,8 @@ $('confirmSend').addEventListener('click', async () => {
 // ---------- Stake modal ----------
 let pendingValidator = null;
 function openStakeModal(id, name) {
+  // Primary mode with staking lifted onto the chain: native staking (device-signed) replaces the legacy stake.
+  if (typeof migLegacyClosed === 'function' && migLegacyClosed('staking')) { if (typeof openMigrationModal === 'function') openMigrationModal('stake'); return; }
   pendingValidator = id;
   $('stakeModalTitle').textContent = `Delegate to ${name}`;
   const v = state.validators.find((x) => String(x.id) === String(id));

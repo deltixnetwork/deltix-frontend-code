@@ -102,6 +102,12 @@ function onMigrationFreezeError(json) {
   renderMigrationBanner({ on: true, message: (json && json.error) || '', until: json && json.until });
 }
 
+/** Primary mode: true when the given legacy feature ('sends' | 'staking' | 'p2p') has been lifted onto the chain. */
+function migLegacyClosed(feature) {
+  const l1 = migState.status && migState.status.l1;
+  return Boolean(l1 && l1.mode === 'primary' && Array.isArray(l1.features) && l1.features.includes(feature) && migState.claim);
+}
+
 /**
  * The "Mainnet checklist" shown at the top of the card (Pi-style): four steps with a tick, the current one
  * highlighted. Step 1 is always done for a signed-in member (claims need a verified, active account);
@@ -177,11 +183,11 @@ function renderMigrationCard() {
     <div class="mig-row"><span class="k">Phrase slot</span><span class="v mono">${savedPath ? escapeHtml(migSlotLabel(savedPath)) : 'unknown on this phone'}</span></div>
     <div class="mig-row"><span class="k">Native balance</span>${balance}</div>${stakingRows}
     <div class="mig-row"><span class="k">Recovery phrase on this phone</span><span class="v">${stored ? 'encrypted copy saved' : 'not stored'}</span></div>
-    ${l1.mode === 'shadow' && l1.live ? `
+    ${(l1.mode === 'shadow' || l1.mode === 'primary') && l1.live ? `
     <div class="mig-actions mig-actions-native">
       <button class="btn primary" type="button" id="migSendBtn" ${n && n.exists && n.amount !== '0' ? '' : 'disabled'}>↑ Send native DLTX</button>
       <button class="btn ghost" type="button" id="migReceiveBtn">↓ Receive</button>
-      <button class="btn ghost" type="button" id="migStakeBtn" >◆ Stake</button>
+      <button class="btn ghost" type="button" id="migStakeBtn" ${n && n.exists ? '' : 'disabled'}>◆ Stake</button>
     </div>
     <div class="mig-history" id="migHistory"></div>` : ''}
     <div class="mig-actions">
@@ -222,10 +228,11 @@ function renderMigrationCard() {
 async function loadNativeBalance() {
   const l1 = migState.status && migState.status.l1;
   const claim = migState.claim;
-  if (!l1 || !claim || (!l1.restUrl && l1.mode !== 'shadow')) return;
+  const viaAdapter = Boolean(l1 && (l1.mode === 'shadow' || l1.mode === 'primary'));
+  if (!l1 || !claim || (!l1.restUrl && !viaAdapter)) return;
   try {
     const sdk = await migSdk();
-    if (l1.mode === 'shadow') {
+    if (viaAdapter) {
       const acc = await api('GET', '/l1/account');
       migState.native = {
         amount: sdk.formatDltx(BigInt(acc.balance || '0')),
