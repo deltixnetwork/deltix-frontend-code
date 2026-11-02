@@ -1,0 +1,3 @@
+# Built artifacts keep their exact bytes (their SHA-256 is recorded next to them).
+vendor/deltix-wallet-sdk.js -text
+vendor/deltix-wallet-sdk.js.sha256 -text

@@ -201,6 +201,8 @@ async function api(method, path, body, { retries = method === 'GET' ? 3 : 0 } = 
     err.ref = (json && json.ref) || requestId;
     err.code = (json && json.code) || null;
     err.data = json;
+    // A migration freeze refusal paints the banner at once, whatever screen asked.
+    if (err.code === 'MIGRATION_FREEZE' && typeof onMigrationFreezeError === 'function') onMigrationFreezeError(json);
     throw err;
   }
   return json;
@@ -409,6 +411,7 @@ function showTab(id, { refresh = true } = {}) {
 function refreshTabContent(id) {
   if (id === 'tab-wallet') {
     Promise.allSettled([loadWallet(), loadTx(), loadStats()]);
+    if (typeof loadMigrationStatus === 'function') loadMigrationStatus();
   } else if (id === 'tab-stake') {
     Promise.allSettled([loadWallet(), loadStakes(), loadValidators()]);
   } else if (id === 'tab-arcade') {
@@ -1327,6 +1330,7 @@ async function enterApp() {
   Promise.allSettled([loadRewards(), loadTree()]).then(() => setTimeout(checkBotNudge, 1500));
   loadKycStatus();
   loadP2pStatus().catch(() => {});
+  if (typeof loadMigrationStatus === 'function') loadMigrationStatus();
 }
 
 /** Extracts the email claim from the JWT payload (no verification needed). */
@@ -7935,6 +7939,7 @@ function closeTransientOverlay() {
 function closeTopOverlay() {
   if (closeTransientOverlay()) return true;
   if (typeof closeScanner === 'function' && closeScanner()) return true;
+  if (typeof closeMigrationModal === 'function' && closeMigrationModal()) return true;
   if (typeof closePredictFullChart === 'function' && closePredictFullChart()) return true;
   for (const id of ['p2pImgModal', 'p2pTraderModal', 'p2pEditModal', 'swapModal', 'dappModal', 'stakeModal', 'edDelegateModal', 'edUndelegateModal', 'sendModal', 'deleteModal', 'p2pCreateModal', 'p2pOfferModal', 'p2pOrderModal']) {
     const el = document.getElementById(id);
