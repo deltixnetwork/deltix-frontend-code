@@ -201,6 +201,8 @@ async function api(method, path, body, { retries = method === 'GET' ? 3 : 0 } = 
     err.ref = (json && json.ref) || requestId;
     err.code = (json && json.code) || null;
     err.data = json;
+    // A migration freeze refusal paints the banner at once, whatever screen asked.
+    if (err.code === 'MIGRATION_FREEZE' && typeof onMigrationFreezeError === 'function') onMigrationFreezeError(json);
     throw err;
   }
   return json;
@@ -409,6 +411,7 @@ function showTab(id, { refresh = true } = {}) {
 function refreshTabContent(id) {
   if (id === 'tab-wallet') {
     Promise.allSettled([loadWallet(), loadTx(), loadStats()]);
+    if (typeof loadMigrationStatus === 'function') loadMigrationStatus();
   } else if (id === 'tab-stake') {
     Promise.allSettled([loadWallet(), loadStakes(), loadValidators()]);
   } else if (id === 'tab-arcade') {
@@ -1327,6 +1330,7 @@ async function enterApp() {
   Promise.allSettled([loadRewards(), loadTree()]).then(() => setTimeout(checkBotNudge, 1500));
   loadKycStatus();
   loadP2pStatus().catch(() => {});
+  if (typeof loadMigrationStatus === 'function') loadMigrationStatus();
 }
 
 /** Extracts the email claim from the JWT payload (no verification needed). */
@@ -1561,6 +1565,12 @@ function renderBalances() {
     addrTxt.textContent = hide
       ? `0x${'•'.repeat(6)}…${'•'.repeat(4)}`
       : shortAddr(w.address);
+  }
+  // Primary mode: the balance card IS the native chain (w.source === 'l1'); a member without a linked address
+  // sees the archived in-app ledger (w.legacy === true). Both are labelled so nobody mistakes one for the other.
+  const lbl = document.querySelector('.balance-lbl');
+  if (lbl) {
+    lbl.textContent = w.source === 'l1' ? `Total balance · Deltix chain${w.chainId ? ` (${w.chainId})` : ''}` : w.legacy ? 'Total balance · archived in-app ledger (migrated)' : 'Total balance';
   }
   const eye = $('privacyToggle');
   if (eye) {
@@ -2044,6 +2054,8 @@ function updateSendPlatformWarning() {
 $('sendTo')?.addEventListener('input', updateSendPlatformWarning);
 
 $('sendBtn').addEventListener('click', () => {
+  // Primary mode with sends lifted onto the chain: the native Send flow (device-signed) replaces the legacy transfer.
+  if (typeof migLegacyClosed === 'function' && migLegacyClosed('sends')) { if (typeof openMigrationModal === 'function') openMigrationModal('send'); return; }
   $('sendTo').value = '';
   $('sendAmount').value = '';
   if ($('sendMemo')) $('sendMemo').value = '';
@@ -2325,6 +2337,8 @@ $('confirmSend').addEventListener('click', async () => {
 // ---------- Stake modal ----------
 let pendingValidator = null;
 function openStakeModal(id, name) {
+  // Primary mode with staking lifted onto the chain: native staking (device-signed) replaces the legacy stake.
+  if (typeof migLegacyClosed === 'function' && migLegacyClosed('staking')) { if (typeof openMigrationModal === 'function') openMigrationModal('stake'); return; }
   pendingValidator = id;
   $('stakeModalTitle').textContent = `Delegate to ${name}`;
   const v = state.validators.find((x) => String(x.id) === String(id));
@@ -7935,6 +7949,7 @@ function closeTransientOverlay() {
 function closeTopOverlay() {
   if (closeTransientOverlay()) return true;
   if (typeof closeScanner === 'function' && closeScanner()) return true;
+  if (typeof closeMigrationModal === 'function' && closeMigrationModal()) return true;
   if (typeof closePredictFullChart === 'function' && closePredictFullChart()) return true;
   for (const id of ['p2pImgModal', 'p2pTraderModal', 'p2pEditModal', 'swapModal', 'dappModal', 'stakeModal', 'edDelegateModal', 'edUndelegateModal', 'sendModal', 'deleteModal', 'p2pCreateModal', 'p2pOfferModal', 'p2pOrderModal']) {
     const el = document.getElementById(id);

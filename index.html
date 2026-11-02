@@ -94,6 +94,11 @@
 
     <!-- ============ MAIN TABS ============ -->
     <main class="screen" id="screen-main">
+      <!-- Migration freeze notice (server-driven: /api/migration/status) -->
+      <div class="mig-banner" id="migrationBanner" role="status" aria-live="polite" hidden>
+        <span class="mig-banner-ic" aria-hidden="true">❄</span>
+        <div class="mig-banner-txt"><b>Balances are frozen for the migration</b><small id="migrationBannerMsg"></small></div>
+      </div>
       <!-- Dashboard -->
       <div class="tab active" id="tab-wallet">
         <div class="balance-card">
@@ -164,6 +169,19 @@
           <span class="nav-card-txt"><b>Deltix Earn</b><small>Spend Energy, earn $DLTX every 12h</small></span>
           <span class="nav-card-arrow">›</span>
         </button>
+
+        <!-- Native $DLTX migration (shown only while the server has claims enabled) -->
+        <div class="card mig-card" id="migrationCard" hidden>
+          <div class="mig-card-head">
+            <span class="mig-ic" aria-hidden="true">⛓</span>
+            <div class="mig-head-txt">
+              <b>Native $DLTX migration</b>
+              <small id="migrationCardSub">Link one native Deltix address to receive your balance on the Deltix chain at genesis.</small>
+            </div>
+            <span class="mig-pill" id="migrationPill">Open</span>
+          </div>
+          <div id="migrationCardBody"></div>
+        </div>
 
         <h3 class="section-title">Network snapshot</h3>
         <div class="stats-grid" id="statsGrid"></div>
@@ -1822,6 +1840,21 @@
     <div class="exp-body" id="dappPageBody"></div>
   </div>
 
+  <!-- Native $DLTX migration: claim flow (create / import a native wallet, sign the server challenge, link) -->
+  <div class="modal-backdrop" id="migrationModal" hidden>
+    <div class="modal mig-modal" role="dialog" aria-modal="true" aria-labelledby="migrationTitle">
+      <div class="game-head">
+        <h3 id="migrationTitle">Native $DLTX migration</h3>
+        <button class="btn ghost small" id="migrationClose" type="button" aria-label="Close">✕</button>
+      </div>
+      <ol class="mig-progress" id="migrationProgress" aria-hidden="true">
+        <li data-step="intro">Start</li><li data-step="wallet">Wallet</li><li data-step="protect">Protect</li><li data-step="sign">Link</li>
+      </ol>
+      <div id="migrationSteps"></div>
+      <p class="hint" id="migrationHint" aria-live="polite"></p>
+    </div>
+  </div>
+
   <div class="toast" id="toast" hidden></div>
 
   <!-- Deltix Arcade game overlay -->
@@ -1903,5 +1936,6 @@
   <script src="faq-data.js"></script>
   <script src="arcade.js"></script>
   <script src="app.js"></script>
+  <script src="migration.js"></script>
 </body>
 </html>

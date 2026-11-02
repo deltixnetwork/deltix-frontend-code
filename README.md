@@ -11,7 +11,7 @@ and packaged for stores by [deltix-Mobile-App-code](https://github.com/deltixnet
 
 | Tab | Features |
 |---|---|
-| **Wallet** | Balance, send/receive $DLTX (base fee burned), activity history |
+| **Wallet** | Balance, send/receive $DLTX (base fee burned), activity history; **Native $DLTX migration** card (shown only while the backend has `MIGRATION_CLAIMS_ENABLED=true`): Mainnet checklist; create or import a native `dltx1…` wallet on the phone, back up the 24-word phrase, optionally keep an encrypted copy on the device, sign the server challenge (ADR-36) and link the address; one phrase can serve several Deltix accounts through wallet slots (one address per account). With the backend's L1 adapter on (`L1_MODE=shadow`) the card is a **native wallet**: on-chain balance / staked / rewards / unbonding, **Send** (Max = balance − fee), **Stake** (delegate, unstake with the chain's unbonding period, claim rewards), **Receive** (address + QR), recent native activity — every operation is signed on the device after a review with the exact fee and relayed by the backend. A server-driven freeze banner appears while `MIGRATION_FREEZE=on` |
 | **Deltix Earn** | Direct Earn entry in primary navigation; server-defined packages: 100 Energy for 5 DLTX, 150 for 7.5, or 200 for 10 over 12 hours by default |
 | **Stake** | Validator directory, delegation, rewards, unstake |
 | **Arcade** | **Deltix Arcade (live)** — 10 original games (easy/hard) with daily-capped $DLTX win rewards |
@@ -22,6 +22,10 @@ and packaged for stores by [deltix-Mobile-App-code](https://github.com/deltixnet
 ## Pages
 
 - `index.html` — the app
+- `app.js`, `arcade.js` — the app's code; `migration.js` — the native-chain migration flow (claim card, banner, modal)
+- `vendor/` — third-party code loaded on first use (QR libraries) and `deltix-wallet-sdk.js`, the browser bundle of
+  Deltix's own wallet SDK (`deltix-wallet`: `npm run build:browser -- --out ../frontend/vendor/deltix-wallet-sdk.js`;
+  keys never leave the device). See `vendor/NOTICE.md`.
 - `terms.html` — Terms of Service
 - `privacy.html` — Privacy Policy
 - `delete-account.html` — account-deletion instructions (Google Play Data safety URL)
