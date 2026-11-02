@@ -177,6 +177,12 @@ function renderMigrationCard() {
     <div class="mig-row"><span class="k">Phrase slot</span><span class="v mono">${savedPath ? escapeHtml(migSlotLabel(savedPath)) : 'unknown on this phone'}</span></div>
     <div class="mig-row"><span class="k">Native balance</span>${balance}</div>${stakingRows}
     <div class="mig-row"><span class="k">Recovery phrase on this phone</span><span class="v">${stored ? 'encrypted copy saved' : 'not stored'}</span></div>
+    ${l1.mode === 'shadow' && l1.live ? `
+    <div class="mig-actions mig-actions-native">
+      <button class="btn primary" type="button" id="migSendBtn" ${n && n.exists && n.amount !== '0' ? '' : 'disabled'}>↑ Send native DLTX</button>
+      <button class="btn ghost" type="button" id="migReceiveBtn">↓ Receive</button>
+    </div>
+    <div class="mig-history" id="migHistory"></div>` : ''}
     <div class="mig-actions">
       <button class="btn ghost" type="button" id="migCopyAddr">Copy address</button>
       ${stored
@@ -190,6 +196,11 @@ function renderMigrationCard() {
     const ok = await copyText(claim.address);
     toast(ok ? 'Native address copied' : 'Could not copy automatically. Press and hold the address to copy it.', { tone: ok ? 'success' : 'error' });
   };
+  const sendBtn = $('migSendBtn');
+  if (sendBtn) sendBtn.onclick = () => openMigrationModal('send');
+  const receiveBtn = $('migReceiveBtn');
+  if (receiveBtn) receiveBtn.onclick = () => openMigrationModal('receive');
+  if ($('migHistory')) renderMigHistory();
   const reveal = $('migRevealBtn');
   if (reveal) reveal.onclick = () => openMigrationModal('reveal');
   const forget = $('migForgetBtn');
@@ -257,7 +268,7 @@ async function migForgetKeystore() {
 
 // ---------- the modal ----------
 
-const MIG_PROGRESS = { intro: 0, create: 1, confirm: 1, import: 1, protect: 2, sign: 3, done: 4, reveal: -1 };
+const MIG_PROGRESS = { intro: 0, create: 1, confirm: 1, import: 1, protect: 2, sign: 3, done: 4, reveal: -1, send: -1, review: -1, unlock: -1, result: -1, receive: -1 };
 
 function openMigrationModal(step) {
   migResetSecrets();
@@ -285,6 +296,7 @@ function migResetSecrets() {
   migState.mnemonic = null;
   migState.network = null;
   migState.busy = false;
+  migState.send = null;   // draft / reviewed transfer; never outlives the modal
 }
 
 function migSetHint(msg, error = false) {
@@ -321,6 +333,11 @@ function migRender(step) {
     case 'sign': return migRenderSign(host);
     case 'done': return migRenderDone(host);
     case 'reveal': return migRenderReveal(host);
+    case 'send': return migRenderSend(host);
+    case 'review': return migRenderReview(host);
+    case 'unlock': return migRenderUnlock(host);
+    case 'result': return migRenderResult(host);
+    case 'receive': return migRenderReceive(host);
     default: host.innerHTML = '';
   }
 }
@@ -701,5 +718,296 @@ function migRenderReveal(host) {
   };
 }
 
+// ---------- native wallet: send / receive / history (W2) ----------
+// Signing happens on the phone with the wallet SDK; the backend only relays the finished bytes
+// (POST /api/l1/tx/broadcast) and answers reads (GET /api/l1/account, /api/l1/transfers). The unlocked
+// wallet exists only between "Unlock" and the broadcast and is destroyed right after (or on cancel/Back).
+
+function migNativeNetwork(sdk) {
+  const l1 = migState.status.l1;
+  const chainId = l1.chainId || migState.status.claims.chainId;
+  const kind = /(test|dev|local|wallet-test|sandbox)/i.test(chainId) ? 'testnet' : 'mainnet';
+  return sdk.defineNetwork({ kind, chainId, prefix: migState.status.claims.prefix || 'dltx', approved: true });
+}
+
+function migRenderSend(host) {
+  const d = migState.send || {};
+  const chainId = migState.status.l1.chainId || migState.status.claims.chainId;
+  host.innerHTML = `
+    <div class="mig-step">
+      <h4>Send native DLTX</h4>
+      <p>From <code>${escapeHtml(migShort(migState.claim.address))}</code> · on chain: <b>${escapeHtml((migState.native && migState.native.amount) || '0')} DLTX</b></p>
+      <label for="migSendTo">Recipient address</label>
+      <input id="migSendTo" type="text" placeholder="dltx1…" autocomplete="off" autocapitalize="off" spellcheck="false" value="${escapeHtml(d.to || '')}" />
+      <label for="migSendAmount">Amount (DLTX)</label>
+      <div class="bot-input-row">
+        <input id="migSendAmount" type="text" inputmode="decimal" placeholder="0.00" autocomplete="off" value="${d.max ? '' : escapeHtml(d.amountText || '')}" ${d.max ? 'disabled' : ''} />
+        <button class="btn ghost${d.max ? ' active' : ''}" type="button" id="migSendMax" title="Everything minus the network fee">${d.max ? 'Max ✓' : 'Max'}</button>
+      </div>
+      <p class="hint" id="migSendMaxHint" ${d.max ? '' : 'hidden'}>Whole balance minus the network fee — the exact amount is shown on the next screen.</p>
+      <label for="migSendMemo">Memo (optional — some exchanges require one)</label>
+      <input id="migSendMemo" type="text" maxlength="256" autocomplete="off" value="${escapeHtml(d.memo || '')}" />
+      <ul class="disclosure">
+        <li>Native transfers are final and leave the Deltix app entirely. Check the address twice.</li>
+        <li>Only <code>dltx1…</code> addresses on chain <code>${escapeHtml(chainId)}</code> — never a <code>0x…</code> address, never a wDLTX contract.</li>
+        <li>The network fee is paid in DLTX to the chain, not to Deltix.</li>
+      </ul>
+      <div class="modal-actions">
+        <button class="btn ghost" type="button" id="migSendCancel">Cancel</button>
+        <button class="btn primary" type="button" id="migSendNext">Continue</button>
+      </div>
+    </div>`;
+  $('migSendCancel').onclick = () => closeMigrationModal();
+  $('migSendMax').onclick = () => {
+    const on = !($('migSendAmount').disabled);
+    $('migSendAmount').disabled = on;
+    if (on) $('migSendAmount').value = '';
+    $('migSendMax').textContent = on ? 'Max ✓' : 'Max';
+    $('migSendMax').classList.toggle('active', on);
+    $('migSendMaxHint').hidden = !on;
+  };
+  $('migSendNext').onclick = async () => {
+    try {
+      const sdk = await migSdk();
+      const prefix = migState.status.claims.prefix || 'dltx';
+      const to = $('migSendTo').value.trim();
+      if (!sdk.isValidAddress(to, prefix)) throw new Error(`Enter a valid ${prefix}1… address.`);
+      if (to === migState.claim.address) throw new Error('That is your own address.');
+      const max = $('migSendAmount').disabled;
+      let amount = null;
+      const amountText = $('migSendAmount').value.trim();
+      if (!max) {
+        try { amount = sdk.parsePositiveDltx(amountText); } catch { throw new Error('Enter an amount greater than zero with at most 8 decimals.'); }
+      }
+      const memo = $('migSendMemo').value;
+      if (new TextEncoder().encode(memo).length > 256) throw new Error('The memo is too long (256 bytes).');
+      migState.send = { to, amount, amountText, max, memo };
+      migRender('unlock');
+    } catch (e) {
+      migSetHint(e.message, true);
+    }
+  };
+}
+
+/** Opens the wallet of the linked address from the encrypted copy (password) or from the typed phrase; verifies the address. */
+async function migOpenLinkedWallet({ password, phrase }) {
+  const sdk = await migSdk();
+  const network = migNativeNetwork(sdk);
+  const claim = migState.claim;
+  const prefix = network.prefix;
+  const savedPath = migSavedPath(claim.address);
+  let mnemonic;
+  if (password !== undefined) {
+    const vault = new sdk.WalletVault(new sdk.WebCryptoStore(), network, { id: migKeystoreId(claim.address) });
+    mnemonic = await vault.revealMnemonic(password);
+  } else {
+    if (!sdk.validateMnemonic(phrase)) throw new Error('That is not a valid recovery phrase.');
+    mnemonic = sdk.normalizeMnemonic(phrase);
+  }
+  let hdPath = savedPath;
+  if (!hdPath || (await sdk.deriveAddresses(mnemonic, { prefix, hdPaths: [hdPath] }))[0].address !== claim.address) {
+    const paths = Array.from({ length: MIG_SCAN_SLOTS }, (_, i) => sdk.hdPathForAccount(i));
+    const hit = (await sdk.deriveAddresses(mnemonic, { prefix, hdPaths: paths })).find((x) => x.address === claim.address);
+    if (!hit) throw new Error(`This phrase does not open your linked address ${migShort(claim.address)}.`);
+    hdPath = hit.hdPath;
+    migSavePath(claim.address, hdPath);
+  }
+  const wallet = await sdk.Wallet.fromMnemonic(mnemonic, network, { hdPath });
+  if (wallet.address !== claim.address) { wallet.destroy(); throw new Error('Derived address does not match the linked address.'); }
+  return { sdk, wallet, network };
+}
+
+function migRenderUnlock(host) {
+  const stored = migHasKeystore(migState.claim.address);
+  host.innerHTML = `
+    <div class="mig-step">
+      <h4>Unlock to sign</h4>
+      <p>${stored
+    ? 'Enter the password of the encrypted copy on this phone. The key is used once, on this phone, and discarded.'
+    : 'No encrypted copy is on this phone: enter the recovery phrase of your linked address. It is used once, on this phone, and discarded.'}</p>
+      ${stored
+    ? '<label for="migUnlockPw">Password</label><input id="migUnlockPw" type="password" autocomplete="current-password" />'
+    : '<textarea id="migUnlockPhrase" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="word1 word2 word3 …"></textarea>'}
+      <div class="modal-actions">
+        <button class="btn ghost" type="button" id="migUnlockBack">Back</button>
+        <button class="btn primary" type="button" id="migUnlockGo">Unlock &amp; review</button>
+      </div>
+    </div>`;
+  $('migUnlockBack').onclick = () => migRender('send');
+  $('migUnlockGo').onclick = async () => {
+    const btn = $('migUnlockGo');
+    migBusy(btn, true, 'Unlocking…');
+    try {
+      const creds = stored ? { password: $('migUnlockPw').value } : { phrase: $('migUnlockPhrase').value };
+      const { sdk, wallet, network } = await migOpenLinkedWallet(creds);
+      if (stored) $('migUnlockPw').value = ''; else $('migUnlockPhrase').value = '';
+      migState.wallet = wallet;
+      migState.network = network;
+      // fresh account state right before signing: sequence, account number, spendable balance
+      const acc = await api('GET', '/l1/account');
+      if (!acc.exists) throw new Error('This address has never received DLTX on chain; there is nothing to send yet.');
+      const d = migState.send;
+      const probeMsg = sdk.buildMsgSend({ from: wallet.address, to: d.to, amount: d.max ? 1n : d.amount, network });
+      const sim = await api('POST', '/l1/tx/simulate', { txBytes: sdk.makeSimulationTx({ wallet, messages: [probeMsg], memo: d.memo, sequence: acc.sequence }).base64 });
+      const fee = BigInt(sim.fee);
+      const gasLimit = BigInt(sim.gasLimit);
+      const balance = BigInt(acc.balance);
+      const amount = d.max ? balance - fee : d.amount;
+      if (amount <= 0n) throw new Error('The balance does not cover the network fee.');
+      if (amount + fee > balance) throw new Error(`Not enough DLTX: ${sdk.formatDltx(amount)} + fee ${sdk.formatDltx(fee)} exceeds the balance of ${sdk.formatDltx(balance)}.`);
+      migState.send.review = { amount, fee, gasLimit, accountNumber: acc.accountNumber, sequence: acc.sequence, balance };
+      migRender('review');
+    } catch (e) {
+      if (migState.wallet) { migState.wallet.destroy(); migState.wallet = null; }
+      const msg = e && e.name === 'DecryptionError' ? 'Wrong password (or the stored copy is damaged).' : (e.message || 'Could not unlock.');
+      migSetHint(msg, true);
+      migBusy(btn, false);
+    }
+  };
+}
+
+function migRenderReview(host) {
+  const d = migState.send;
+  const r = d.review;
+  const sdkFmt = (v) => window.DeltixWalletSdk.formatDltx(v);
+  host.innerHTML = `
+    <div class="mig-step">
+      <h4>Review the transfer</h4>
+      <div class="mig-kv">
+        <div><span>From</span><span>${escapeHtml(migState.claim.address)}</span></div>
+        <div><span>To</span><span>${escapeHtml(d.to)}</span></div>
+        <div><span>Amount</span><span>${escapeHtml(sdkFmt(r.amount))} DLTX</span></div>
+        <div><span>Network fee</span><span>${escapeHtml(sdkFmt(r.fee))} DLTX (gas ${escapeHtml(r.gasLimit.toString())})</span></div>
+        <div><span>Total debit</span><span>${escapeHtml(sdkFmt(r.amount + r.fee))} DLTX</span></div>
+        <div><span>Remaining</span><span>${escapeHtml(sdkFmt(r.balance - r.amount - r.fee))} DLTX</span></div>
+        ${d.memo ? `<div><span>Memo</span><span>${escapeHtml(d.memo)}</span></div>` : ''}
+        <div><span>Chain</span><span>${escapeHtml(migState.network.chainId)}</span></div>
+      </div>
+      <div class="mig-warn"><span>⚠️</span><div><b>Final.</b> Native transfers cannot be reversed by Deltix or anyone else. Make sure the address is exactly right.</div></div>
+      <div class="modal-actions">
+        <button class="btn ghost" type="button" id="migReviewCancel">Cancel</button>
+        <button class="btn primary" type="button" id="migReviewSend">Sign &amp; send</button>
+      </div>
+    </div>`;
+  $('migReviewCancel').onclick = () => closeMigrationModal();
+  $('migReviewSend').onclick = async () => {
+    const btn = $('migReviewSend');
+    migBusy(btn, true, 'Signing…');
+    try {
+      const sdk = await migSdk();
+      const wallet = migState.wallet;
+      if (!wallet || wallet.destroyed) throw new Error('The wallet is no longer unlocked. Start again.');
+      const msg = sdk.buildMsgSend({ from: wallet.address, to: d.to, amount: r.amount, network: migState.network });
+      const signed = await sdk.signTx({ wallet, messages: [msg], memo: d.memo, accountNumber: r.accountNumber, sequence: r.sequence, gasLimit: r.gasLimit, fee: r.fee });
+      wallet.destroy();
+      migState.wallet = null;
+      btn.textContent = 'Broadcasting…';
+      let out;
+      try {
+        out = await api('POST', '/l1/tx/broadcast', { txBytes: signed.base64 });
+      } catch (e) {
+        out = e.data && e.data.accepted === false ? e.data : { accepted: false, code: null, log: e.message };
+      }
+      migState.send.result = { ...out, hash: out.hash || signed.hash, amount: r.amount, fee: r.fee, to: d.to };
+      migRender('result');
+      migState.native = null;
+      loadNativeBalance();
+    } catch (e) {
+      if (migState.wallet) { migState.wallet.destroy(); migState.wallet = null; }
+      migSetHint(e.message || 'The transfer could not be signed.', true);
+      migBusy(btn, false);
+    }
+  };
+}
+
+function migRenderResult(host) {
+  const res = migState.send.result;
+  const sdkFmt = (v) => window.DeltixWalletSdk.formatDltx(v);
+  const l1 = migState.status.l1;
+  const explorer = l1.explorerUrl && res.hash ? `<a class="btn ghost" href="${escapeHtml(l1.explorerUrl)}/#/tx/${escapeHtml(res.hash)}" target="_blank" rel="noopener" style="text-align:center">View in explorer ↗</a>` : '';
+  let head;
+  let body;
+  if (res.accepted && res.committed && res.code === 0) {
+    head = '<div class="big">✅</div><h4>Sent</h4>';
+    body = `<p><b>${escapeHtml(sdkFmt(res.amount))} DLTX</b> to <code>${escapeHtml(migShort(res.to))}</code> is in block ${escapeHtml(String(res.height))}. Fee ${escapeHtml(sdkFmt(res.fee))} DLTX.</p>`;
+  } else if (res.accepted && !res.committed) {
+    head = '<div class="big">⏳</div><h4>Submitted</h4>';
+    body = '<p>The network accepted the transfer but it was not yet in a block when we stopped waiting. It will appear in your activity shortly.</p>';
+  } else if (res.accepted && res.code !== 0) {
+    head = '<div class="big">❌</div><h4>Failed on chain</h4>';
+    body = `<p>The transfer was included but failed: <code>${escapeHtml(res.log || `code ${res.code}`)}</code>. The fee was charged; the amount was not moved.</p>`;
+  } else {
+    head = '<div class="big">⛔</div><h4>Not accepted</h4>';
+    body = `<p>The network refused the transfer: <code>${escapeHtml(res.log || `code ${res.code}`)}</code>. Nothing moved and no fee was charged.</p>`;
+  }
+  host.innerHTML = `
+    <div class="mig-step">
+      <div class="mig-done">${head}${body}</div>
+      ${res.hash ? `<div class="mig-kv"><div><span>Transaction</span><span>${escapeHtml(res.hash)}</span></div></div>` : ''}
+      <div class="modal-actions">
+        ${explorer}
+        <button class="btn primary" type="button" id="migResultDone">Done</button>
+      </div>
+    </div>`;
+  $('migResultDone').onclick = () => closeMigrationModal();
+}
+
+async function migRenderReceive(host) {
+  const addr = migState.claim.address;
+  const chainId = migState.status.l1.chainId || migState.status.claims.chainId;
+  host.innerHTML = `
+    <div class="mig-step">
+      <h4>Receive native DLTX</h4>
+      <p>Share this address, or let the sender scan the code. Only native DLTX on chain <code>${escapeHtml(chainId)}</code> can be sent here — not wDLTX (BEP-20) and not in-app DLTX.</p>
+      <div class="qr-box" id="migQr" role="img" aria-label="QR code of your native address"><p class="chat-hint">Preparing your code…</p></div>
+      <div class="qr-addr">${escapeHtml(addr)}</div>
+      <div class="modal-actions">
+        <button class="btn ghost" type="button" id="migReceiveCopy">Copy address</button>
+        <button class="btn primary" type="button" id="migReceiveClose">Close</button>
+      </div>
+    </div>`;
+  $('migReceiveCopy').onclick = async () => { const ok = await copyText(addr); toast(ok ? 'Native address copied' : 'Could not copy automatically.', { tone: ok ? 'success' : 'error' }); };
+  $('migReceiveClose').onclick = () => closeMigrationModal();
+  try {
+    await loadScriptOnce('vendor/qrcode.js');
+    const qr = qrcode(0, 'M');
+    qr.addData(addr);
+    qr.make();
+    const box = $('migQr');
+    if (box) {
+      box.innerHTML = qr.createSvgTag({ cellSize: 6, margin: 4, scalable: true });
+      const svg = box.querySelector('svg');
+      if (svg) { svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('shape-rendering', 'crispEdges'); }
+    }
+  } catch {
+    const box = $('migQr');
+    if (box) box.innerHTML = '<p class="chat-hint">The code could not be drawn. You can still copy your address.</p>';
+  }
+}
+
+/** Last native transfers of the linked address (through the backend adapter), rendered inside the card. */
+async function renderMigHistory() {
+  const host = $('migHistory');
+  if (!host) return;
+  host.innerHTML = '<p class="mig-note">Loading native activity…</p>';
+  try {
+    const sdk = await migSdk();
+    const res = await api('GET', '/l1/transfers?limit=5');
+    const me = migState.claim.address;
+    if (!res.items.length) { host.innerHTML = '<p class="mig-note">No native activity yet.</p>'; return; }
+    host.innerHTML = `<h4 class="mig-history-title">Native activity</h4>` + res.items.map((t) => {
+      const out = t.from === me;
+      const other = out ? t.to : t.from;
+      const when = t.time ? new Date(t.time).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : (t.height ? `block ${t.height}` : '');
+      return `<div class="mig-tx ${out ? 'out' : 'in'}${t.success === false ? ' failed' : ''}">
+        <span class="mig-tx-ic">${out ? '↑' : '↓'}</span>
+        <span class="mig-tx-txt"><b>${out ? 'Sent to' : 'Received from'} ${escapeHtml(migShort(other || ''))}</b><small>${escapeHtml(when)}${t.memo ? ' · ' + escapeHtml(t.memo) : ''}${t.success === false ? ' · failed' : ''}</small></span>
+        <span class="mig-tx-amt">${out ? '−' : '+'}${escapeHtml(sdk.formatDltx(BigInt(t.amount || '0')))}</span>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    host.innerHTML = `<p class="mig-note">Native activity unavailable right now.</p>`;
+  }
+}
 $('migrationClose')?.addEventListener('click', () => closeMigrationModal());
-$('migrationModal')?.addEventListener('click', (e) => { if (e.target === e.currentTarget && migState.step !== 'create') closeMigrationModal(); });
+$('migrationModal')?.addEventListener('click', (e) => { if (e.target === e.currentTarget && !['create', 'review', 'unlock'].includes(migState.step)) closeMigrationModal(); });
