@@ -165,12 +165,17 @@ function renderMigrationCard() {
   else if (!migState.native) balance = '<span class="v">loading…</span>';
   else if (migState.native.error) balance = '<span class="v">unavailable right now</span>';
   else balance = `<span class="v">${escapeHtml(migState.native.amount)} DLTX</span>`;
+  const n = migState.native && !migState.native.error ? migState.native : null;
+  const stakingRows = n && n.staked !== undefined ? `
+    <div class="mig-row"><span class="k">Staked on chain</span><span class="v">${escapeHtml(n.staked)} DLTX</span></div>
+    <div class="mig-row"><span class="k">Staking rewards</span><span class="v">${escapeHtml(n.rewards)} DLTX</span></div>
+    ${n.unbonding !== '0' ? `<div class="mig-row"><span class="k">Unbonding</span><span class="v">${escapeHtml(n.unbonding)} DLTX</span></div>` : ''}` : '';
   body.innerHTML = `
     ${migChecklistHtml({ claim, l1, stored, native: migState.native })}
     <div class="mig-row"><span class="k">Chain</span><span class="v mono">${escapeHtml(claim.chainId || claims.chainId)}</span></div>
     <div class="mig-row"><span class="k">Linked address</span><span class="v mono" title="${address}">${escapeHtml(migShort(claim.address))}</span></div>
     <div class="mig-row"><span class="k">Phrase slot</span><span class="v mono">${savedPath ? escapeHtml(migSlotLabel(savedPath)) : 'unknown on this phone'}</span></div>
-    <div class="mig-row"><span class="k">Native balance</span>${balance}</div>
+    <div class="mig-row"><span class="k">Native balance</span>${balance}</div>${stakingRows}
     <div class="mig-row"><span class="k">Recovery phrase on this phone</span><span class="v">${stored ? 'encrypted copy saved' : 'not stored'}</span></div>
     <div class="mig-actions">
       <button class="btn ghost" type="button" id="migCopyAddr">Copy address</button>
@@ -195,25 +200,43 @@ function renderMigrationCard() {
   if (refresh) refresh.onclick = () => { migState.native = null; renderMigrationCard(); loadNativeBalance(); };
 }
 
-/** Reads the native balance from the chain's public REST endpoint (read-only, no key involved). */
+/**
+ * Native balance of the claimed address. Preferred source: the backend's L1 adapter (GET /api/l1/account — same
+ * origin, chain id verified server-side, also returns staked / unbonding / rewards). Fallback while the backend runs
+ * with L1_MODE=off: the chain's public REST endpoint directly (balance only). Read-only; no key involved.
+ */
 async function loadNativeBalance() {
   const l1 = migState.status && migState.status.l1;
   const claim = migState.claim;
-  if (!l1 || !l1.restUrl || !claim) return;
-  const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
-  const timer = ctrl ? setTimeout(() => ctrl.abort(), MIG_REST_TIMEOUT_MS) : null;
+  if (!l1 || !claim || (!l1.restUrl && l1.mode !== 'shadow')) return;
   try {
-    const res = await fetch(`${l1.restUrl}/cosmos/bank/v1beta1/balances/${encodeURIComponent(claim.address)}/by_denom?denom=sdltx`, { signal: ctrl ? ctrl.signal : undefined, headers: { Accept: 'application/json' } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    const raw = json && json.balance && /^[0-9]+$/.test(String(json.balance.amount)) ? String(json.balance.amount) : '0';
     const sdk = await migSdk();
-    migState.native = { amount: sdk.formatDltx(BigInt(raw)), at: Date.now() };
+    if (l1.mode === 'shadow') {
+      const acc = await api('GET', '/l1/account');
+      migState.native = {
+        amount: sdk.formatDltx(BigInt(acc.balance || '0')),
+        staked: sdk.formatDltx(BigInt(acc.staked || '0')),
+        rewards: sdk.formatDltx(BigInt(acc.rewards || '0')),
+        unbonding: sdk.formatDltx(BigInt(acc.unbonding || '0')),
+        exists: acc.exists !== false,
+        at: Date.now(),
+      };
+    } else {
+      const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+      const timer = ctrl ? setTimeout(() => ctrl.abort(), MIG_REST_TIMEOUT_MS) : null;
+      try {
+        const res = await fetch(`${l1.restUrl}/cosmos/bank/v1beta1/balances/${encodeURIComponent(claim.address)}/by_denom?denom=sdltx`, { signal: ctrl ? ctrl.signal : undefined, headers: { Accept: 'application/json' } });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        const raw = json && json.balance && /^[0-9]+$/.test(String(json.balance.amount)) ? String(json.balance.amount) : '0';
+        migState.native = { amount: sdk.formatDltx(BigInt(raw)), at: Date.now() };
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    }
   } catch (e) {
     console.warn('native balance:', e.message);
     migState.native = { error: true };
-  } finally {
-    if (timer) clearTimeout(timer);
   }
   renderMigrationCard();
 }
