@@ -5301,5 +5301,7 @@ html[data-dark] .mig-warn b { color: #ffedd5; }
 .mig-tx.in .mig-tx-amt { color: var(--green); }
 .mig-step .btn.ghost.active { border-color: var(--accent); color: var(--accent); background: #eef3ff; }
 html[data-dark] .mig-tx-ic, html[data-dark] .mig-step .btn.ghost.active { background: #0f1f3d; }
+.mig-tx-actions { flex: none; display: flex; gap: 6px; }
+.mig-tx-actions .btn.small { min-height: 34px; padding: 6px 10px; font-size: 12px; width: auto; }
 .mig-step textarea { min-height: 96px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13.5px; }
 .mig-step .btn.busy { opacity: .7; pointer-events: none; }

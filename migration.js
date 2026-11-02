@@ -181,6 +181,7 @@ function renderMigrationCard() {
     <div class="mig-actions mig-actions-native">
       <button class="btn primary" type="button" id="migSendBtn" ${n && n.exists && n.amount !== '0' ? '' : 'disabled'}>↑ Send native DLTX</button>
       <button class="btn ghost" type="button" id="migReceiveBtn">↓ Receive</button>
+      <button class="btn ghost" type="button" id="migStakeBtn" >◆ Stake</button>
     </div>
     <div class="mig-history" id="migHistory"></div>` : ''}
     <div class="mig-actions">
@@ -200,6 +201,8 @@ function renderMigrationCard() {
   if (sendBtn) sendBtn.onclick = () => openMigrationModal('send');
   const receiveBtn = $('migReceiveBtn');
   if (receiveBtn) receiveBtn.onclick = () => openMigrationModal('receive');
+  const stakeBtn = $('migStakeBtn');
+  if (stakeBtn) stakeBtn.onclick = () => openMigrationModal('stake');
   if ($('migHistory')) renderMigHistory();
   const reveal = $('migRevealBtn');
   if (reveal) reveal.onclick = () => openMigrationModal('reveal');
@@ -268,7 +271,7 @@ async function migForgetKeystore() {
 
 // ---------- the modal ----------
 
-const MIG_PROGRESS = { intro: 0, create: 1, confirm: 1, import: 1, protect: 2, sign: 3, done: 4, reveal: -1, send: -1, review: -1, unlock: -1, result: -1, receive: -1 };
+const MIG_PROGRESS = { intro: 0, create: 1, confirm: 1, import: 1, protect: 2, sign: 3, done: 4, reveal: -1, send: -1, stake: -1, undelegate: -1, review: -1, unlock: -1, result: -1, receive: -1 };
 
 function openMigrationModal(step) {
   migResetSecrets();
@@ -296,7 +299,7 @@ function migResetSecrets() {
   migState.mnemonic = null;
   migState.network = null;
   migState.busy = false;
-  migState.send = null;   // draft / reviewed transfer; never outlives the modal
+  migState.op = null;     // draft / reviewed operation (send, delegate, undelegate, claim); never outlives the modal
 }
 
 function migSetHint(msg, error = false) {
@@ -334,6 +337,8 @@ function migRender(step) {
     case 'done': return migRenderDone(host);
     case 'reveal': return migRenderReveal(host);
     case 'send': return migRenderSend(host);
+    case 'stake': return migRenderStake(host);
+    case 'undelegate': return migRenderUndelegate(host);
     case 'review': return migRenderReview(host);
     case 'unlock': return migRenderUnlock(host);
     case 'result': return migRenderResult(host);
@@ -730,8 +735,13 @@ function migNativeNetwork(sdk) {
   return sdk.defineNetwork({ kind, chainId, prefix: migState.status.claims.prefix || 'dltx', approved: true });
 }
 
+// Every native operation flows through the same pipeline: form -> unlock -> review -> sign & relay -> result.
+// migState.op = { kind: 'send'|'delegate'|'undelegate'|'claim', ...form fields, review, result }.
+
+const MIG_OP_TITLES = { send: 'Send native DLTX', delegate: 'Delegate (stake)', undelegate: 'Undelegate (unstake)', claim: 'Claim staking rewards' };
+
 function migRenderSend(host) {
-  const d = migState.send || {};
+  const d = migState.op && migState.op.kind === 'send' ? migState.op : {};
   const chainId = migState.status.l1.chainId || migState.status.claims.chainId;
   host.innerHTML = `
     <div class="mig-step">
@@ -758,14 +768,7 @@ function migRenderSend(host) {
       </div>
     </div>`;
   $('migSendCancel').onclick = () => closeMigrationModal();
-  $('migSendMax').onclick = () => {
-    const on = !($('migSendAmount').disabled);
-    $('migSendAmount').disabled = on;
-    if (on) $('migSendAmount').value = '';
-    $('migSendMax').textContent = on ? 'Max ✓' : 'Max';
-    $('migSendMax').classList.toggle('active', on);
-    $('migSendMaxHint').hidden = !on;
-  };
+  $('migSendMax').onclick = () => migToggleMax('migSendAmount', 'migSendMax', 'migSendMaxHint');
   $('migSendNext').onclick = async () => {
     try {
       const sdk = await migSdk();
@@ -773,15 +776,10 @@ function migRenderSend(host) {
       const to = $('migSendTo').value.trim();
       if (!sdk.isValidAddress(to, prefix)) throw new Error(`Enter a valid ${prefix}1… address.`);
       if (to === migState.claim.address) throw new Error('That is your own address.');
-      const max = $('migSendAmount').disabled;
-      let amount = null;
-      const amountText = $('migSendAmount').value.trim();
-      if (!max) {
-        try { amount = sdk.parsePositiveDltx(amountText); } catch { throw new Error('Enter an amount greater than zero with at most 8 decimals.'); }
-      }
+      const { amount, amountText, max } = migReadAmount(sdk, 'migSendAmount');
       const memo = $('migSendMemo').value;
       if (new TextEncoder().encode(memo).length > 256) throw new Error('The memo is too long (256 bytes).');
-      migState.send = { to, amount, amountText, max, memo };
+      migState.op = { kind: 'send', to, amount, amountText, max, memo };
       migRender('unlock');
     } catch (e) {
       migSetHint(e.message, true);
@@ -789,8 +787,183 @@ function migRenderSend(host) {
   };
 }
 
+function migToggleMax(amountId, btnId, hintId) {
+  const on = !($(amountId).disabled);
+  $(amountId).disabled = on;
+  if (on) $(amountId).value = '';
+  $(btnId).textContent = on ? 'Max ✓' : 'Max';
+  $(btnId).classList.toggle('active', on);
+  if (hintId && $(hintId)) $(hintId).hidden = !on;
+}
+
+/** Reads an amount field that may be in "Max" mode. */
+function migReadAmount(sdk, amountId) {
+  const max = $(amountId).disabled;
+  const amountText = $(amountId).value.trim();
+  let amount = null;
+  if (!max) {
+    try { amount = sdk.parsePositiveDltx(amountText); } catch { throw new Error('Enter an amount greater than zero with at most 8 decimals.'); }
+  }
+  return { amount, amountText, max };
+}
+
+// ---------- staking ----------
+
+const migPct = (rate) => (rate ? `${(Number(rate) * 100).toFixed(1)} %` : '—');
+const migDays = (seconds) => (seconds ? `${Math.round(seconds / 86400)} day${Math.round(seconds / 86400) === 1 ? '' : 's'}` : 'the unbonding period');
+
+async function migLoadStaking() {
+  const [acc, vals] = await Promise.all([api('GET', '/l1/account'), api('GET', '/l1/validators')]);
+  migState.staking = { account: acc, validators: vals.validators || [], params: vals.params || null, at: Date.now() };
+  return migState.staking;
+}
+
+function migValidatorName(operator) {
+  const v = (migState.staking && migState.staking.validators || []).find((x) => x.operator === operator);
+  return v && v.moniker ? v.moniker : migShort(operator);
+}
+
+async function migRenderStake(host) {
+  host.innerHTML = '<div class="mig-step"><h4>Staking</h4><p>Loading your delegations…</p></div>';
+  let st;
+  try {
+    const sdk = await migSdk();
+    st = await migLoadStaking();
+    const acc = st.account;
+    const fmt = (v) => sdk.formatDltx(BigInt(v || '0'));
+    const rewardsOf = (op) => { const r = (acc.rewardsByValidator || []).find((x) => x.validator === op); return r ? r.amount : '0'; };
+    const totalRewards = BigInt(acc.rewards || '0');
+    const delegationRows = (acc.delegations || []).map((d) => `
+      <div class="mig-tx">
+        <span class="mig-tx-ic">◆</span>
+        <span class="mig-tx-txt"><b>${escapeHtml(migValidatorName(d.validator))}</b><small>staked ${escapeHtml(fmt(d.amount))} · rewards ${escapeHtml(fmt(rewardsOf(d.validator)))} DLTX</small></span>
+        <span class="mig-tx-actions">
+          <button class="btn ghost small" type="button" data-undelegate="${escapeHtml(d.validator)}">Unstake</button>
+          <button class="btn ghost small" type="button" data-claim="${escapeHtml(d.validator)}" ${BigInt(rewardsOf(d.validator)) > 0n ? '' : 'disabled'}>Claim</button>
+        </span>
+      </div>`).join('');
+    const unbondingRows = (acc.unbondingEntries || []).map((u) => `
+      <div class="mig-tx">
+        <span class="mig-tx-ic">⏳</span>
+        <span class="mig-tx-txt"><b>${escapeHtml(fmt(u.amount))} DLTX unbonding</b><small>from ${escapeHtml(migValidatorName(u.validator))} · available ${escapeHtml(u.completionTime ? new Date(u.completionTime).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'later')}</small></span>
+      </div>`).join('');
+    const options = st.validators.map((v) => `<option value="${escapeHtml(v.operator)}">${escapeHtml(v.moniker || migShort(v.operator))} · commission ${escapeHtml(migPct(v.commission))} · ${escapeHtml(String(v.votingPowerPercent))} % of stake</option>`).join('');
+    host.innerHTML = `
+      <div class="mig-step">
+        <h4>Staking on the Deltix chain</h4>
+        <div class="mig-kv">
+          <div><span>Liquid</span><span>${escapeHtml(fmt(acc.balance))} DLTX</span></div>
+          <div><span>Staked</span><span>${escapeHtml(fmt(acc.staked))} DLTX</span></div>
+          <div><span>Claimable rewards</span><span>${escapeHtml(fmt(acc.rewards))} DLTX</span></div>
+          ${BigInt(acc.unbonding || '0') > 0n ? `<div><span>Unbonding</span><span>${escapeHtml(fmt(acc.unbonding))} DLTX</span></div>` : ''}
+        </div>
+        ${delegationRows ? `<h4 class="mig-history-title">Your delegations</h4><div class="mig-history">${delegationRows}</div>` : '<p class="mig-note">You have no delegations on chain yet.</p>'}
+        ${totalRewards > 0n && (acc.delegations || []).length > 1 ? '<button class="btn ghost" type="button" id="migClaimAll">Claim all rewards</button>' : ''}
+        ${unbondingRows ? `<h4 class="mig-history-title">Unbonding</h4><div class="mig-history">${unbondingRows}</div>` : ''}
+        <h4 class="mig-history-title">Delegate</h4>
+        <label for="migStakeValidator">Validator</label>
+        <select id="migStakeValidator">${options || '<option value="">no bonded validators</option>'}</select>
+        <label for="migStakeAmount">Amount (DLTX)</label>
+        <div class="bot-input-row">
+          <input id="migStakeAmount" type="text" inputmode="decimal" placeholder="0.00" autocomplete="off" />
+          <button class="btn ghost" type="button" id="migStakeMax" title="Everything minus the network fee">Max</button>
+        </div>
+        <ul class="disclosure">
+          <li>Rewards are variable protocol incentives — never guaranteed income. Validators charge the commission shown.</li>
+          <li>Unstaking takes <b>${escapeHtml(migDays(st.params && st.params.unbondingSeconds))}</b>; during that time the coins earn nothing and cannot be moved.</li>
+          <li>Keep a little liquid DLTX for future fees (≈ 0.01 DLTX per transaction).</li>
+        </ul>
+        <div class="modal-actions">
+          <button class="btn ghost" type="button" id="migStakeClose">Close</button>
+          <button class="btn primary" type="button" id="migStakeNext" ${options ? '' : 'disabled'}>Continue</button>
+        </div>
+      </div>`;
+    $('migStakeClose').onclick = () => closeMigrationModal();
+    $('migStakeMax').onclick = () => migToggleMax('migStakeAmount', 'migStakeMax');
+    $('migStakeNext').onclick = () => {
+      try {
+        const validator = $('migStakeValidator').value;
+        if (!validator) throw new Error('Pick a validator.');
+        const { amount, amountText, max } = migReadAmount(sdk, 'migStakeAmount');
+        migState.op = { kind: 'delegate', validator, validatorName: migValidatorName(validator), amount, amountText, max, memo: '' };
+        migRender('unlock');
+      } catch (e) {
+        migSetHint(e.message, true);
+      }
+    };
+    host.querySelectorAll('[data-undelegate]').forEach((b) => {
+      b.onclick = () => {
+        const validator = b.dataset.undelegate;
+        const d = (acc.delegations || []).find((x) => x.validator === validator);
+        migState.op = { kind: 'undelegate', validator, validatorName: migValidatorName(validator), staked: BigInt(d ? d.amount : '0'), amount: null, max: false, memo: '' };
+        migRender('undelegate');
+      };
+    });
+    host.querySelectorAll('[data-claim]').forEach((b) => {
+      b.onclick = () => {
+        const validator = b.dataset.claim;
+        migState.op = { kind: 'claim', validators: [validator], validatorNames: [migValidatorName(validator)], claimable: BigInt(rewardsOf(validator)), memo: '' };
+        migRender('unlock');
+      };
+    });
+    const all = $('migClaimAll');
+    if (all) all.onclick = () => {
+      const vs = (acc.delegations || []).filter((d) => BigInt(rewardsOf(d.validator)) > 0n).map((d) => d.validator);
+      migState.op = { kind: 'claim', validators: vs, validatorNames: vs.map(migValidatorName), claimable: totalRewards, memo: '' };
+      migRender('unlock');
+    };
+  } catch (e) {
+    host.innerHTML = `<div class="mig-step"><h4>Staking</h4><p class="hint error">${escapeHtml(e.message || 'Staking data unavailable right now.')}</p><div class="modal-actions"><button class="btn ghost" type="button" id="migStakeClose">Close</button></div></div>`;
+    $('migStakeClose').onclick = () => closeMigrationModal();
+  }
+}
+
+async function migRenderUndelegate(host) {
+  const sdk = await migSdk();
+  const op = migState.op;
+  const params = migState.staking && migState.staking.params;
+  host.innerHTML = `
+    <div class="mig-step">
+      <h4>Unstake from ${escapeHtml(op.validatorName)}</h4>
+      <p>Staked with this validator: <b>${escapeHtml(sdk.formatDltx(op.staked))} DLTX</b>. Unstaked coins are locked for <b>${escapeHtml(migDays(params && params.unbondingSeconds))}</b> before they become liquid; they earn nothing meanwhile. Pending rewards for this validator are paid out automatically when you unstake.</p>
+      <label for="migUnstakeAmount">Amount (DLTX)</label>
+      <div class="bot-input-row">
+        <input id="migUnstakeAmount" type="text" inputmode="decimal" placeholder="0.00" autocomplete="off" />
+        <button class="btn ghost" type="button" id="migUnstakeMax" title="Everything staked with this validator">Max</button>
+      </div>
+      <div class="modal-actions">
+        <button class="btn ghost" type="button" id="migUnstakeBack">Back</button>
+        <button class="btn primary" type="button" id="migUnstakeNext">Continue</button>
+      </div>
+    </div>`;
+  $('migUnstakeBack').onclick = () => migRender('stake');
+  $('migUnstakeMax').onclick = () => migToggleMax('migUnstakeAmount', 'migUnstakeMax');
+  $('migUnstakeNext').onclick = () => {
+    try {
+      const { amount, amountText, max } = migReadAmount(sdk, 'migUnstakeAmount');
+      if (!max && amount > op.staked) throw new Error(`You only have ${sdk.formatDltx(op.staked)} DLTX staked with this validator.`);
+      Object.assign(op, { amount: max ? op.staked : amount, amountText, max });
+      migRender('unlock');
+    } catch (e) {
+      migSetHint(e.message, true);
+    }
+  };
+}
+
+/** Builds the messages of the current operation for a given amount (base units). */
+function migOpMessages(sdk, op, amount, network) {
+  const from = migState.claim.address;
+  switch (op.kind) {
+    case 'send': return [sdk.buildMsgSend({ from, to: op.to, amount, network })];
+    case 'delegate': return [sdk.buildMsgDelegate({ delegator: from, validator: op.validator, amount, network })];
+    case 'undelegate': return [sdk.buildMsgUndelegate({ delegator: from, validator: op.validator, amount, network })];
+    case 'claim': return op.validators.map((v) => sdk.buildMsgWithdrawReward({ delegator: from, validator: v, network }));
+    default: throw new Error('Unknown operation.');
+  }
+}
+
 /** Opens the wallet of the linked address from the encrypted copy (password) or from the typed phrase; verifies the address. */
-async function migOpenLinkedWallet({ password, phrase }) {
+async function migOpenLinkedWallet({ password, phrase }, { allowedMsgTypes } = {}) {
   const sdk = await migSdk();
   const network = migNativeNetwork(sdk);
   const claim = migState.claim;
@@ -812,16 +985,17 @@ async function migOpenLinkedWallet({ password, phrase }) {
     hdPath = hit.hdPath;
     migSavePath(claim.address, hdPath);
   }
-  const wallet = await sdk.Wallet.fromMnemonic(mnemonic, network, { hdPath });
+  const wallet = await sdk.Wallet.fromMnemonic(mnemonic, network, { hdPath, ...(allowedMsgTypes ? { allowedMsgTypes } : {}) });
   if (wallet.address !== claim.address) { wallet.destroy(); throw new Error('Derived address does not match the linked address.'); }
   return { sdk, wallet, network };
 }
 
 function migRenderUnlock(host) {
   const stored = migHasKeystore(migState.claim.address);
+  const op = migState.op;
   host.innerHTML = `
     <div class="mig-step">
-      <h4>Unlock to sign</h4>
+      <h4>Unlock to sign — ${escapeHtml(MIG_OP_TITLES[op.kind] || 'transaction')}</h4>
       <p>${stored
     ? 'Enter the password of the encrypted copy on this phone. The key is used once, on this phone, and discarded.'
     : 'No encrypted copy is on this phone: enter the recovery phrase of your linked address. It is used once, on this phone, and discarded.'}</p>
@@ -833,29 +1007,34 @@ function migRenderUnlock(host) {
         <button class="btn primary" type="button" id="migUnlockGo">Unlock &amp; review</button>
       </div>
     </div>`;
-  $('migUnlockBack').onclick = () => migRender('send');
+  $('migUnlockBack').onclick = () => migRender(op.kind === 'send' ? 'send' : op.kind === 'undelegate' ? 'undelegate' : 'stake');
   $('migUnlockGo').onclick = async () => {
     const btn = $('migUnlockGo');
     migBusy(btn, true, 'Unlocking…');
     try {
       const creds = stored ? { password: $('migUnlockPw').value } : { phrase: $('migUnlockPhrase').value };
-      const { sdk, wallet, network } = await migOpenLinkedWallet(creds);
+      const { sdk, wallet, network } = await migOpenLinkedWallet(creds, { allowedMsgTypes: op.kind === 'send' ? undefined : (await migSdk()).STAKING_MSG_TYPES });
       if (stored) $('migUnlockPw').value = ''; else $('migUnlockPhrase').value = '';
       migState.wallet = wallet;
       migState.network = network;
       // fresh account state right before signing: sequence, account number, spendable balance
       const acc = await api('GET', '/l1/account');
-      if (!acc.exists) throw new Error('This address has never received DLTX on chain; there is nothing to send yet.');
-      const d = migState.send;
-      const probeMsg = sdk.buildMsgSend({ from: wallet.address, to: d.to, amount: d.max ? 1n : d.amount, network });
-      const sim = await api('POST', '/l1/tx/simulate', { txBytes: sdk.makeSimulationTx({ wallet, messages: [probeMsg], memo: d.memo, sequence: acc.sequence }).base64 });
+      if (!acc.exists) throw new Error('This address has never received DLTX on chain; there is nothing to send or stake yet.');
+      const balance = BigInt(acc.balance);
+      const probeAmount = op.kind === 'claim' ? null : (op.max && op.kind !== 'undelegate' ? 1n : op.amount);
+      const probeMsgs = migOpMessages(sdk, op, probeAmount, network);
+      const sim = await api('POST', '/l1/tx/simulate', { txBytes: sdk.makeSimulationTx({ wallet, messages: probeMsgs, memo: op.memo || '', sequence: acc.sequence }).base64 });
       const fee = BigInt(sim.fee);
       const gasLimit = BigInt(sim.gasLimit);
-      const balance = BigInt(acc.balance);
-      const amount = d.max ? balance - fee : d.amount;
-      if (amount <= 0n) throw new Error('The balance does not cover the network fee.');
-      if (amount + fee > balance) throw new Error(`Not enough DLTX: ${sdk.formatDltx(amount)} + fee ${sdk.formatDltx(fee)} exceeds the balance of ${sdk.formatDltx(balance)}.`);
-      migState.send.review = { amount, fee, gasLimit, accountNumber: acc.accountNumber, sequence: acc.sequence, balance };
+      let amount = op.amount;
+      if (op.kind === 'send' || op.kind === 'delegate') {
+        if (op.max) amount = balance - fee;
+        if (amount === null || amount <= 0n) throw new Error('The balance does not cover the network fee.');
+        if (amount + fee > balance) throw new Error(`Not enough DLTX: ${sdk.formatDltx(amount)} + fee ${sdk.formatDltx(fee)} exceeds the liquid balance of ${sdk.formatDltx(balance)}.`);
+      } else if (fee > balance) {
+        throw new Error(`The network fee (${sdk.formatDltx(fee)} DLTX) exceeds your liquid balance of ${sdk.formatDltx(balance)} DLTX. Keep a little DLTX liquid for fees.`);
+      }
+      op.review = { amount, fee, gasLimit, accountNumber: acc.accountNumber, sequence: acc.sequence, balance };
       migRender('review');
     } catch (e) {
       if (migState.wallet) { migState.wallet.destroy(); migState.wallet = null; }
@@ -867,26 +1046,39 @@ function migRenderUnlock(host) {
 }
 
 function migRenderReview(host) {
-  const d = migState.send;
-  const r = d.review;
-  const sdkFmt = (v) => window.DeltixWalletSdk.formatDltx(v);
+  const op = migState.op;
+  const r = op.review;
+  const fmt = (v) => window.DeltixWalletSdk.formatDltx(v);
+  const params = migState.staking && migState.staking.params;
+  const rows = [['From', migState.claim.address]];
+  let warn = '';
+  if (op.kind === 'send') {
+    rows.push(['To', op.to], ['Amount', `${fmt(r.amount)} DLTX`]);
+    warn = '<b>Final.</b> Native transfers cannot be reversed by Deltix or anyone else. Make sure the address is exactly right.';
+  } else if (op.kind === 'delegate') {
+    rows.push(['Validator', `${op.validatorName} (${migShort(op.validator)})`], ['Stake', `${fmt(r.amount)} DLTX`]);
+    warn = `Unstaking later takes <b>${migDays(params && params.unbondingSeconds)}</b>. Rewards are variable, never guaranteed.`;
+    if (r.balance - r.amount - r.fee < 10000000n) warn += ' <b>You will have almost no liquid DLTX left</b> — future transactions need ≈ 0.01 DLTX each in fees.';
+  } else if (op.kind === 'undelegate') {
+    rows.push(['Validator', `${op.validatorName} (${migShort(op.validator)})`], ['Unstake', `${fmt(r.amount)} DLTX`]);
+    warn = `The coins become liquid after <b>${migDays(params && params.unbondingSeconds)}</b> and earn nothing until then. Pending rewards from this validator are paid out now.`;
+  } else if (op.kind === 'claim') {
+    rows.push(['Validators', op.validatorNames.join(', ')], ['Claimable now', `≈ ${fmt(op.claimable)} DLTX`]);
+    warn = 'Rewards accrue every block; the exact paid amount is what the chain computes at execution.';
+  }
+  rows.push(['Network fee', `${fmt(r.fee)} DLTX (gas ${r.gasLimit.toString()})`]);
+  if (op.kind === 'send' || op.kind === 'delegate') rows.push(['Total debit', `${fmt(r.amount + r.fee)} DLTX`], ['Liquid after', `${fmt(r.balance - r.amount - r.fee)} DLTX`]);
+  else rows.push(['Liquid after fee', `${fmt(r.balance - r.fee)} DLTX`]);
+  if (op.memo) rows.push(['Memo', op.memo]);
+  rows.push(['Chain', migState.network.chainId]);
   host.innerHTML = `
     <div class="mig-step">
-      <h4>Review the transfer</h4>
-      <div class="mig-kv">
-        <div><span>From</span><span>${escapeHtml(migState.claim.address)}</span></div>
-        <div><span>To</span><span>${escapeHtml(d.to)}</span></div>
-        <div><span>Amount</span><span>${escapeHtml(sdkFmt(r.amount))} DLTX</span></div>
-        <div><span>Network fee</span><span>${escapeHtml(sdkFmt(r.fee))} DLTX (gas ${escapeHtml(r.gasLimit.toString())})</span></div>
-        <div><span>Total debit</span><span>${escapeHtml(sdkFmt(r.amount + r.fee))} DLTX</span></div>
-        <div><span>Remaining</span><span>${escapeHtml(sdkFmt(r.balance - r.amount - r.fee))} DLTX</span></div>
-        ${d.memo ? `<div><span>Memo</span><span>${escapeHtml(d.memo)}</span></div>` : ''}
-        <div><span>Chain</span><span>${escapeHtml(migState.network.chainId)}</span></div>
-      </div>
-      <div class="mig-warn"><span>⚠️</span><div><b>Final.</b> Native transfers cannot be reversed by Deltix or anyone else. Make sure the address is exactly right.</div></div>
+      <h4>Review — ${escapeHtml(MIG_OP_TITLES[op.kind])}</h4>
+      <div class="mig-kv">${rows.map(([k, v]) => `<div><span>${escapeHtml(k)}</span><span>${escapeHtml(v)}</span></div>`).join('')}</div>
+      <div class="mig-warn"><span>⚠️</span><div>${warn}</div></div>
       <div class="modal-actions">
         <button class="btn ghost" type="button" id="migReviewCancel">Cancel</button>
-        <button class="btn primary" type="button" id="migReviewSend">Sign &amp; send</button>
+        <button class="btn primary" type="button" id="migReviewSend">Sign &amp; submit</button>
       </div>
     </div>`;
   $('migReviewCancel').onclick = () => closeMigrationModal();
@@ -897,8 +1089,8 @@ function migRenderReview(host) {
       const sdk = await migSdk();
       const wallet = migState.wallet;
       if (!wallet || wallet.destroyed) throw new Error('The wallet is no longer unlocked. Start again.');
-      const msg = sdk.buildMsgSend({ from: wallet.address, to: d.to, amount: r.amount, network: migState.network });
-      const signed = await sdk.signTx({ wallet, messages: [msg], memo: d.memo, accountNumber: r.accountNumber, sequence: r.sequence, gasLimit: r.gasLimit, fee: r.fee });
+      const msgs = migOpMessages(sdk, op, r.amount, migState.network);
+      const signed = await sdk.signTx({ wallet, messages: msgs, memo: op.memo || '', accountNumber: r.accountNumber, sequence: r.sequence, gasLimit: r.gasLimit, fee: r.fee });
       wallet.destroy();
       migState.wallet = null;
       btn.textContent = 'Broadcasting…';
@@ -908,37 +1100,43 @@ function migRenderReview(host) {
       } catch (e) {
         out = e.data && e.data.accepted === false ? e.data : { accepted: false, code: null, log: e.message };
       }
-      migState.send.result = { ...out, hash: out.hash || signed.hash, amount: r.amount, fee: r.fee, to: d.to };
+      op.result = { ...out, hash: out.hash || signed.hash, amount: r.amount, fee: r.fee };
       migRender('result');
       migState.native = null;
+      migState.staking = null;
       loadNativeBalance();
     } catch (e) {
       if (migState.wallet) { migState.wallet.destroy(); migState.wallet = null; }
-      migSetHint(e.message || 'The transfer could not be signed.', true);
+      migSetHint(e.message || 'The transaction could not be signed.', true);
       migBusy(btn, false);
     }
   };
 }
 
 function migRenderResult(host) {
-  const res = migState.send.result;
-  const sdkFmt = (v) => window.DeltixWalletSdk.formatDltx(v);
+  const op = migState.op;
+  const res = op.result;
+  const fmt = (v) => window.DeltixWalletSdk.formatDltx(v);
   const l1 = migState.status.l1;
   const explorer = l1.explorerUrl && res.hash ? `<a class="btn ghost" href="${escapeHtml(l1.explorerUrl)}/#/tx/${escapeHtml(res.hash)}" target="_blank" rel="noopener" style="text-align:center">View in explorer ↗</a>` : '';
+  const what = op.kind === 'send' ? `<b>${escapeHtml(fmt(res.amount))} DLTX</b> to <code>${escapeHtml(migShort(op.to))}</code>`
+    : op.kind === 'delegate' ? `<b>${escapeHtml(fmt(res.amount))} DLTX</b> staked with ${escapeHtml(op.validatorName)}`
+      : op.kind === 'undelegate' ? `<b>${escapeHtml(fmt(res.amount))} DLTX</b> unstaking from ${escapeHtml(op.validatorName)} (liquid after ${escapeHtml(migDays(migState.staking && migState.staking.params && migState.staking.params.unbondingSeconds))})`
+        : `rewards from ${escapeHtml(op.validatorNames.join(', '))} paid to your address`;
   let head;
   let body;
   if (res.accepted && res.committed && res.code === 0) {
-    head = '<div class="big">✅</div><h4>Sent</h4>';
-    body = `<p><b>${escapeHtml(sdkFmt(res.amount))} DLTX</b> to <code>${escapeHtml(migShort(res.to))}</code> is in block ${escapeHtml(String(res.height))}. Fee ${escapeHtml(sdkFmt(res.fee))} DLTX.</p>`;
+    head = `<div class="big">✅</div><h4>${op.kind === 'send' ? 'Sent' : 'Done'}</h4>`;
+    body = `<p>${what} — block ${escapeHtml(String(res.height))}, fee ${escapeHtml(fmt(res.fee))} DLTX.</p>`;
   } else if (res.accepted && !res.committed) {
     head = '<div class="big">⏳</div><h4>Submitted</h4>';
-    body = '<p>The network accepted the transfer but it was not yet in a block when we stopped waiting. It will appear in your activity shortly.</p>';
+    body = '<p>The network accepted the transaction but it was not yet in a block when we stopped waiting. It will show up shortly.</p>';
   } else if (res.accepted && res.code !== 0) {
     head = '<div class="big">❌</div><h4>Failed on chain</h4>';
-    body = `<p>The transfer was included but failed: <code>${escapeHtml(res.log || `code ${res.code}`)}</code>. The fee was charged; the amount was not moved.</p>`;
+    body = `<p>The transaction was included but failed: <code>${escapeHtml(res.log || `code ${res.code}`)}</code>. The fee was charged; nothing else changed.</p>`;
   } else {
     head = '<div class="big">⛔</div><h4>Not accepted</h4>';
-    body = `<p>The network refused the transfer: <code>${escapeHtml(res.log || `code ${res.code}`)}</code>. Nothing moved and no fee was charged.</p>`;
+    body = `<p>The network refused the transaction: <code>${escapeHtml(res.log || `code ${res.code}`)}</code>. Nothing changed and no fee was charged.</p>`;
   }
   host.innerHTML = `
     <div class="mig-step">
@@ -951,7 +1149,6 @@ function migRenderResult(host) {
     </div>`;
   $('migResultDone').onclick = () => closeMigrationModal();
 }
-
 async function migRenderReceive(host) {
   const addr = migState.claim.address;
   const chainId = migState.status.l1.chainId || migState.status.claims.chainId;
@@ -1010,4 +1207,4 @@ async function renderMigHistory() {
   }
 }
 $('migrationClose')?.addEventListener('click', () => closeMigrationModal());
-$('migrationModal')?.addEventListener('click', (e) => { if (e.target === e.currentTarget && !['create', 'review', 'unlock'].includes(migState.step)) closeMigrationModal(); });
+$('migrationModal')?.addEventListener('click', (e) => { if (e.target === e.currentTarget && !['create', 'review', 'unlock', 'stake', 'undelegate'].includes(migState.step)) closeMigrationModal(); });
