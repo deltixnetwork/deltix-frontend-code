@@ -102,6 +102,28 @@ function onMigrationFreezeError(json) {
   renderMigrationBanner({ on: true, message: (json && json.error) || '', until: json && json.until });
 }
 
+/**
+ * The "Mainnet checklist" shown at the top of the card (Pi-style): four steps with a tick, the current one
+ * highlighted. Step 1 is always done for a signed-in member (claims need a verified, active account);
+ * steps 2 and 3 are done once a claim exists (the flow enforces the backup before linking); step 4 is the
+ * genesis allocation, reported done once the native balance is visible on a live chain.
+ */
+function migChecklistHtml({ claim, l1, stored, native }) {
+  const migrated = Boolean(claim && l1 && l1.live && native && !native.error && native.amount && native.amount !== '0');
+  const steps = [
+    { title: 'Account verified', note: 'Your e-mail is verified. Deltix KYC is only needed for the P2P market, not for the migration.', done: true },
+    { title: 'Native wallet backed up', note: claim ? (stored ? 'Recovery phrase written down; an encrypted copy is on this phone.' : 'Recovery phrase written down (paper only on this phone).') : 'Create or import a wallet and write down its 24-word recovery phrase.', done: Boolean(claim) },
+    { title: 'Address linked to this account', note: claim ? `${migShort(claim.address)} — one address per account; cannot be changed from the app.` : 'Sign a short message that proves the address is yours. Nothing moves.', done: Boolean(claim) },
+    { title: 'Balance migrated at genesis', note: migrated ? `${native.amount} DLTX on the Deltix chain.` : 'Your balance at the snapshot is created at this address when the Deltix chain starts. Date announced in advance.', done: migrated },
+  ];
+  const current = steps.findIndex((s) => !s.done);
+  return `<ol class="mig-check">${steps.map((s, i) => `
+    <li class="${s.done ? 'done' : i === current ? 'current' : ''}">
+      <span class="mig-check-ic" aria-hidden="true">${s.done ? '✓' : i + 1}</span>
+      <span class="mig-check-txt"><b>${escapeHtml(s.title)}</b><small>${escapeHtml(s.note)}</small></span>
+    </li>`).join('')}</ol>`;
+}
+
 function renderMigrationCard() {
   const card = $('migrationCard');
   if (!card) return;
@@ -116,31 +138,35 @@ function renderMigrationCard() {
   const l1 = (s && s.l1) || {};
   const chainId = escapeHtml(claims.chainId);
   if (!claim) {
-    pill.textContent = 'Open';
+    pill.textContent = 'Step 2 of 4';
     pill.className = 'mig-pill';
-    sub.textContent = 'Link one native Deltix address to receive your balance on the Deltix chain at genesis. Nothing moves now.';
+    sub.textContent = 'Mainnet checklist: link one native Deltix address to receive your balance on the Deltix chain at genesis. Nothing moves now.';
     body.innerHTML = `
+      ${migChecklistHtml({ claim: null, l1, stored: false, native: null })}
       <div class="mig-row"><span class="k">Chain</span><span class="v mono">${chainId}</span></div>
-      <div class="mig-row"><span class="k">Your linked address</span><span class="v">none yet</span></div>
       <div class="mig-actions">
         <button class="btn primary" type="button" id="migStartBtn">Link a native address →</button>
       </div>
-      <p class="mig-note">You create (or import) a native wallet on this phone, write down its 24-word recovery phrase and sign a short message that proves the address is yours. Deltix never sees the phrase or the key.</p>`;
+      <p class="mig-note">You create (or import) a native wallet on this phone, write down its 24-word recovery phrase and sign a short message that proves the address is yours. Deltix never sees the phrase or the key. Several accounts? One phrase, a different wallet slot per account.</p>`;
     $('migStartBtn').onclick = () => openMigrationModal('intro');
     return;
   }
-  pill.textContent = 'Linked';
-  pill.className = 'mig-pill linked';
-  sub.textContent = 'Your legacy balance will be allocated to this address at genesis. Keep the recovery phrase safe — it is the only key.';
   const address = escapeHtml(claim.address);
   const stored = migHasKeystore(claim.address);
   const savedPath = migSavedPath(claim.address);
+  const migrated = Boolean(l1.live && migState.native && !migState.native.error && migState.native.amount && migState.native.amount !== '0');
+  pill.textContent = migrated ? 'Migrated' : 'Step 4 of 4';
+  pill.className = 'mig-pill linked';
+  sub.textContent = migrated
+    ? 'Your balance is on the Deltix chain at the address you linked. Keep the recovery phrase safe — it is the only key.'
+    : 'Your legacy balance will be allocated to this address at genesis. Keep the recovery phrase safe — it is the only key.';
   let balance;
   if (!l1.live) balance = '<span class="v">chain not live yet</span>';
   else if (!migState.native) balance = '<span class="v">loading…</span>';
   else if (migState.native.error) balance = '<span class="v">unavailable right now</span>';
   else balance = `<span class="v">${escapeHtml(migState.native.amount)} DLTX</span>`;
   body.innerHTML = `
+    ${migChecklistHtml({ claim, l1, stored, native: migState.native })}
     <div class="mig-row"><span class="k">Chain</span><span class="v mono">${escapeHtml(claim.chainId || claims.chainId)}</span></div>
     <div class="mig-row"><span class="k">Linked address</span><span class="v mono" title="${address}">${escapeHtml(migShort(claim.address))}</span></div>
     <div class="mig-row"><span class="k">Phrase slot</span><span class="v mono">${savedPath ? escapeHtml(migSlotLabel(savedPath)) : 'unknown on this phone'}</span></div>
