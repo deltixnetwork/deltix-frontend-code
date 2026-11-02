@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.19.1';
+const APP_VERSION = '1.19.2';
 const $ = (id) => document.getElementById(id);
 
 // Stable per-phone identifier sent with every request (X-Device-Id) — the
@@ -3239,12 +3239,17 @@ let lastInterstitialAt = 0;
 let interstitialLoading = false;
 let interstitialLoaded = false;
 let rewardedLoaded = false;
-let rewardedLoadPromise = null;
 
-const AD_LOAD_TIMEOUT_MS = 15000;   // an ad that has not loaded by now is treated as unavailable
-const AD_SHOW_TIMEOUT_MS = 12000;   // …and one that has not appeared after show() is treated as failed
-const AD_HARD_TIMEOUT_MS = 5 * 60000; // nothing may keep the UI waiting longer than this
-const adState = { status: 'idle', failures: 0, retryTimer: null, nonce: null, session: null, preparedWithSsv: false, playing: false, showing: false, preparedAt: 0, lastError: '' };
+const AD_LOAD_WAIT_MS = 30000;         // how long a caller waits for the SDK's answer before the ad counts as unavailable (the load itself keeps going)
+const AD_LOAD_INFLIGHT_MAX_MS = 75000; // a native load that has given no answer by now is presumed lost; a fresh request may start
+const AD_SHOW_TIMEOUT_MS = 12000;      // an ad that has not appeared after show() is treated as failed
+const AD_HARD_TIMEOUT_MS = 5 * 60000;  // nothing may keep the UI waiting longer than this
+const adState = {
+  status: 'idle', failures: 0, retryTimer: null, nonce: null, session: null, preparedWithSsv: false, playing: false, showing: false,
+  preparedAt: 0, lastError: '', lastErrorCode: null,
+  // The ONE native load that may be in flight: when it started, which nonce/SSV options it carries, and its sequence number.
+  loadStartedAt: 0, loadSeq: 0, pendingNonce: null, pendingSsv: false, listenersReady: false, waiters: [],
+};
 const AD_STALE_MS = 50 * 60000;     // a loaded rewarded ad expires after about an hour; reload before then
 const AD_REWARD_GRACE_MS = 3000;    // the reward event can trail the "closed" event on slow phones
 const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -3253,14 +3258,123 @@ const withTimeout = (promise, ms, label) => new Promise((resolve, reject) => {
   Promise.resolve(promise).then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
 });
 const newAdNonce = () => (window.crypto?.randomUUID?.() || `${Date.now()}${Math.random().toString(36).slice(2)}`).replace(/[^\w-]/g, '').slice(0, 40);
+const nativeAdMob = () => {
+  const cap = window.Capacitor;
+  return cap && cap.isNativePlatform && cap.isNativePlatform() && cap.Plugins && cap.Plugins.AdMob ? cap.Plugins.AdMob : null;
+};
+
+// ── Ad telemetry: every lifecycle step goes to the server (counts + SDK error
+// codes only) so operators can see the real match / fill / reward rates per
+// country, app version and network — the AdMob console cannot show that. Batched
+// per ad attempt; best-effort; never blocks anything. ──
+const adTelemetryQueue = [];
+let adTelemetryTimer = null;
+function adNetType() {
+  const c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (navigator.onLine === false) return 'offline';
+  if (c && c.type === 'wifi') return 'wifi';
+  return (c && c.effectiveType) || 'unknown';
+}
+function adTelemetry(kind, extra = {}) {
+  if (!nativeAdMob()) return;
+  const ev = { kind, net: adNetType() };
+  if (extra.code !== undefined && extra.code !== null) ev.code = extra.code;
+  if (extra.msg) ev.msg = String(extra.msg).slice(0, 120);
+  if (Number.isFinite(extra.ms)) ev.ms = Math.max(0, Math.round(extra.ms));
+  if (extra.unit) ev.unit = String(extra.unit).split('/').pop();
+  adTelemetryQueue.push(ev);
+  if (adTelemetryQueue.length > 40) adTelemetryQueue.splice(0, adTelemetryQueue.length - 40);
+  const soon = kind === 'rewarded' || kind === 'closed_early' || kind.endsWith('_failed') || kind === 'wait_timeout';
+  if (!adTelemetryTimer) adTelemetryTimer = setTimeout(flushAdTelemetry, soon ? 1500 : 15000);
+}
+async function flushAdTelemetry() {
+  clearTimeout(adTelemetryTimer);
+  adTelemetryTimer = null;
+  if (!state.token || !adTelemetryQueue.length) return;
+  const events = adTelemetryQueue.splice(0, 20);
+  try { await api('POST', '/admob/telemetry', { events }, { retries: 0 }); } catch { /* best-effort */ }
+  if (adTelemetryQueue.length && !adTelemetryTimer) adTelemetryTimer = setTimeout(flushAdTelemetry, 5000);
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) flushAdTelemetry(); });
+
+// Google Mobile Ads SDK load-error codes (see services/adsHealth.js on the server).
+const AD_ERR = { INTERNAL: 0, INVALID_REQUEST: 1, NETWORK: 2, NO_FILL: 3, APP_ID_MISSING: 8, MEDIATION_NO_FILL: 9 };
+const AD_CLIENT_ERR = { TIMEOUT: -1, PLUGIN: -2, CONSENT: -3, NOT_PREPARED: -4 };
+
+/** Resolves the callers waiting on the in-flight load. */
+function settleAdLoad(loaded) {
+  const waiters = adState.waiters.splice(0);
+  for (const w of waiters) { clearTimeout(w.timer); w.resolve(loaded); }
+}
+/** Waits (bounded) for the in-flight native load to answer; false when it has not by then. */
+function waitForAdLoad(ms) {
+  if (rewardedLoaded) return Promise.resolve(true);
+  if (!adState.loadStartedAt) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const w = { resolve, timer: null };
+    w.timer = setTimeout(() => {
+      adState.waiters = adState.waiters.filter((x) => x !== w);
+      resolve(rewardedLoaded);
+    }, ms);
+    adState.waiters.push(w);
+  });
+}
+/** The SDK answered a load: the ad is cached, whichever caller asked for it (even one that stopped waiting). */
+function onRewardedLoaded(seq, info) {
+  if (seq !== adState.loadSeq || rewardedLoaded) return;
+  const ms = adState.loadStartedAt ? Date.now() - adState.loadStartedAt : null;
+  rewardedLoaded = true;
+  adState.loadStartedAt = 0;
+  adState.preparedAt = Date.now();
+  adState.nonce = adState.pendingNonce;
+  adState.preparedWithSsv = adState.pendingSsv;
+  adState.status = 'ready';
+  adState.failures = 0;
+  adState.lastError = '';
+  adState.lastErrorCode = null;
+  clearTimeout(adState.retryTimer);
+  adTelemetry('loaded', { ms, unit: info && info.adUnitId });
+  settleAdLoad(true);
+}
+function onRewardedLoadFailed(seq, err) {
+  if (seq !== adState.loadSeq || !adState.loadStartedAt) return;
+  const ms = Date.now() - adState.loadStartedAt;
+  const code = err && Number.isFinite(Number(err.code)) ? Number(err.code) : AD_ERR.INTERNAL;
+  rewardedLoaded = false;
+  adState.loadStartedAt = 0;
+  adState.status = 'failed';
+  adState.failures += 1;
+  adState.lastErrorCode = code;
+  adState.lastError = String((err && err.message) || 'load failed');
+  console.warn('[ads] rewarded ad failed to load', code, adState.lastError);
+  adTelemetry('load_failed', { code, msg: adState.lastError, ms });
+  settleAdLoad(false);
+  scheduleAdRetry();
+}
+/** One set of plugin listeners for the whole app lifetime (loads are tracked by sequence number). */
+async function installAdListeners() {
+  const AdMob = nativeAdMob();
+  if (!AdMob || adState.listenersReady) return;
+  adState.listenersReady = true;
+  try {
+    await AdMob.addListener('onRewardedVideoAdLoaded', (info) => onRewardedLoaded(adState.loadSeq, info));
+    await AdMob.addListener('onRewardedVideoAdFailedToLoad', (err) => {
+      // The plugin reuses this event (code -1) when show() is called with nothing prepared — that is a show problem.
+      if (adState.showing && err && Number(err.code) === -1) return;
+      onRewardedLoadFailed(adState.loadSeq, err);
+    });
+  } catch (err) {
+    adState.listenersReady = false;
+    console.warn('[ads] could not install ad listeners', err);
+  }
+}
 
 async function initAds() {
   try {
     if (!ADS_ENABLED) return;
-    const cap = window.Capacitor;
-    if (!cap || !cap.isNativePlatform || !cap.isNativePlatform()) return;
-    const AdMob = cap.Plugins && cap.Plugins.AdMob;
+    const AdMob = nativeAdMob();
     if (!AdMob) return;
+    await installAdListeners();
     // GDPR/UMP consent (EEA, UK, Switzerland): gather consent before ads load.
     // Never allowed to block the app — failures fall through to ad init.
     try {
@@ -3279,6 +3393,8 @@ async function initAds() {
     /* ads are never allowed to break the app */
     adState.status = 'failed';
     adState.lastError = String(err?.message || err);
+    adState.lastErrorCode = AD_CLIENT_ERR.PLUGIN;
+    adTelemetry('init_failed', { code: AD_CLIENT_ERR.PLUGIN, msg: adState.lastError });
     scheduleAdRetry(true);
   }
 }
@@ -3286,11 +3402,10 @@ async function initAds() {
 /** Fetches the next interstitial in the background so it's cached before it's needed. */
 function preloadInterstitial() {
   if (!ADS_ENABLED || interstitialLoading || interstitialLoaded) return;
-  const cap = window.Capacitor;
-  const AdMob = cap && cap.Plugins && cap.Plugins.AdMob;
-  if (!cap || !cap.isNativePlatform || !cap.isNativePlatform() || !AdMob) return;
+  const AdMob = nativeAdMob();
+  if (!AdMob) return;
   interstitialLoading = true;
-  withTimeout(AdMob.prepareInterstitial({ adId: adUnit('interstitial'), isTesting: ADMOB_TESTING }), AD_LOAD_TIMEOUT_MS, 'load-timeout')
+  withTimeout(AdMob.prepareInterstitial({ adId: adUnit('interstitial'), isTesting: ADMOB_TESTING }), AD_LOAD_WAIT_MS, 'load-timeout')
     .then(() => { interstitialLoading = false; interstitialLoaded = true; })
     .catch(() => { interstitialLoading = false; interstitialLoaded = false; });
 }
@@ -3298,9 +3413,8 @@ function preloadInterstitial() {
 /** Shows the already-preloaded interstitial instantly. If the preload hasn't
  *  landed yet, this impression is skipped rather than making the user wait. */
 function showPreloadedInterstitial() {
-  const cap = window.Capacitor;
-  const AdMob = cap && cap.Plugins && cap.Plugins.AdMob;
-  if (!cap || !cap.isNativePlatform || !cap.isNativePlatform() || !AdMob) return;
+  const AdMob = nativeAdMob();
+  if (!AdMob) return;
   if (!interstitialLoaded) { preloadInterstitial(); return; }
   interstitialLoaded = false;
   AdMob.showInterstitial().catch(() => {});
@@ -3308,10 +3422,21 @@ function showPreloadedInterstitial() {
 }
 window.showPreloadedInterstitial = showPreloadedInterstitial;
 
-/** Retries a failed ad setup/load with growing delays, so ads recover on their own. */
+/**
+ * Retries a failed ad setup/load with delays that fit the failure: a network
+ * error is transient (retry soon), "no fill" means the ad network has nothing
+ * for this device right now (back off, up to 5 minutes), and a configuration
+ * error will not fix itself (back off further). Ads recover on their own.
+ */
 function scheduleAdRetry(reinit = false) {
   clearTimeout(adState.retryTimer);
-  const delay = Math.min(300000, 20000 * 2 ** Math.min(Math.max(adState.failures - 1, 0), 4));
+  const n = Math.min(Math.max(adState.failures - 1, 0), 4);
+  const code = adState.lastErrorCode;
+  let delay;
+  if (code === AD_ERR.NETWORK) delay = Math.min(60000, 10000 * 2 ** n);
+  else if (code === AD_ERR.NO_FILL || code === AD_ERR.MEDIATION_NO_FILL) delay = Math.min(300000, 30000 * 2 ** n);
+  else if (code === AD_ERR.INVALID_REQUEST || code === AD_ERR.APP_ID_MISSING) delay = Math.min(600000, 60000 * 2 ** n);
+  else delay = Math.min(300000, 20000 * 2 ** n);
   adState.retryTimer = setTimeout(() => {
     if (document.hidden) return scheduleAdRetry(reinit);
     if (reinit && !adsReady) initAds(); else preloadRewardedAd();
@@ -3331,46 +3456,57 @@ async function ensureAdSession() {
   return adState.session;
 }
 
-/** Fetches the next rewarded ad in the background; opt-in taps fall back to
- *  a fresh load only when the preload hasn't landed yet. */
-function preloadRewardedAd() {
+/**
+ * Makes sure a rewarded ad is cached, starting ONE native load if none is in
+ * flight, and resolves true once an ad is ready (false when the SDK said no, or
+ * has not answered within `waitMs`). A caller that stops waiting does not cancel
+ * the load: when the SDK answers later the ad is kept for the next tap instead
+ * of being thrown away and requested again — which is what used to cost fill.
+ */
+function preloadRewardedAd({ waitMs = AD_LOAD_WAIT_MS } = {}) {
   if (!ADS_ENABLED) return Promise.resolve(rewardedLoaded);
   // A loaded ad that has been sitting for too long would fail to show; throw it away and fetch a fresh one.
   if (rewardedLoaded && Date.now() - adState.preparedAt > AD_STALE_MS) { rewardedLoaded = false; adState.nonce = null; }
   if (rewardedLoaded) return Promise.resolve(true);
-  // Never start a second load while an ad is on screen: it can replace the ad being shown and lose its reward.
+  // Never start a load while an ad is on screen: it can replace the ad being shown and lose its reward.
   if (adState.showing) return Promise.resolve(false);
-  if (rewardedLoadPromise) return rewardedLoadPromise;
-  const cap = window.Capacitor;
-  const AdMob = cap && cap.Plugins && cap.Plugins.AdMob;
-  if (!cap || !cap.isNativePlatform || !cap.isNativePlatform() || !AdMob) return Promise.resolve(false);
+  const AdMob = nativeAdMob();
+  if (!AdMob) return Promise.resolve(false);
+  // Join the load already in flight rather than firing a competing request.
+  if (adState.loadStartedAt && Date.now() - adState.loadStartedAt < AD_LOAD_INFLIGHT_MAX_MS) return waitForAdLoad(waitMs);
+  if (adState.loadStartedAt) {
+    // The SDK never answered the previous request — count it and move on.
+    adTelemetry('load_failed', { code: AD_CLIENT_ERR.TIMEOUT, msg: 'no answer from the SDK', ms: Date.now() - adState.loadStartedAt });
+    adState.loadStartedAt = 0;
+    settleAdLoad(false);
+  }
+  const seq = ++adState.loadSeq;
   adState.status = 'loading';
-  rewardedLoadPromise = (async () => {
+  adState.loadStartedAt = Date.now();
+  return (async () => {
+    if (!adState.listenersReady) await installAdListeners();
     const session = await ensureAdSession();
+    if (seq !== adState.loadSeq) return waitForAdLoad(waitMs);
     const nonce = newAdNonce();
     const options = { adId: adUnit('rewarded'), isTesting: ADMOB_TESTING };
     const withSsv = session.mode && session.mode !== 'off' && session.userId;
     if (withSsv) options.ssv = { userId: session.userId, customData: nonce };
-    await withTimeout(AdMob.prepareRewardVideoAd(options), AD_LOAD_TIMEOUT_MS, 'load-timeout');
-    adState.nonce = nonce;
-    adState.preparedWithSsv = Boolean(withSsv);
-    adState.preparedAt = Date.now();
-    adState.status = 'ready';
-    adState.failures = 0;
-    rewardedLoaded = true;
-    return true;
-  })()
-    .catch((error) => {
-      rewardedLoaded = false;
-      adState.status = 'failed';
-      adState.failures += 1;
-      adState.lastError = String(error?.message || error);
-      console.warn('[ads] rewarded ad failed to load', error);
-      scheduleAdRetry();
-      return false;
-    })
-    .finally(() => { rewardedLoadPromise = null; });
-  return rewardedLoadPromise;
+    adState.pendingNonce = nonce;
+    adState.pendingSsv = Boolean(withSsv);
+    adTelemetry('request', { unit: options.adId });
+    AdMob.prepareRewardVideoAd(options).then(
+      (info) => onRewardedLoaded(seq, info),
+      (err) => {
+        // The plugin normally reports a failure through the listener first; this
+        // covers an exception thrown before the request ever reached the SDK.
+        setTimeout(() => { if (seq === adState.loadSeq && adState.loadStartedAt) onRewardedLoadFailed(seq, { code: AD_ERR.INTERNAL, message: String(err?.message || err) }); }, 300);
+      }
+    );
+    return waitForAdLoad(waitMs);
+  })().catch((error) => {
+    if (seq === adState.loadSeq && adState.loadStartedAt) onRewardedLoadFailed(seq, { code: AD_ERR.INTERNAL, message: String(error?.message || error) });
+    return false;
+  });
 }
 
 /** Can the UI honestly offer "Watch ad" right now? */
@@ -7393,13 +7529,19 @@ function resetCommunityUI() {
   setText('badgesCount', '0/0');
 }
 
-/** Why an ad did not pay out, in words a person understands. */
+/** Why an ad did not pay out, in words a person understands (the SDK's reason when we have it). */
 function adFailureText(reason) {
   switch (reason) {
     case 'disabled': return 'Ads are temporarily unavailable — please try again later.';
     case 'offline': return 'You’re offline — connect to the internet to watch an ad.';
-    case 'unavailable': return 'No ad is available right now. Please try again in a minute.';
-    case 'timeout': return 'The ad took too long to load. Please try again.';
+    case 'unavailable': {
+      const code = Number(adState.lastErrorCode);
+      if (code === AD_ERR.NETWORK) return 'The ad network could not be reached — check your internet connection and try again.';
+      if (code === AD_ERR.NO_FILL || code === AD_ERR.MEDIATION_NO_FILL) return 'No ad is available for you right now — the ad network has nothing to show at the moment. Please try again in a few minutes.';
+      if (code === AD_ERR.INVALID_REQUEST || code === AD_ERR.APP_ID_MISSING) return 'Ads are temporarily unavailable. Please try again later.';
+      return 'No ad is available right now. Please try again in a minute.';
+    }
+    case 'timeout': return 'The ad is taking too long to load on your connection. Please try again in a moment.';
     case 'failed_to_show': return 'The ad couldn’t be shown. Please try again in a moment.';
     case 'busy': return 'An ad is already playing.';
     case 'closed': return 'You closed the ad before it finished — no reward this time.';
@@ -7446,21 +7588,27 @@ async function playRewardedAdDetailed() {
     let earned = false;
     let dismissed = false;
     let settled = false;
+    let shownAt = 0;
     const handles = [];
     const timers = [];
     const later = (fn, ms) => { const t = setTimeout(fn, ms); timers.push(t); return t; };
     let showTimer = null;
 
-    const finish = (reason) => {
+    const finish = (reason, detail = {}) => {
       if (settled) return;
       settled = true;
       timers.forEach(clearTimeout);
       handles.forEach((h) => { try { h?.remove?.(); } catch {} });
       const nonce = adState.nonce;
+      const wasShowing = adState.showing;
       rewardedLoaded = false;
       adState.nonce = null;
       adState.playing = false;
       adState.showing = false;
+      if (reason === 'earned') adTelemetry('rewarded', { ms: shownAt ? Date.now() - shownAt : undefined });
+      else if (reason === 'closed') adTelemetry('closed_early', { ms: shownAt ? Date.now() - shownAt : undefined });
+      else if (reason === 'failed_to_show' && wasShowing) adTelemetry('show_failed', { code: detail.code ?? AD_CLIENT_ERR.NOT_PREPARED, msg: detail.msg });
+      else if (reason === 'timeout') adTelemetry('wait_timeout', { ms: AD_LOAD_WAIT_MS });
       resolve(result(reason === 'earned', reason, reason === 'earned' ? nonce : null));
       // Line up the next ad, but let the ad screen finish closing first.
       setTimeout(() => { if (!adState.playing) preloadRewardedAd(); }, 1200);
@@ -7471,36 +7619,35 @@ async function playRewardedAdDetailed() {
         // Listener registration is asynchronous; install all handlers before
         // loading/showing so quick callbacks cannot be lost.
         handles.push(await AdMob.addListener('onRewardedVideoAdReward', () => { earned = true; if (dismissed) finish('earned'); }));
-        handles.push(await AdMob.addListener('onRewardedVideoAdShowed', () => { clearTimeout(showTimer); }));
+        handles.push(await AdMob.addListener('onRewardedVideoAdShowed', () => { clearTimeout(showTimer); shownAt = Date.now(); adTelemetry('shown'); }));
         // Dismissal is the end of the ad. A grace period lets a late reward event land first.
         handles.push(await AdMob.addListener('onRewardedVideoAdDismissed', () => {
           dismissed = true;
           if (earned) finish('earned'); else later(() => finish(earned ? 'earned' : 'closed'), AD_REWARD_GRACE_MS);
         }));
-        handles.push(await AdMob.addListener('onRewardedVideoAdFailedToShow', () => finish('failed_to_show')));
-        // A failed *load* is reported through the load call itself (below). It must never end an ad that is already playing.
-        handles.push(await AdMob.addListener('onRewardedVideoAdFailedToLoad', () => { adState.lastError = 'no-fill'; }));
+        handles.push(await AdMob.addListener('onRewardedVideoAdFailedToShow', (err) => finish('failed_to_show', { code: err && err.code, msg: err && err.message })));
         if (settled) return;
         later(() => finish(earned ? 'earned' : 'timeout'), AD_HARD_TIMEOUT_MS);
 
-        // Reuse an in-flight preload rather than starting a competing load. One quick second try covers a passing no-fill.
+        // Reuse the cached ad or join the load in flight (never a competing request). One
+        // quick second try covers a passing no-fill / network blip.
         let ready = rewardedLoaded || (await preloadRewardedAd());
-        if (!ready && !settled && navigator.onLine !== false) { await sleepMs(1500); ready = await preloadRewardedAd(); }
+        if (!ready && !settled && navigator.onLine !== false && !adState.loadStartedAt) { await sleepMs(1500); ready = await preloadRewardedAd({ waitMs: 20000 }); }
         // When the server asks for proof of the ad, the ad must have been loaded WITH it.
         const session = await ensureAdSession();
         const needsSsv = session.mode && session.mode !== 'off';
         if (ready && needsSsv && !adState.preparedWithSsv) { rewardedLoaded = false; ready = await preloadRewardedAd(); }
         if (settled) return;
-        if (!ready) { finish(adState.lastError === 'load-timeout' ? 'timeout' : 'unavailable'); return; }
+        if (!ready) { finish(adState.loadStartedAt ? 'timeout' : 'unavailable'); return; }
 
         rewardedLoaded = false;
         adState.showing = true;
-        showTimer = later(() => finish('failed_to_show'), AD_SHOW_TIMEOUT_MS);
+        showTimer = later(() => finish('failed_to_show', { code: AD_CLIENT_ERR.TIMEOUT, msg: 'ad did not appear' }), AD_SHOW_TIMEOUT_MS);
         const item = await AdMob.showRewardVideoAd();
         if (item) { earned = true; if (dismissed) finish('earned'); } // the plugin resolves only when the user actually earned the reward
       } catch (error) {
         console.warn('[ads] rewarded ad could not be shown', error);
-        finish('failed_to_show');
+        finish('failed_to_show', { code: AD_CLIENT_ERR.NOT_PREPARED, msg: String(error?.message || error) });
       }
     })();
   });
