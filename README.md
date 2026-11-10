@@ -12,11 +12,12 @@ and packaged for stores by [deltix-Mobile-App-code](https://github.com/deltixnet
 | Tab | Features |
 |---|---|
 | **Wallet** | Balance, send/receive $DLTX (base fee burned), activity history |
-| **Deltix Earn** | Direct Earn entry in primary navigation; server-defined packages: 100 Energy for 5 DLTX, 150 for 7.5, or 200 for 10 over 12 hours by default |
+| **Deltix Earn** | Direct Earn entry in primary navigation; server-defined 12-hour packages, one active session at a time: Free for 2 DLTX, 50 Energy for 5, 75 for 7.5, 100 for 10, or 200 for 25 |
 | **Stake** | Validator directory, delegation, rewards, unstake |
-| **Arcade** | **Deltix Arcade (live)** — 10 original games (easy/hard) with daily-capped $DLTX win rewards |
+| **Arcade** | **Deltix Arcade (live)** — 10 original games (easy/hard); win rewards share one 10 $DLTX daily cap across all games |
 | **D-Browser** | Curated, allowlisted dApp gateway with security interstitial |
 | **Community** | **Deltix DAO (live)** — proposals + stake-weighted voting; referrals (max 3); ambassador tiers; account deletion |
+| **App PIN** | Optional 4- or 6-digit device PIN with biometric unlock (Android app only). Local to the device; it never replaces account sign-in, wallet keys, or transaction signing. Forgotten PINs are reset by signing in again with an email code |
 | **Network** | **Deltix Chain (live)** — latest blocks + chain info; token supply; monetary model |
 
 ## Pages
