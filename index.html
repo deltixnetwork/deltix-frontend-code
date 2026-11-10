@@ -4,8 +4,20 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#ffffff" />
-  <script>try { if (localStorage.getItem('dltx_pin_lock') === '1') document.documentElement.classList.add('pin-boot-lock'); } catch {}</script>
-  <style>.pin-boot-lock #app{visibility:hidden}.pin-boot-lock #pinLockOverlay{display:flex!important}</style>
+  <script>
+    // Native app: the PIN gate is the first thing on screen. This class keeps the app hidden until pin-gate.js
+    // has checked the PIN with the Android plugin; if that script ever fails to run, the app simply stays hidden.
+    (function () {
+      var root = document.documentElement;
+      try {
+        var cap = window.Capacitor;
+        var native = !!(cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform());
+        var shell = location.protocol === 'https:' && location.hostname === 'localhost' && !location.port;
+        if (native || shell) root.classList.add('pin-gate-pending');
+      } catch (e) { root.classList.add('pin-gate-pending'); }
+    })();
+  </script>
+  <style>html.pin-gate-pending{background:#080b14}html.pin-gate-pending #app{visibility:hidden}</style>
   <title>Deltix Network</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="assets/favicon-192.png" />
@@ -109,7 +121,7 @@
               <span class="profile-email" id="profileEmail" title="Your sign-in email">—</span>
               <button class="profile-ref" id="profileRef" title="Tap to copy your referral code">Ref —</button>
               <button class="profile-ref" id="profileChat" type="button" title="Edit your chat nickname and @username">💬 Chat profile</button>
-              <button class="profile-ref" id="appPinSettings" type="button" hidden>🔒 App PIN</button>
+              <button class="profile-ref" id="appPinSettings" type="button" hidden>🔒 PIN &amp; security</button>
             </div>
           </div>
           <span class="muted balance-lbl">Total balance</span>
@@ -1913,47 +1925,47 @@
     </div>
   </div>
 
-  <div class="pin-lock-overlay" id="pinLockOverlay" hidden>
-    <div class="pin-lock-card">
-      <div class="hero-logo">◆</div>
-      <h2>Unlock Deltix Network</h2>
-      <p class="muted small-note">Enter your app PIN to continue. This does not unlock or sign transactions with your wallet keys.</p>
-      <input id="pinUnlockInput" type="password" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="PIN" aria-label="Application PIN" />
-      <button class="btn primary" id="pinUnlockBtn">Unlock</button>
-      <button class="btn ghost" id="pinBiometricBtn" hidden>Use biometrics</button>
-      <button class="link-btn" id="pinForgotBtn">Forgot PIN? Reauthenticate</button>
-      <p class="hint" id="pinLockHint" aria-live="polite"></p>
+  <div class="pin-gate" id="pinGate" role="dialog" aria-modal="true" aria-labelledby="pinGateTitle" hidden>
+    <div class="pin-gate-inner">
+      <img class="pin-gate-logo" src="assets/logo.svg" alt="" width="56" height="56" />
+      <h2 class="pin-gate-title" id="pinGateTitle"></h2>
+      <p class="pin-gate-sub" id="pinGateSub"></p>
+      <div class="pin-gate-body" id="pinGateBody"></div>
+      <div class="pin-gate-actions" id="pinGateActions"></div>
+      <p class="pin-gate-note" id="pinGateNote"></p>
     </div>
   </div>
 
-  <div class="modal-backdrop" id="pinSetupModal" hidden>
-    <div class="modal pin-setup-modal">
-      <h3 id="pinSetupTitle">Protect this app</h3>
-      <p class="muted small-note">The PIN is verified locally and encrypted using Android Keystore. It never replaces your wallet key, recovery phrase, or transaction confirmation.</p>
-      <label id="pinCurrentLabel" for="pinCurrentInput" hidden>Current PIN</label>
-      <input id="pinCurrentInput" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="Current PIN" hidden />
-      <label for="pinLengthSelect">New PIN length</label>
-      <select id="pinLengthSelect">
-        <option value="4">4 digits</option>
-        <option value="6">6 digits</option>
-      </select>
-      <label for="pinNewInput">New PIN</label>
-      <input id="pinNewInput" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password" placeholder="Enter new PIN" />
-      <label class="check-row" for="pinBiometricCheck">
-        <input id="pinBiometricCheck" type="checkbox" />
-        <span>Allow biometric unlock on this device</span>
+  <div class="modal-backdrop" id="pinSettingsModal" hidden>
+    <div class="modal pin-settings-modal" role="dialog" aria-modal="true" aria-labelledby="pinSettingsTitle">
+      <h3 id="pinSettingsTitle">PIN &amp; security</h3>
+      <p class="muted small-note">Your 6-digit PIN locks Deltix on this phone and is stored with Android Keystore protection. It never replaces your wallet keys, recovery phrase, or transaction confirmation.</p>
+      <button class="btn primary" id="pinChangeBtn" type="button">Change PIN</button>
+      <label class="check-row" id="pinBioRow" for="pinBioToggle" hidden>
+        <input id="pinBioToggle" type="checkbox" />
+        <span>Unlock with fingerprint or face</span>
       </label>
-      <p class="hint" id="pinSetupHint"></p>
+      <p class="hint" id="pinSettingsHint" aria-live="polite"></p>
       <div class="modal-actions">
-        <button class="btn ghost" id="pinSetupCancel">Cancel</button>
-        <button class="btn danger" id="pinDisableBtn" hidden>Disable PIN</button>
-        <button class="btn primary" id="pinSetupSave">Save PIN</button>
+        <button class="btn ghost" id="pinSettingsClose" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop pin-pad-modal" id="pinPadModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pinPadTitle">
+      <h3 id="pinPadTitle"></h3>
+      <p class="muted small-note" id="pinPadSub"></p>
+      <div id="pinPadRoot"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="pinPadCancel" type="button">Cancel</button>
       </div>
     </div>
   </div>
 
   <script src="faq-data.js"></script>
   <script src="arcade.js"></script>
+  <script src="pin-gate.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
