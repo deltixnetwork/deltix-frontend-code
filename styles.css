@@ -3074,7 +3074,11 @@ html:not([data-dark]) .p2p-lookup { background: rgba(0,0,0,0.03); border-color: 
 .earn-pkg-reward b { color: var(--p2p-green, #0ecb81); }
 .earn-pkg-btn { margin-top: 6px; width: 100%; padding: 10px 8px; font-size: 13px; }
 .earn-pkg-off { opacity: .7; }
-html:not([data-dark]) .earn-pkg { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.08); }
+.earn-energy-box { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 6px; padding: 12px; border-radius: 14px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); text-align: center; }
+.earn-energy-box[hidden] { display: none; }
+.earn-energy-text { font-size: 0.9rem; line-height: 1.4; }
+.earn-energy-btn { width: 100%; }
+html:not([data-dark]) .earn-pkg, html:not([data-dark]) .earn-energy-box { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.08); }
 html:not([data-dark]) .p2p-stat, html:not([data-dark]) .p2p-select { background: rgba(0,0,0,0.03); }
 
 /* ────────────────────────────────────────────────────────────── */

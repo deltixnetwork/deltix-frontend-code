@@ -917,8 +917,10 @@ function askConfirm({ title = 'Are you sure?', message = '', rows = [], confirmT
 
 // Confirmation that also collects a REASON (5+ chars) and, optionally, a typed
 // safety word (e.g. "BAN") before the destructive button enables. Resolves the
-// reason string, or null when cancelled.
-function askReason({ title = 'Confirm', message = '', rows = [], placeholder = 'Reason', confirmText = 'Confirm', cancelText = 'Cancel', typed = null } = {}) {
+// reason string, or null when cancelled. With reasonRequired:false (only for a
+// second confirmation that already has a reason) just the typed word is asked
+// and the typed word is resolved.
+function askReason({ title = 'Confirm', message = '', rows = [], placeholder = 'Reason', confirmText = 'Confirm', cancelText = 'Cancel', typed = null, reasonRequired = true } = {}) {
   return new Promise((resolve) => {
     document.getElementById('confirmDialog')?.remove();
     const wrap = document.createElement('div');
@@ -929,7 +931,7 @@ function askReason({ title = 'Confirm', message = '', rows = [], placeholder = '
         <h3></h3>
         <p class="hint"${message ? '' : ' hidden'}></p>
         ${rows.length ? `<div class="supply-list">${rows.map(() => '<div class="supply-row"><span class="k"></span><span class="v"></span></div>').join('')}</div>` : ''}
-        <input type="text" class="ar-reason" maxlength="200" autocomplete="off" />
+        <input type="text" class="ar-reason" maxlength="200" autocomplete="off"${reasonRequired ? '' : ' hidden'} />
         ${typed ? `<input type="text" class="ar-typed" maxlength="20" autocomplete="off" />` : ''}
         <div class="modal-actions">
           <button class="btn ghost" type="button"></button>
@@ -946,15 +948,16 @@ function askReason({ title = 'Confirm', message = '', rows = [], placeholder = '
     const [cancelBtn, okBtn] = wrap.querySelectorAll('.modal-actions .btn');
     cancelBtn.textContent = cancelText;
     okBtn.textContent = confirmText;
-    const check = () => { okBtn.disabled = reasonEl.value.trim().length < 5 || (typedEl && typedEl.value.trim() !== typed); };
+    const check = () => { okBtn.disabled = (reasonRequired && reasonEl.value.trim().length < 5) || Boolean(typedEl && typedEl.value.trim() !== typed); };
     reasonEl.addEventListener('input', check);
     typedEl?.addEventListener('input', check);
     const done = (val) => { wrap.remove(); resolve(val); };
     cancelBtn.addEventListener('click', () => done(null));
-    okBtn.addEventListener('click', () => { if (!okBtn.disabled) done(reasonEl.value.trim()); });
+    okBtn.addEventListener('click', () => { if (!okBtn.disabled) done(reasonRequired ? reasonEl.value.trim() : (typedEl?.value.trim() || 'confirmed')); });
     wrap.addEventListener('click', (e) => { if (e.target === wrap) done(null); });
+    check();
     document.body.appendChild(wrap);
-    reasonEl.focus();
+    (reasonRequired ? reasonEl : typedEl || reasonEl).focus();
   });
 }
 
@@ -4674,6 +4677,13 @@ const p2p = {
   me: null,
 };
 
+// Trading is retired, so the tab only ever carries moderator tools. A 1.20.2+ server says so with
+// `moderatorTools` and keeps `enabled:true` for moderators (shipped 1.19.x apps hide the tab when
+// `enabled` is false); older servers just send `enabled:false`. Every action is authorized server-side.
+function p2pMarketLive(status = p2p.status) {
+  return Boolean(status?.enabled) && !status.retired && !status.moderatorTools;
+}
+
 // ── Live admin directory (referral code + derived state only; server decides ONLINE/BUSY/OFFLINE) ──
 function p2pAdminChip(status) {
   const map = { ONLINE: ['● Online', 'ok'], BUSY: ['● Busy', 'warn'], OFFLINE: ['○ Offline', 'muted'] };
@@ -4682,7 +4692,7 @@ function p2pAdminChip(status) {
 }
 async function loadP2pAdmins({ silent = false } = {}) {
   const card = $('p2pAdminsCard');
-  if (!card || !state.token || !p2p.status?.enabled) return;
+  if (!card || !state.token || !p2pMarketLive()) return;
   try {
     const r = await api('GET', '/p2p/admins');
     p2p.admins = r.admins || [];
@@ -4765,19 +4775,24 @@ async function loadP2pStatus() {
   if (!state.token) return null;
   try {
     p2p.status = await api('GET', '/p2p/status');
-    if (!p2p.status.enabled) {
-      try {
-        await api('GET', '/p2p/moderation/queue');
-        p2p.isModerator = true;
-      } catch {
-        p2p.isModerator = false;
+    if (!p2pMarketLive()) {
+      if (typeof p2p.status.moderatorTools === 'boolean') {
+        p2p.isModerator = p2p.status.moderatorTools;
+      } else {
+        // Older server: no hint, so ask the moderation endpoint (200 only for moderator roles).
+        try {
+          await api('GET', '/p2p/moderation/queue');
+          p2p.isModerator = true;
+        } catch {
+          p2p.isModerator = false;
+        }
       }
     }
     const nav = $('navP2p');
     if (nav) {
-      nav.hidden = !p2p.status.enabled && !p2p.isModerator;
+      nav.hidden = !p2pMarketLive() && !p2p.isModerator;
       const label = nav.querySelector('span:last-child');
-      if (label) label.textContent = p2p.status.enabled ? 'P2P Market' : 'Moderator Tools';
+      if (label) label.textContent = p2pMarketLive() ? 'P2P Market' : 'Moderator Tools';
     }
     return p2p.status;
   } catch {
@@ -4790,7 +4805,7 @@ async function loadP2p() {
   if (!p2p.status) await loadP2pStatus();
   const simPill = $('p2pSimPill');
   if (simPill) simPill.hidden = !p2p.status?.simulationMode;
-  const marketEnabled = Boolean(p2p.status?.enabled);
+  const marketEnabled = p2pMarketLive();
   // KYC gate mirrors the server rule (the server enforces it regardless).
   try {
     const k = await api('GET', '/kyc/status');
@@ -4814,7 +4829,7 @@ async function loadP2p() {
   }
   const myC = $('p2pMyContact');
   if (myC && !myC.matches(':focus')) myC.value = p2p.status?.myContact || '';
-  loadP2pWalletSettings();
+  if (marketEnabled) loadP2pWalletSettings();
   // Moderator probe: the queue answers 200 only for moderator roles.
   try {
     const q = await api('GET', '/p2p/moderation/queue');
@@ -4844,10 +4859,10 @@ async function loadP2p() {
     try {
       const pr = await api('GET', '/p2p/moderation/presence');
       p2p.me = pr.me;
-      if (pr.me?.availabilityEnabled) startP2pHeartbeat();
+      if (pr.me?.availabilityEnabled && marketEnabled) startP2pHeartbeat();
     } catch { /* presence optional */ }
   }
-  startP2pAdminsPoll();
+  if (marketEnabled) startP2pAdminsPoll(); else stopP2pAdminsPoll();
   renderP2pView();
 }
 
@@ -5091,13 +5106,13 @@ async function renderP2pView() {
         <div class="p2p-mod-head">
           <div><div class="p2p-mod-title">🛡 Moderation Console</div><div class="muted small-note">${p2p.me?.code ? `Signed in as <b>${escapeHtml(p2p.me.code)}</b> · ` : ''}${(p2p.me?.senior || mine.me?.senior) ? 'Senior moderator · can view every trade, reassign admins, remove ads, ban/unban' : 'Moderator · can review assigned trades, remove ads, ban/unban'}</div></div>
         </div>
-        <div class="card p2p-presence">
+        ${p2pMarketLive() ? `<div class="card p2p-presence">
           <div class="p2p-offer-top">
             <label class="p2p-presence-toggle"><input type="checkbox" id="p2pPresenceToggle" /> <b>Available for P2P trades</b></label>
             <span id="p2pPresenceState"></span>
           </div>
           <p class="hint">While available, traders can select you for new trades (up to ${p2p.me?.capacity ?? '—'} at once). You stay online while the app is open and drop to offline automatically when it is closed. Availability never changes escrow — release still needs a verified payment and your approval.</p>
-        </div>
+        </div>` : ''}
         <div class="card p2p-stats" id="p2pStatsCard">
           <div class="p2p-offer-top"><b>📊 P2P Dashboard</b><span class="muted small-note" id="p2pStatsScope"></span></div>
           <div class="p2p-stats-filters">
@@ -5138,7 +5153,7 @@ async function renderP2pView() {
       }));
       $('p2pStatsApply')?.addEventListener('click', () => p2pLoadStats());
       $('p2pStatsMod')?.addEventListener('change', (e) => { p2p.statsMod = e.target.value; p2pLoadStats(); });
-      $('p2pPresenceToggle').addEventListener('change', async (e) => {
+      $('p2pPresenceToggle')?.addEventListener('change', async (e) => {
         const on = e.target.checked;
         e.target.disabled = true;
         try {
@@ -5233,9 +5248,9 @@ async function renderP2pView() {
               const burnConfirmation = await askReason({
                 title: 'Confirm irreversible burn',
                 message: 'This will permanently destroy the target account’s remaining liquid and staked DLTX. Type BURN to continue.',
-                placeholder: 'Type BURN to confirm',
                 confirmText: 'Confirm burn',
                 typed: 'BURN',
+                reasonRequired: false,
               });
               if (!burnConfirmation) return;
             }
@@ -6778,12 +6793,13 @@ function renderEarn() {
     setText('earnSub', 'Sign in to start earning.');
     const b = $('earnBtn'); if (b) { b.disabled = true; b.textContent = 'Loading…'; }
     if (pkgEl) pkgEl.innerHTML = '';
+    renderEarnEnergyBox(null);
     return;
   }
   const ready = d.canClaim;
   const running = d.active && !ready;
   const remainingText = fmtCountdown(earnRemainingMs());
-  const packages = Array.isArray(d.packages) ? d.packages : [];
+  const packages = earnPackageList(d);
   setText('earnStatus', ready ? `◆ ${fmt(d.reward)} DLTX READY` : running ? `◆ Deltix Earn — running${d.packageLabel ? ` · ${d.packageLabel}` : ''}` : '◆ Deltix Earn');
   setText(
     'earnSub',
@@ -6804,7 +6820,7 @@ function renderEarn() {
     pkgEl.hidden = d.active;
     pkgEl.innerHTML = packages.map((p) => `
       <div class="earn-pkg ${p.canStart ? '' : 'earn-pkg-off'}">
-        <div class="earn-pkg-energy">${p.energy > 0 ? `⚡ ${fmt(p.energy)} Energy` : 'Free · no Energy required'}</div>
+        <div class="earn-pkg-energy">⚡ ${fmt(p.energy)} Energy</div>
         <div class="earn-pkg-reward">Earn <b>${fmt(p.rewardDltx)} DLTX</b></div>
         <div class="muted small-note">Duration: ${p.durationHours} Hours</div>
         <button class="btn gold earn-pkg-btn" data-pkg="${p.id}" ${p.canStart && d.enabled ? '' : 'disabled'}>${p.canStart ? 'START' : `Need ⚡ ${fmt(Math.max(0, p.energy - d.energy))} more`}</button>
@@ -6813,8 +6829,48 @@ function renderEarn() {
   }
   setText('earnRateNote', d.active
     ? `Reward and cost were locked in when this session started. Closing the app does not reset the timer — it runs on the server.`
-    : `Current Earn Rates: ${packages.map((p) => `${p.energy > 0 ? `${fmt(p.energy)}⚡` : 'Free'} → ${fmt(p.rewardDltx)} DLTX`).join(' · ')} per ${d.durationHours}h — subject to change as the network grows.`);
+    : `Current Earn Rates: ${packages.map((p) => `${fmt(p.energy)}⚡ → ${fmt(p.rewardDltx)} DLTX`).join(' · ')} per ${d.durationHours}h — subject to change as the network grows.`);
+  renderEarnEnergyBox(d);
 }
+
+// Every Earn package costs Energy: the free tier is retired, so a zero-Energy entry is never shown.
+function earnPackageList(d) {
+  return (Array.isArray(d?.packages) ? d.packages : []).filter((p) => Number(p.energy) > 0);
+}
+
+// Earn is paid in Energy, and Energy comes from rewarded ads. An ad only ever grants Energy, never $DLTX.
+let earnAdBusy = false;
+function renderEarnEnergyBox(d) {
+  const box = $('earnEnergyBox');
+  if (!box) return;
+  const packages = earnPackageList(d);
+  // Hidden while a session runs (nothing can be started then) and when Earn is switched off on the server.
+  box.hidden = !d || Boolean(d.active) || !d.enabled || !packages.length;
+  if (box.hidden) return;
+  const cheapest = packages.reduce((a, b) => (b.energy < a.energy ? b : a));
+  const need = Math.max(0, cheapest.energy - d.energy);
+  setText('earnEnergyHint', need > 0
+    ? `You need ⚡ ${fmt(need)} more to start the ${fmt(cheapest.rewardDltx)} DLTX package.`
+    : 'You have enough Energy to start a package — more Energy unlocks the bigger ones.');
+  const btn = $('earnWatchAdBtn');
+  if (!btn) return;
+  const offerable = adsOfferable();
+  btn.disabled = earnAdBusy || !offerable;
+  btn.textContent = earnAdBusy ? 'Loading ad…' : offerable ? '▶ Watch an ad → ⚡ Energy' : 'Ads unavailable right now';
+}
+async function earnWatchAd() {
+  if (earnAdBusy || !earnState.data) return;
+  earnAdBusy = true;
+  renderEarnEnergyBox(earnState.data);
+  try {
+    // earnEnergy owns the ad, the cooldown, the server-verified credit and every failure message.
+    if (await earnEnergy(null)) await loadEarn();
+  } finally {
+    earnAdBusy = false;
+    renderEarnEnergyBox(earnState.data);
+  }
+}
+$('earnWatchAdBtn')?.addEventListener('click', earnWatchAd);
 
 async function handleEarnAction() {
   const d = earnState.data;
@@ -6830,8 +6886,8 @@ async function startEarnSession(packageId) {
   if (!pkg) return;
   const okGo = await askConfirm({
     title: `Start Deltix Earn · ${fmt(pkg.rewardDltx)} DLTX?`,
-    message: `${pkg.energy > 0 ? `⚡ ${fmt(pkg.energy)} Energy will be spent now.` : 'This free tier does not require Energy.'} The ${pkg.durationHours}-hour timer runs on the server; closing the app does not reset it.`,
-    rows: [['Energy', pkg.energy > 0 ? `⚡ ${fmt(pkg.energy)}` : 'Free'], ['Reward', `${fmt(pkg.rewardDltx)} DLTX`], ['Duration', `${pkg.durationHours} hours`]],
+    message: `⚡ ${fmt(pkg.energy)} Energy will be spent now. The ${pkg.durationHours}-hour timer runs on the server; closing the app does not reset it.`,
+    rows: [['Energy', `⚡ ${fmt(pkg.energy)}`], ['Reward', `${fmt(pkg.rewardDltx)} DLTX`], ['Duration', `${pkg.durationHours} hours`]],
     confirmText: 'START',
   });
   if (!okGo) return;
