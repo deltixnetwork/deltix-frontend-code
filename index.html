@@ -4,11 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#ffffff" />
+  <script>try { if (localStorage.getItem('dltx_pin_lock') === '1') document.documentElement.classList.add('pin-boot-lock'); } catch {}</script>
+  <style>.pin-boot-lock #app{visibility:hidden}.pin-boot-lock #pinLockOverlay{display:flex!important}</style>
   <title>Deltix Network</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="assets/favicon-192.png" />
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="pin-security.css" />
 </head>
 <body>
   <div id="app" class="phone">
@@ -111,6 +114,7 @@
               <span class="profile-email" id="profileEmail" title="Your sign-in email">—</span>
               <button class="profile-ref" id="profileRef" title="Tap to copy your referral code">Ref —</button>
               <button class="profile-ref" id="profileChat" type="button" title="Edit your chat nickname and @username">💬 Chat profile</button>
+              <button class="profile-ref" id="appPinSettings" type="button" hidden>🔒 App PIN</button>
             </div>
           </div>
           <span class="muted balance-lbl">Total balance</span>
@@ -939,7 +943,7 @@
 
       <!-- Deltix Shop -->
       <div class="tab" id="tab-shop">
-        <div class="showcase-banner"><div class="showcase-title">Deltix Shop 🛒</div><div class="showcase-sub">Spend Energy or $DLTX on avatars, themes, Energy packs and boosts.</div></div>
+        <div class="showcase-banner"><div class="showcase-title">Deltix Shop 🛒</div><div class="showcase-sub">Spend Energy or $DLTX on avatars, themes and Energy packs.</div></div>
         <div class="shop-bal-row">
           <span class="shop-bal" id="shopEnergyBal">⚡ 0 Energy</span>
           <span class="shop-bal" id="shopDltxBal">0 $DLTX</span>
@@ -985,7 +989,7 @@
         </div>
         <ul class="disclosure">
           <li>Deltix Earn is completely separate from Arcade/Rewards — do both to earn more.</li>
-          <li>Pick a package: 50 Energy → 5 DLTX, 75 Energy → 7.5 DLTX or 100 Energy → 10 DLTX. Every package runs for 12 hours on the server clock.</li>
+          <li>Pick a package: free → 2 DLTX, 50 Energy → 5 DLTX, 75 Energy → 7.5 DLTX, 100 Energy → 10 DLTX or 200 Energy → 25 DLTX. Every package runs for 12 hours on the server clock.</li>
           <li>A session's reward and Energy cost are locked in the moment you start it; only one session can run at a time.</li>
         </ul>
       </div>
@@ -1930,6 +1934,45 @@
       <h2>Update required</h2>
       <p>This version of the Deltix Network app is no longer supported.<br/>Please update to the latest version to continue.</p>
       <button class="btn primary" id="updateReloadBtn">Update now</button>
+    </div>
+  </div>
+
+  <div class="pin-lock-overlay" id="pinLockOverlay" hidden>
+    <div class="pin-lock-card">
+      <div class="hero-logo">◆</div>
+      <h2>Unlock Deltix Network</h2>
+      <p class="muted small-note">Enter your app PIN to continue. This does not unlock or sign transactions with your wallet keys.</p>
+      <input id="pinUnlockInput" type="password" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="PIN" aria-label="Application PIN" />
+      <button class="btn primary" id="pinUnlockBtn">Unlock</button>
+      <button class="btn ghost" id="pinBiometricBtn" hidden>Use biometrics</button>
+      <button class="link-btn" id="pinForgotBtn">Forgot PIN? Reauthenticate</button>
+      <p class="hint" id="pinLockHint" aria-live="polite"></p>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="pinSetupModal" hidden>
+    <div class="modal pin-setup-modal">
+      <h3 id="pinSetupTitle">Protect this app</h3>
+      <p class="muted small-note">The PIN is verified locally and encrypted using Android Keystore. It never replaces your wallet key, recovery phrase, or transaction confirmation.</p>
+      <label id="pinCurrentLabel" for="pinCurrentInput" hidden>Current PIN</label>
+      <input id="pinCurrentInput" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="Current PIN" hidden />
+      <label for="pinLengthSelect">New PIN length</label>
+      <select id="pinLengthSelect">
+        <option value="4">4 digits</option>
+        <option value="6">6 digits</option>
+      </select>
+      <label for="pinNewInput">New PIN</label>
+      <input id="pinNewInput" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password" placeholder="Enter new PIN" />
+      <label class="check-row" for="pinBiometricCheck">
+        <input id="pinBiometricCheck" type="checkbox" />
+        <span>Allow biometric unlock on this device</span>
+      </label>
+      <p class="hint" id="pinSetupHint"></p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="pinSetupCancel">Cancel</button>
+        <button class="btn danger" id="pinDisableBtn" hidden>Disable PIN</button>
+        <button class="btn primary" id="pinSetupSave">Save PIN</button>
+      </div>
     </div>
   </div>
 

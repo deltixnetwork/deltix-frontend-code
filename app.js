@@ -38,6 +38,194 @@ const state = {
   hideBalances: localStorage.getItem('dltx_hide_balances') === '1',
 };
 
+const appPinPlugin = window.Capacitor?.Plugins?.DeltixPin || null;
+let appPinState = { enabled: false, biometricEnabled: false, biometricAvailable: false };
+
+function pinUiLock() {
+  if (!appPinState.enabled || !state.token) return;
+  localStorage.setItem('dltx_pin_lock', '1');
+  document.documentElement.classList.add('pin-boot-lock');
+  const overlay = $('pinLockOverlay');
+  if (overlay) overlay.hidden = false;
+  const input = $('pinUnlockInput');
+  if (input) { input.value = ''; setTimeout(() => input.focus(), 50); }
+  const biometric = $('pinBiometricBtn');
+  if (biometric) biometric.hidden = !appPinState.biometricEnabled || !appPinState.biometricAvailable;
+}
+
+function pinUiUnlock() {
+  localStorage.setItem('dltx_pin_lock', '0');
+  document.documentElement.classList.remove('pin-boot-lock');
+  if ($('pinLockOverlay')) $('pinLockOverlay').hidden = true;
+  if ($('pinLockHint')) $('pinLockHint').textContent = '';
+}
+
+async function initializePinProtection() {
+  const settings = $('appPinSettings');
+  if (!appPinPlugin) {
+    if (settings) settings.hidden = true;
+    if (state.token && localStorage.getItem('dltx_pin_enabled') === '1') {
+      document.documentElement.classList.add('pin-boot-lock');
+      if ($('pinLockOverlay')) $('pinLockOverlay').hidden = false;
+    } else {
+      document.documentElement.classList.remove('pin-boot-lock');
+    }
+    return;
+  }
+  if (settings) settings.hidden = false;
+  try {
+    appPinState = await appPinPlugin.getState();
+    localStorage.setItem('dltx_pin_enabled', appPinState.enabled ? '1' : '0');
+    if (settings) settings.textContent = appPinState.enabled ? '🔒 App PIN enabled' : '🔒 Enable App PIN';
+    if (appPinState.enabled && state.token) pinUiLock();
+    else if (!appPinState.enabled) pinUiUnlock();
+  } catch (error) {
+    if (state.token && localStorage.getItem('dltx_pin_enabled') === '1') {
+      document.documentElement.classList.add('pin-boot-lock');
+      if ($('pinLockOverlay')) $('pinLockOverlay').hidden = false;
+    } else {
+      document.documentElement.classList.remove('pin-boot-lock');
+    }
+    toast(`App PIN state could not be checked: ${error.message}`, { tone: 'error' });
+  }
+}
+
+async function unlockWithPin() {
+  const hint = $('pinLockHint');
+  const button = $('pinUnlockBtn');
+  if (!appPinPlugin) return;
+  if (button) button.disabled = true;
+  try {
+    const result = await appPinPlugin.verifyPin({ pin: $('pinUnlockInput').value });
+    if (!result.verified) {
+      hint.textContent = result.lockedOut
+        ? 'PIN locked after repeated failed attempts. Reauthenticate to reset app protection.'
+        : result.retryAfterMs
+        ? `Too many attempts. Try again in ${Math.ceil(result.retryAfterMs / 1000)} seconds.`
+        : `${result.attemptsRemaining ?? 0} attempts before a temporary lockout.`;
+      $('pinUnlockInput').value = '';
+      return;
+    }
+    pinUiUnlock();
+    if (state.token && $('screen-main')?.classList.contains('active')) {
+      refreshCurrentView({ silent: true });
+      loadEarn();
+    }
+  } catch (error) {
+    hint.textContent = error.message || 'PIN verification failed.';
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function openPinSettings() {
+  if (!appPinPlugin) return;
+  const currentLabel = $('pinCurrentLabel');
+  const current = $('pinCurrentInput');
+  currentLabel.hidden = !appPinState.enabled;
+  current.hidden = !appPinState.enabled;
+  current.value = '';
+  $('pinNewInput').value = '';
+  $('pinBiometricCheck').checked = Boolean(appPinState.biometricEnabled && appPinState.biometricAvailable);
+  $('pinBiometricCheck').disabled = !appPinState.biometricAvailable;
+  $('pinSetupTitle').textContent = appPinState.enabled ? 'Change app PIN' : 'Protect this app';
+  $('pinDisableBtn').hidden = !appPinState.enabled;
+  $('pinSetupHint').textContent = appPinState.biometricAvailable
+    ? 'PIN protection is stored on this device.'
+    : 'Biometric unlock is unavailable on this device; the app PIN remains available.';
+  $('pinSetupModal').hidden = false;
+}
+
+async function saveAppPin() {
+  const pin = $('pinNewInput').value;
+  const expectedLength = Number($('pinLengthSelect').value);
+  if (pin.length !== expectedLength || !/^\d+$/.test(pin)) {
+    $('pinSetupHint').textContent = `Enter exactly ${expectedLength} digits.`;
+    return;
+  }
+  const options = { biometric: $('pinBiometricCheck').checked };
+  try {
+    if (appPinState.enabled) {
+      const currentPin = $('pinCurrentInput').value;
+      const result = await appPinPlugin.changePin({ currentPin, newPin: pin, ...options });
+      if (!result.changed) {
+        $('pinSetupHint').textContent = result.retryAfterMs
+          ? `Too many attempts. Try again in ${Math.ceil(result.retryAfterMs / 1000)} seconds.`
+          : 'Current PIN is incorrect.';
+        return;
+      }
+    } else {
+      await appPinPlugin.setPin({ pin, ...options });
+    }
+    appPinState = await appPinPlugin.getState();
+    localStorage.setItem('dltx_pin_enabled', appPinState.enabled ? '1' : '0');
+    localStorage.setItem('dltx_pin_lock', '0');
+    $('appPinSettings').textContent = '🔒 App PIN enabled';
+    $('pinSetupModal').hidden = true;
+    toast('App PIN protection is enabled.', { tone: 'success' });
+  } catch (error) {
+    $('pinSetupHint').textContent = error.message || 'Could not save your PIN.';
+  }
+}
+
+async function disableAppPin() {
+  try {
+    const result = await appPinPlugin.disablePin({ pin: $('pinCurrentInput').value });
+    if (!result.disabled) {
+      $('pinSetupHint').textContent = result.retryAfterMs
+        ? `Too many attempts. Try again in ${Math.ceil(result.retryAfterMs / 1000)} seconds.`
+        : 'Current PIN is incorrect.';
+      return;
+    }
+    appPinState = await appPinPlugin.getState();
+    localStorage.setItem('dltx_pin_enabled', '0');
+    pinUiUnlock();
+    $('appPinSettings').textContent = '🔒 Enable App PIN';
+    $('pinSetupModal').hidden = true;
+    toast('App PIN protection is disabled.', { tone: 'info' });
+  } catch (error) {
+    $('pinSetupHint').textContent = error.message || 'Could not disable PIN protection.';
+  }
+}
+
+function startPinRecovery() {
+  const pinConfigured = appPinState.enabled || localStorage.getItem('dltx_pin_enabled') === '1';
+  if (!pinConfigured || !state.email) return;
+  sessionStorage.setItem('dltx_pin_recovery', '1');
+  localStorage.removeItem(SAVED_ACCOUNTS_KEY);
+  localStorage.removeItem('dltx_token');
+  state.token = null;
+  pinUiUnlock();
+  showScreen('screen-email');
+  $('emailInput').value = state.email;
+  toast('Sign in with a fresh email code to reset this device PIN.', { tone: 'info' });
+}
+
+$('appPinSettings')?.addEventListener('click', openPinSettings);
+$('pinUnlockBtn')?.addEventListener('click', unlockWithPin);
+$('pinUnlockInput')?.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') unlockWithPin();
+});
+$('pinBiometricBtn')?.addEventListener('click', async () => {
+  try {
+    const result = await appPinPlugin.authenticateBiometric();
+    if (result.verified) {
+      pinUiUnlock();
+      if (state.token && $('screen-main')?.classList.contains('active')) {
+        refreshCurrentView({ silent: true });
+        loadEarn();
+      }
+    }
+  } catch (error) {
+    $('pinLockHint').textContent = error.message || 'Biometric authentication failed.';
+  }
+});
+$('pinForgotBtn')?.addEventListener('click', startPinRecovery);
+$('pinSetupCancel')?.addEventListener('click', () => { $('pinSetupModal').hidden = true; });
+$('pinSetupSave')?.addEventListener('click', saveAppPin);
+$('pinDisableBtn')?.addEventListener('click', disableAppPin);
+const pinInitialization = initializePinProtection();
+
 // Global ChatRoom state — declared up here because showTab() (which stops chat
 // polling) runs during boot, before the chat section further down is evaluated.
 const globalChatState = {
@@ -269,6 +457,10 @@ let lastResumeAt = 0;
 function onAppResumed() {
   if (Date.now() - lastResumeAt < 1500) return;
   lastResumeAt = Date.now();
+  if (appPinState.enabled) {
+    pinUiLock();
+    return;
+  }
   checkAppVersion();
   flushPendingCompletions();
   // Back from the background: make sure a fresh rewarded ad is ready (a stale or failed one is replaced).
@@ -280,7 +472,8 @@ function onAppResumed() {
   }
 }
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) onAppResumed();
+  if (document.hidden) pinUiLock();
+  else onAppResumed();
 });
 window.addEventListener('online', () => { if (state.token) loadEarn(); });
 
@@ -288,6 +481,7 @@ window.addEventListener('online', () => { if (state.token) loadEarn(); });
 try {
   window.Capacitor?.Plugins?.App?.addListener('appStateChange', ({ isActive }) => {
     if (isActive) onAppResumed();
+    else pinUiLock();
   });
 } catch {}
 
@@ -1039,6 +1233,17 @@ $('verifyBtn').addEventListener('click', async () => {
   try {
     // Safe to retry: a code is consumed exactly once; a repeat just gets "invalid".
     const r = await api('POST', '/auth/verify', { email: state.email, code }, { retries: 3 });
+    if (sessionStorage.getItem('dltx_pin_recovery') === '1') {
+      if (appPinPlugin) {
+        await appPinPlugin.resetPinAfterReauthentication();
+        appPinState = await appPinPlugin.getState();
+      }
+      sessionStorage.removeItem('dltx_pin_recovery');
+      localStorage.setItem('dltx_pin_enabled', '0');
+      localStorage.setItem('dltx_pin_lock', '0');
+      document.documentElement.classList.remove('pin-boot-lock');
+      if ($('pinLockOverlay')) $('pinLockOverlay').hidden = true;
+    }
     state.token = r.token;
     localStorage.setItem('dltx_token', r.token);
     if (r.user && r.user.email) state.email = r.user.email;
@@ -1315,6 +1520,10 @@ async function enterApp() {
   // for any missing part (and on older backends without /bootstrap), so this is
   // both faster and backward-compatible.
   const boot = await api('GET', '/bootstrap').catch(() => null);
+  if (Number(boot?.inactivity?.energyDeducted) > 0) {
+    const days = Number(boot.inactivity.completeDays) || 0;
+    toast(`${fmt(boot.inactivity.energyDeducted)} Energy deducted for ${days} complete day${days === 1 ? '' : 's'} away.`, { tone: 'info' });
+  }
   await Promise.allSettled([
     loadWallet(boot?.wallet),
     loadStats(boot?.stats),
@@ -3810,10 +4019,25 @@ function renderEnergy() {
   }
 }
 
-// ---- 2x Energy Hour — ad-activated personal 2× window, 2 uses per day ----
+// ---- 2x Energy Hour — ad-activated personal 2× window, one use per UTC day ----
 let ehTimer = null;
+let ehResetTimer = null;
 let ehAnnouncedFor = null;
 let ehEndedFor = null;
+function updateEhResetCountdown(nextAvailableAt) {
+  const sub = $('energyHourSub');
+  if (!sub || !nextAvailableAt) return;
+  const ms = Math.max(0, new Date(nextAvailableAt).getTime() - Date.now());
+  if (ms === 0) {
+    if (ehResetTimer) { clearInterval(ehResetTimer); ehResetTimer = null; }
+    loadEnergy().catch(() => {});
+    return;
+  }
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  const s = Math.floor((ms % 60000) / 1000);
+  sub.textContent = `Today's Energy Hour is used · Available in ${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')} (server UTC reset)`;
+}
 function updateEhCountdown(endsAt) {
   const sub = $('energyHourSub');
   if (!sub || !endsAt) return;
@@ -3832,7 +4056,7 @@ function updateEhCountdown(endsAt) {
         title: '2x Energy Hour Complete ⏳',
         subtitle: left > 0
           ? `Nice work! ${left === 1 ? '1 activation' : `${left} activations`} remaining today — watch an ad to double up again.`
-          : 'Both 2x Energy Hours are used for today — fresh boosts arrive tomorrow.',
+          : 'Today’s Energy Hour is used — your next one arrives after the UTC reset.',
         icon: '⚡',
         duration: 3600,
       });
@@ -3851,13 +4075,15 @@ function applyEnergyHour(hh) {
   if (!hh || !hh.active) {
     banner.classList.add('idle');
     if (ehTimer) { clearInterval(ehTimer); ehTimer = null; }
+    if (ehResetTimer) { clearInterval(ehResetTimer); ehResetTimer = null; }
     ehAnnouncedFor = null;
     if (title) title.textContent = '2x Energy Hour';
     // The server is the source of truth for remaining uses; until it has
     // answered, show the default availability copy.
     const left = hh && hh.usesRemaining != null ? Math.max(0, Number(hh.usesRemaining) || 0) : null;
     if (left === 0) {
-      if (sub) sub.textContent = 'All 2x Energy Hours used today · Available again tomorrow';
+      updateEhResetCountdown(hh.nextAvailableAt);
+      if (!hh.nextAvailableAt && sub) sub.textContent = 'Today’s Energy Hour is used · Available after the UTC reset';
       if (btn) btn.hidden = true;
     } else {
       const usesTxt = left === null ? '' : left === 1 ? ' · 1 use remaining today' : ` · ${left} uses available today`;
@@ -3891,14 +4117,14 @@ function fmtHourDuration(mins) {
   if (m === 60) return '1 hour';
   return m % 60 === 0 ? `${m / 60} hours` : `${m} minute${m === 1 ? '' : 's'}`;
 }
-// Watch an ad, then ask the server to start one of today's 2x Energy Hours.
+// Watch an ad, then ask the server to start today's 2x Energy Hour.
 // The server enforces the daily limit — a cancelled/failed ad never reaches
 // the API, so it can't consume one of the day's uses.
 async function activateEnergyHour(btn) {
   if (window.ADS_ENABLED === false) { toast('Ads are temporarily unavailable — please try again later.'); return; }
   const hh = state.energy?.happyHour;
   if (hh?.active) { toast('A 2x Energy Hour is already running!'); return; }
-  if (hh && Number(hh.usesRemaining) <= 0) { toast('All 2x Energy Hours used today — available again tomorrow.'); return; }
+  if (hh && Number(hh.usesRemaining) <= 0) { toast('Today’s Energy Hour is used — available after the UTC reset.'); return; }
   const waitMs = ENERGY_AD_COOLDOWN_MS - (Date.now() - lastEnergyAdAt);
   if (waitMs > 0) { toast(`Please wait ${Math.ceil(waitMs / 1000)}s before the next ad.`); return; }
   if (btn) btn.disabled = true;
@@ -4369,7 +4595,7 @@ function checkBotNudge() {
     nudges.push({
       icon: '⚡',
       title: '2x Energy Hour Available',
-      message: `Watch an ad to double your Energy earnings for a full hour · ${hh.usesRemaining} of ${hh.maxPerDay || 2} left today.`,
+      message: `Watch an ad to double your Energy earnings for a full hour · ${hh.usesRemaining} of ${hh.maxPerDay || 1} left today.`,
       tab: 'tab-energy',
     });
   }
@@ -4553,8 +4779,20 @@ async function loadP2pStatus() {
   if (!state.token) return null;
   try {
     p2p.status = await api('GET', '/p2p/status');
+    if (!p2p.status.enabled) {
+      try {
+        await api('GET', '/p2p/moderation/queue');
+        p2p.isModerator = true;
+      } catch {
+        p2p.isModerator = false;
+      }
+    }
     const nav = $('navP2p');
-    if (nav) nav.hidden = !p2p.status.enabled;
+    if (nav) {
+      nav.hidden = !p2p.status.enabled && !p2p.isModerator;
+      const label = nav.querySelector('span:last-child');
+      if (label) label.textContent = p2p.status.enabled ? 'P2P Market' : 'Moderator Tools';
+    }
     return p2p.status;
   } catch {
     return null;
@@ -4566,13 +4804,14 @@ async function loadP2p() {
   if (!p2p.status) await loadP2pStatus();
   const simPill = $('p2pSimPill');
   if (simPill) simPill.hidden = !p2p.status?.simulationMode;
+  const marketEnabled = Boolean(p2p.status?.enabled);
   // KYC gate mirrors the server rule (the server enforces it regardless).
   try {
     const k = await api('GET', '/kyc/status');
     p2p.kyc = k.status || 'none';
-    const gate = Boolean(p2p.status?.kycRequired) && p2p.kyc !== 'approved';
+    const gate = marketEnabled && Boolean(p2p.status?.kycRequired) && p2p.kyc !== 'approved';
     $('p2pKycCard').hidden = !gate;
-    $('p2pMain').hidden = gate;
+    $('p2pMain').hidden = gate || (!marketEnabled && !p2p.isModerator);
     const kycBtn = $('p2pKycBtn');
     if (kycBtn) {
       kycBtn.onclick = () => {
@@ -4600,6 +4839,21 @@ async function loadP2p() {
     p2p.modQueue = [];
   }
   $('p2pModTab').hidden = !p2p.isModerator;
+  $('p2pMain').hidden = !marketEnabled && !p2p.isModerator;
+  if (!marketEnabled && p2p.isModerator) {
+    p2p.view = 'mod';
+    const title = document.querySelector('#tab-p2p .p2p-head .section-title');
+    if (title) title.textContent = 'Moderator Security Tools';
+    const pair = document.querySelector('#tab-p2p .p2p-pair');
+    if (pair) pair.hidden = true;
+    const marketToggle = document.querySelector('#tab-p2p .p2p-bs-toggle');
+    if (marketToggle) marketToggle.hidden = true;
+    document.querySelectorAll('#tab-p2p .p2p-tool:not(#p2pModTab)').forEach((el) => { el.hidden = true; });
+    for (const selector of ['#p2pCreateBtn', '#p2pAdminsCard', '#p2pRefRate', '#p2pSettingsCard', '#tab-p2p > .section-title', '#tab-p2p > .disclosure']) {
+      const el = document.querySelector(selector);
+      if (el) el.hidden = true;
+    }
+  }
   if (p2p.isModerator) {
     try {
       const pr = await api('GET', '/p2p/moderation/presence');
@@ -4989,8 +5243,18 @@ async function renderP2pView() {
               typed: 'BAN',
             });
             if (!reason) return;
+            if (burn) {
+              const burnConfirmation = await askReason({
+                title: 'Confirm irreversible burn',
+                message: 'This will permanently destroy the target account’s remaining liquid and staked DLTX. Type BURN to continue.',
+                placeholder: 'Type BURN to confirm',
+                confirmText: 'Confirm burn',
+                typed: 'BURN',
+              });
+              if (!burnConfirmation) return;
+            }
             try {
-              const r = await api('POST', `/p2p/moderation/users/${u.userId}/ban`, { reason, confirm: 'BAN', burn });
+              const r = await api('POST', `/p2p/moderation/users/${u.userId}/ban`, { reason, confirm: 'BAN', confirmBurn: burn ? 'BURN' : undefined, burn });
               toast(r.code === 'ALREADY_BANNED' ? 'Account was already banned' : `Account banned${burn ? ` · ${fmt(r.burned)} DLTX burned` : ''} · ${r.adsRemoved || 0} ad(s) removed`, { tone: 'success', title: 'Enforcement recorded' });
               doSearch();
             } catch (err) { toast(err.message, { tone: 'error' }); }
@@ -6054,7 +6318,6 @@ async function buyShopItem(id, btn) {
     shopPurchaseIds.delete(id);
     await Promise.allSettled([loadShop(), loadEnergy(undefined, { force: true }), loadWallet()]);
     const msg = it.category === 'energy' ? `+${r.energyAwarded} ⚡ Energy added!`
-      : it.category === 'boost' ? 'Arcade cap boosted for today! 🏆'
       : `${it.name} unlocked! 🎉`;
     try { window.ArcadeSound?.reward?.(); } catch {}
     $('shopStatus').textContent = msg;
@@ -6555,7 +6818,7 @@ function renderEarn() {
     pkgEl.hidden = d.active;
     pkgEl.innerHTML = packages.map((p) => `
       <div class="earn-pkg ${p.canStart ? '' : 'earn-pkg-off'}">
-        <div class="earn-pkg-energy">⚡ ${fmt(p.energy)} Energy</div>
+        <div class="earn-pkg-energy">${p.energy > 0 ? `⚡ ${fmt(p.energy)} Energy` : 'Free · no Energy required'}</div>
         <div class="earn-pkg-reward">Earn <b>${fmt(p.rewardDltx)} DLTX</b></div>
         <div class="muted small-note">Duration: ${p.durationHours} Hours</div>
         <button class="btn gold earn-pkg-btn" data-pkg="${p.id}" ${p.canStart && d.enabled ? '' : 'disabled'}>${p.canStart ? 'START' : `Need ⚡ ${fmt(Math.max(0, p.energy - d.energy))} more`}</button>
@@ -6564,7 +6827,7 @@ function renderEarn() {
   }
   setText('earnRateNote', d.active
     ? `Reward and cost were locked in when this session started. Closing the app does not reset the timer — it runs on the server.`
-    : `Current Earn Rates: ${packages.map((p) => `${fmt(p.energy)}⚡ → ${fmt(p.rewardDltx)} DLTX`).join(' · ')} per ${d.durationHours}h — subject to change as the network grows.`);
+    : `Current Earn Rates: ${packages.map((p) => `${p.energy > 0 ? `${fmt(p.energy)}⚡` : 'Free'} → ${fmt(p.rewardDltx)} DLTX`).join(' · ')} per ${d.durationHours}h — subject to change as the network grows.`);
 }
 
 async function handleEarnAction() {
@@ -6581,8 +6844,8 @@ async function startEarnSession(packageId) {
   if (!pkg) return;
   const okGo = await askConfirm({
     title: `Start Deltix Earn · ${fmt(pkg.rewardDltx)} DLTX?`,
-    message: `⚡ ${fmt(pkg.energy)} Energy will be spent now. The ${pkg.durationHours}-hour timer runs on the server; closing the app does not reset it.`,
-    rows: [['Energy', `⚡ ${fmt(pkg.energy)}`], ['Reward', `${fmt(pkg.rewardDltx)} DLTX`], ['Duration', `${pkg.durationHours} hours`]],
+    message: `${pkg.energy > 0 ? `⚡ ${fmt(pkg.energy)} Energy will be spent now.` : 'This free tier does not require Energy.'} The ${pkg.durationHours}-hour timer runs on the server; closing the app does not reset it.`,
+    rows: [['Energy', pkg.energy > 0 ? `⚡ ${fmt(pkg.energy)}` : 'Free'], ['Reward', `${fmt(pkg.rewardDltx)} DLTX`], ['Duration', `${pkg.durationHours} hours`]],
     confirmText: 'START',
   });
   if (!okGo) return;
@@ -8024,6 +8287,7 @@ if (isNativeApp()) {
 
 // ---------- Boot ----------
 (async function boot() {
+  await pinInitialization;
   // Run the version check in parallel instead of blocking launch on it: it
   // self-shows the forced-update gate if needed, and the server also rejects
   // outdated clients with 426 — so we save a full round-trip off the critical
@@ -10567,4 +10831,3 @@ setTimeout(() => {
     });
   }
 }, 100);
-
