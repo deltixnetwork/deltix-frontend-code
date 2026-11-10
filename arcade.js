@@ -4922,7 +4922,9 @@ function renderWire(mount, g) {
     $w('.wire-next').textContent = nxt ? `Next ⚡${nxt.reward} · ${(nxt.windowMs / 1000).toFixed(1)}s window` : 'Wire complete';
     if (cfg) {
       $w('.wire-rounds').textContent = `${cfg.roundsLeft} round${cfg.roundsLeft === 1 ? '' : 's'} left today`;
-      $w('.wire-limits').textContent = `${cfg.maxRoundsPerDay} rounds/day · ⚡${cfg.dailyEnergyCap}/day from this game${cfg.energyCapLeft <= 0 ? ' — today’s limit reached' : ''}`;
+      const capLeft = Math.max(0, Number(cfg.energyCapLeft) || 0);
+      const earnedToday = Math.max(0, cfg.dailyEnergyCap - capLeft);
+      $w('.wire-limits').textContent = `${cfg.maxRoundsPerDay} rounds/day · ⚡${earnedToday} earned today · ⚡${capLeft} of ⚡${cfg.dailyEnergyCap} left${capLeft <= 0 ? ' — today’s limit reached' : ''}`;
       nodes.forEach((n, i) => {
         n.querySelector('small').textContent = `⚡${cfg.checkpoints[i].reward}`;
         n.classList.toggle('done', Boolean(run) && i < run.checkpoint && run.status !== 'ended');
