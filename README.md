@@ -17,7 +17,7 @@ and packaged for stores by [deltix-Mobile-App-code](https://github.com/deltixnet
 | **Arcade** | **Deltix Arcade (live)** — 10 original games (easy/hard); win rewards share one 10 $DLTX daily cap across all games |
 | **D-Browser** | Curated, allowlisted dApp gateway with security interstitial |
 | **Community** | **Deltix DAO (live)** — proposals + stake-weighted voting; referrals (max 3); ambassador tiers; account deletion |
-| **App PIN** | Optional 4- or 6-digit device PIN with biometric unlock (Android app only). Local to the device; it never replaces account sign-in, wallet keys, or transaction signing. Forgotten PINs are reset by signing in again with an email code |
+| **App PIN** | Mandatory 6-digit PIN shown *before* the app opens (Android app only), with optional fingerprint/face unlock. The lock lives in native code (Android Keystore + PBKDF2, 5 wrong attempts locks it); `pin-gate.js` is only the screen in front of it. Locks after 30 s in the background, immediately when the screen turns off, and on a cold start. Change the PIN or the biometric switch under Profile → PIN & security. It never replaces account sign-in, wallet keys, or transaction signing. A forgotten PIN is reset by signing in again with an email code |
 | **Network** | **Deltix Chain (live)** — latest blocks + chain info; token supply; monetary model |
 
 ## Pages

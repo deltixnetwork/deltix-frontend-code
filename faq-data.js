@@ -160,6 +160,9 @@ window.DELTIX_FAQ = [
     icon: '🔐',
     items: [
       { q: 'How is my account protected?', a: 'Sign-in uses one-time email codes — there\u2019s no password to steal. Never share a code with anyone; Deltix staff will never ask for it.' },
+      { q: 'What is the app PIN?', a: 'The Deltix app asks for a 6-digit PIN before anything is shown, so someone holding your phone can\u2019t get in. You can also unlock with your fingerprint or face if your phone supports it. The PIN stays on your phone, is protected by Android Keystore, and never replaces your email sign-in, wallet keys, or transaction confirmations.' },
+      { q: 'How do I change my PIN?', a: 'Open your Profile and tap \u201cPIN & security\u201d. There you can change the PIN or turn fingerprint/face unlock on or off. You\u2019ll be asked for your current PIN first.' },
+      { q: 'I forgot my PIN — what now?', a: 'Tap \u201cForgot PIN?\u201d on the PIN screen. You\u2019ll be signed out on that phone, we\u2019ll email you a one-time code, and after you sign in you\u2019ll choose a new PIN. Your balance and account are not affected. After 5 wrong PINs the PIN locks and the email code is the only way back in.' },
       { q: 'Can someone cheat the games?', a: 'Game outcomes, rewards, and balances are decided and enforced entirely server-side, with rate limits, daily caps, duplicate detection, and per-account serialization. A modified app can\u2019t mint rewards.' },
       { q: 'Is the ledger public?', a: 'Yes — every economic action is sealed into the public Deltix chain, which anyone can audit from the Network tab.' },
     ],
@@ -170,7 +173,7 @@ window.DELTIX_FAQ = [
     icon: '🎁',
     items: [
       { q: 'What daily rewards are there?', a: 'Daily check-in (with streaks), the Mystery Box every 12 hours, the daily Chest pick, the Daily Puzzle, the Daily Challenge, Missions, and the 7-day Deltix Vault.' },
-      { q: 'What happens if I miss a day?', a: 'Check-in streaks reset, but nothing is taken from you — your balance, rank, and badges are permanent.' },
+      { q: 'What happens if I miss a day?', a: 'Check-in streaks reset. Staying away also costs Energy: 5 Energy for each full day you don\u2019t open the app (never below zero), with a 7-day welcome period for new accounts and no deductions during maintenance. Your $DLTX balance, rank, and badges are never touched.' },
       { q: 'Why did a reward say "paused"?', a: 'During maintenance the team can briefly pause reward claims to protect the economy. Nothing is lost — claims resume when the pause lifts.' },
     ],
   },

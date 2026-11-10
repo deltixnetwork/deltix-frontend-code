@@ -1,29 +1,121 @@
-.pin-lock-overlay:not([hidden]) {
-  position: fixed;
-  inset: 0;
-  z-index: 30000;
+/* PIN gate (shown before the app opens) and the 6-box PIN pad used by the gate and the in-app PIN dialogs. */
+
+.pin-gate {
+  position: fixed; inset: 0; z-index: 2147483000;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: #080b14;
+  background: radial-gradient(120% 90% at 50% 0%, #16264d 0%, #0b1226 55%, #080b14 100%);
+  color: #eef2fb;
+  padding: max(18px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  -webkit-user-select: none; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.pin-gate[hidden] { display: none !important; }
+.pin-gate-inner {
+  width: 100%; max-width: 360px; margin: auto;
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px;
+}
+.pin-gate-logo { width: 56px; height: 56px; border-radius: 14px; flex: none; }
+.pin-gate-title { margin: 6px 0 0; font-size: 22px; font-weight: 800; letter-spacing: -.01em; color: #fff; }
+.pin-gate-sub { margin: 0; font-size: 14px; line-height: 1.5; color: #a9b6d3; }
+.pin-gate-sub:empty, .pin-gate-title:empty, .pin-gate-note:empty, .pin-gate-body:empty, .pin-gate-actions:empty { display: none; }
+.pin-gate-body { width: 100%; margin-top: 6px; }
+.pin-gate-actions { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 8px; }
+.pin-gate-note { margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: #7f8db0; }
+.pin-gate-link {
+  background: none; border: 0; padding: 10px 14px; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700;
+  color: #7db0ff; text-decoration: underline; text-underline-offset: 3px;
+}
+.pin-gate .btn { width: 100%; font-family: inherit; }
+.pin-gate .btn.ghost { color: #c5d0ea; border-color: rgba(255, 255, 255, .24); }
+.pin-gate-bioicon {
+  width: 92px; height: 92px; margin: 6px auto; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(91, 140, 255, .14); border: 1.5px solid rgba(91, 140, 255, .5); color: #9bbbff;
+}
+.pin-gate-bioicon svg { width: 46px; height: 46px; }
+
+/* While the app is covered (it just left the foreground) only the logo is visible. */
+.pin-gate.is-cover { background: #080b14; }
+.pin-gate.is-cover .pin-gate-inner > :not(.pin-gate-logo) { display: none; }
+
+/* ---- PIN pad ---- */
+.pin-pad {
+  --pin-fg: #eef2fb; --pin-muted: #a9b6d3; --pin-accent: #5b8cff; --pin-error: #ff6b6b; --pin-info: #8fd3ff;
+  --pin-box-bg: rgba(255, 255, 255, .06); --pin-box-border: rgba(255, 255, 255, .2);
+  --pin-box-fill: rgba(91, 140, 255, .16); --pin-box-glow: rgba(91, 140, 255, .3);
+  --pin-key-bg: rgba(255, 255, 255, .07); --pin-key-border: rgba(255, 255, 255, .1); --pin-key-active: rgba(255, 255, 255, .18);
+  width: 100%; display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--pin-fg);
+}
+.pin-boxes { display: flex; justify-content: center; gap: clamp(6px, 2.4vw, 10px); width: 100%; margin-top: 4px; }
+.pin-box {
+  flex: 1 1 0; min-width: 0; max-width: 46px; height: 56px; border-radius: 12px;
+  display: grid; place-items: center; font-size: 24px; font-weight: 800; line-height: 1;
+  border: 1.5px solid var(--pin-box-border); background: var(--pin-box-bg); color: var(--pin-fg);
+  transition: border-color .12s, background .12s, box-shadow .12s;
+}
+.pin-box.current { border-color: var(--pin-accent); box-shadow: 0 0 0 3px var(--pin-box-glow); }
+.pin-box.filled { border-color: var(--pin-accent); background: var(--pin-box-fill); }
+.pin-box.filled:empty::after { content: ''; width: 12px; height: 12px; border-radius: 50%; background: var(--pin-fg); }
+.pin-boxes.error .pin-box { border-color: var(--pin-error); background: rgba(255, 107, 107, .14); box-shadow: none; }
+.pin-boxes.error .pin-box.filled:empty::after { background: var(--pin-error); }
+@keyframes pin-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-9px); }
+  40% { transform: translateX(9px); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(6px); }
+}
+.pin-boxes.shake { animation: pin-shake .42s ease; }
+
+.pin-pad-msg {
+  margin: 0; width: 100%; min-height: 2.8em; display: flex; align-items: center; justify-content: center;
+  font-size: 13px; line-height: 1.4; text-align: center; color: var(--pin-muted);
+}
+.pin-pad-msg.error { color: var(--pin-error); }
+.pin-pad-msg.info { color: var(--pin-info); }
+
+.pin-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 100%; max-width: 300px; }
+.pin-key {
+  height: clamp(48px, 7.8vh, 64px); border-radius: 16px; padding: 0;
+  border: 1px solid var(--pin-key-border); background: var(--pin-key-bg); color: var(--pin-fg);
+  display: grid; place-items: center; font: inherit; font-size: 24px; font-weight: 700; cursor: pointer;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  transition: background .08s, transform .05s;
+}
+.pin-key:active { background: var(--pin-key-active); transform: scale(.96); }
+.pin-key:focus-visible, .pin-gate-link:focus-visible { outline: 2px solid var(--pin-accent); outline-offset: 2px; }
+.pin-key svg { width: 26px; height: 26px; }
+.pin-key-spacer { visibility: hidden; pointer-events: none; }
+.pin-pad.is-working .pin-key { opacity: .55; pointer-events: none; }
+
+.pin-sr {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
 }
 
-.pin-lock-card {
-  width: min(100%, 380px);
-  padding: 28px 22px;
-  border: 1px solid rgba(255,255,255,.14);
-  border-radius: 20px;
-  background: #121827;
-  color: #fff;
-  text-align: center;
-  box-shadow: 0 24px 80px rgba(0,0,0,.5);
+/* The in-app PIN dialogs follow the app theme instead of the gate's dark palette. */
+.pin-pad-modal .pin-pad {
+  --pin-fg: var(--text); --pin-muted: var(--muted); --pin-accent: var(--accent); --pin-error: var(--danger); --pin-info: var(--accent);
+  --pin-box-bg: var(--panel-2); --pin-box-border: var(--border); --pin-box-fill: var(--panel-2); --pin-box-glow: rgba(47, 107, 255, .22);
+  --pin-key-bg: var(--panel-2); --pin-key-border: var(--border); --pin-key-active: var(--border);
+}
+.pin-pad-modal .modal { text-align: center; }
+.pin-pad-modal .modal h3 { margin: 0; }
+.pin-pad-modal .modal-actions { justify-content: center; }
+.pin-pad-modal .modal-actions .btn { width: auto; min-width: 140px; }
+
+@media (max-height: 700px) {
+  .pin-gate-logo { width: 44px; height: 44px; }
+  .pin-gate-title { font-size: 20px; }
+  .pin-box { height: 50px; }
+  .pin-pad-msg { min-height: 2.4em; }
+}
+@media (max-height: 600px) {
+  .pin-gate-logo, .pin-gate-note { display: none; }
+  .pin-keypad { gap: 8px; }
 }
 
-.pin-lock-card h2 { margin: 14px 0 8px; }
-.pin-lock-card input { margin: 16px 0 10px; text-align: center; letter-spacing: .45em; }
-.pin-lock-card .btn, .pin-lock-card .link-btn { width: 100%; margin-top: 10px; }
-.pin-setup-modal input, .pin-setup-modal select { margin: 6px 0 14px; }
-.pin-setup-modal .check-row { margin: 10px 0 16px; }
-.pin-setup-modal .modal-actions { flex-wrap: wrap; }
-.pin-boot-lock #pinLockOverlay:not([hidden]) { display: flex !important; }
+@media (prefers-reduced-motion: reduce) {
+  .pin-boxes.shake { animation: none; }
+  .pin-box, .pin-key { transition: none; }
+}

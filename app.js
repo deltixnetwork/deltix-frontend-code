@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.19.2';
+const APP_VERSION = '1.20.2';
 const $ = (id) => document.getElementById(id);
 
 // Stable per-phone identifier sent with every request (X-Device-Id) — the
@@ -38,194 +38,12 @@ const state = {
   hideBalances: localStorage.getItem('dltx_hide_balances') === '1',
 };
 
-const appPinPlugin = window.Capacitor?.Plugins?.DeltixPin || null;
-let appPinState = { enabled: false, biometricEnabled: false, biometricAvailable: false };
-
-function pinUiLock() {
-  if (!appPinState.enabled || !state.token) return;
-  localStorage.setItem('dltx_pin_lock', '1');
-  document.documentElement.classList.add('pin-boot-lock');
-  const overlay = $('pinLockOverlay');
-  if (overlay) overlay.hidden = false;
-  const input = $('pinUnlockInput');
-  if (input) { input.value = ''; setTimeout(() => input.focus(), 50); }
-  const biometric = $('pinBiometricBtn');
-  if (biometric) biometric.hidden = !appPinState.biometricEnabled || !appPinState.biometricAvailable;
+// The app PIN gate lives in pin-gate.js (window.DeltixPinGate). It runs before this file and keeps the app
+// hidden until the phone is unlocked; the calls into it below are for resume, Back, recovery and ad/link trips.
+// A deliberate trip out of the app (an ad, a browser, the mail app): coming back within `ms` does not ask for the PIN again.
+function holdPinSession(ms) {
+  return window.DeltixPinGate ? window.DeltixPinGate.hold(ms) : Promise.resolve();
 }
-
-function pinUiUnlock() {
-  localStorage.setItem('dltx_pin_lock', '0');
-  document.documentElement.classList.remove('pin-boot-lock');
-  if ($('pinLockOverlay')) $('pinLockOverlay').hidden = true;
-  if ($('pinLockHint')) $('pinLockHint').textContent = '';
-}
-
-async function initializePinProtection() {
-  const settings = $('appPinSettings');
-  if (!appPinPlugin) {
-    if (settings) settings.hidden = true;
-    if (state.token && localStorage.getItem('dltx_pin_enabled') === '1') {
-      document.documentElement.classList.add('pin-boot-lock');
-      if ($('pinLockOverlay')) $('pinLockOverlay').hidden = false;
-    } else {
-      document.documentElement.classList.remove('pin-boot-lock');
-    }
-    return;
-  }
-  if (settings) settings.hidden = false;
-  try {
-    appPinState = await appPinPlugin.getState();
-    localStorage.setItem('dltx_pin_enabled', appPinState.enabled ? '1' : '0');
-    if (settings) settings.textContent = appPinState.enabled ? '🔒 App PIN enabled' : '🔒 Enable App PIN';
-    if (appPinState.enabled && state.token) pinUiLock();
-    else if (!appPinState.enabled) pinUiUnlock();
-  } catch (error) {
-    if (state.token && localStorage.getItem('dltx_pin_enabled') === '1') {
-      document.documentElement.classList.add('pin-boot-lock');
-      if ($('pinLockOverlay')) $('pinLockOverlay').hidden = false;
-    } else {
-      document.documentElement.classList.remove('pin-boot-lock');
-    }
-    toast(`App PIN state could not be checked: ${error.message}`, { tone: 'error' });
-  }
-}
-
-async function unlockWithPin() {
-  const hint = $('pinLockHint');
-  const button = $('pinUnlockBtn');
-  if (!appPinPlugin) return;
-  if (button) button.disabled = true;
-  try {
-    const result = await appPinPlugin.verifyPin({ pin: $('pinUnlockInput').value });
-    if (!result.verified) {
-      hint.textContent = result.lockedOut
-        ? 'PIN locked after repeated failed attempts. Reauthenticate to reset app protection.'
-        : result.retryAfterMs
-        ? `Too many attempts. Try again in ${Math.ceil(result.retryAfterMs / 1000)} seconds.`
-        : `${result.attemptsRemaining ?? 0} attempts before a temporary lockout.`;
-      $('pinUnlockInput').value = '';
-      return;
-    }
-    pinUiUnlock();
-    if (state.token && $('screen-main')?.classList.contains('active')) {
-      refreshCurrentView({ silent: true });
-      loadEarn();
-    }
-  } catch (error) {
-    hint.textContent = error.message || 'PIN verification failed.';
-  } finally {
-    if (button) button.disabled = false;
-  }
-}
-
-function openPinSettings() {
-  if (!appPinPlugin) return;
-  const currentLabel = $('pinCurrentLabel');
-  const current = $('pinCurrentInput');
-  currentLabel.hidden = !appPinState.enabled;
-  current.hidden = !appPinState.enabled;
-  current.value = '';
-  $('pinNewInput').value = '';
-  $('pinBiometricCheck').checked = Boolean(appPinState.biometricEnabled && appPinState.biometricAvailable);
-  $('pinBiometricCheck').disabled = !appPinState.biometricAvailable;
-  $('pinSetupTitle').textContent = appPinState.enabled ? 'Change app PIN' : 'Protect this app';
-  $('pinDisableBtn').hidden = !appPinState.enabled;
-  $('pinSetupHint').textContent = appPinState.biometricAvailable
-    ? 'PIN protection is stored on this device.'
-    : 'Biometric unlock is unavailable on this device; the app PIN remains available.';
-  $('pinSetupModal').hidden = false;
-}
-
-async function saveAppPin() {
-  const pin = $('pinNewInput').value;
-  const expectedLength = Number($('pinLengthSelect').value);
-  if (pin.length !== expectedLength || !/^\d+$/.test(pin)) {
-    $('pinSetupHint').textContent = `Enter exactly ${expectedLength} digits.`;
-    return;
-  }
-  const options = { biometric: $('pinBiometricCheck').checked };
-  try {
-    if (appPinState.enabled) {
-      const currentPin = $('pinCurrentInput').value;
-      const result = await appPinPlugin.changePin({ currentPin, newPin: pin, ...options });
-      if (!result.changed) {
-        $('pinSetupHint').textContent = result.retryAfterMs
-          ? `Too many attempts. Try again in ${Math.ceil(result.retryAfterMs / 1000)} seconds.`
-          : 'Current PIN is incorrect.';
-        return;
-      }
-    } else {
-      await appPinPlugin.setPin({ pin, ...options });
-    }
-    appPinState = await appPinPlugin.getState();
-    localStorage.setItem('dltx_pin_enabled', appPinState.enabled ? '1' : '0');
-    localStorage.setItem('dltx_pin_lock', '0');
-    $('appPinSettings').textContent = '🔒 App PIN enabled';
-    $('pinSetupModal').hidden = true;
-    toast('App PIN protection is enabled.', { tone: 'success' });
-  } catch (error) {
-    $('pinSetupHint').textContent = error.message || 'Could not save your PIN.';
-  }
-}
-
-async function disableAppPin() {
-  try {
-    const result = await appPinPlugin.disablePin({ pin: $('pinCurrentInput').value });
-    if (!result.disabled) {
-      $('pinSetupHint').textContent = result.retryAfterMs
-        ? `Too many attempts. Try again in ${Math.ceil(result.retryAfterMs / 1000)} seconds.`
-        : 'Current PIN is incorrect.';
-      return;
-    }
-    appPinState = await appPinPlugin.getState();
-    localStorage.setItem('dltx_pin_enabled', '0');
-    pinUiUnlock();
-    $('appPinSettings').textContent = '🔒 Enable App PIN';
-    $('pinSetupModal').hidden = true;
-    toast('App PIN protection is disabled.', { tone: 'info' });
-  } catch (error) {
-    $('pinSetupHint').textContent = error.message || 'Could not disable PIN protection.';
-  }
-}
-
-function startPinRecovery() {
-  const pinConfigured = appPinState.enabled || localStorage.getItem('dltx_pin_enabled') === '1';
-  if (!pinConfigured || !state.email) return;
-  sessionStorage.setItem('dltx_pin_recovery', '1');
-  localStorage.removeItem(SAVED_ACCOUNTS_KEY);
-  localStorage.removeItem('dltx_token');
-  state.token = null;
-  pinUiUnlock();
-  showScreen('screen-email');
-  $('emailInput').value = state.email;
-  toast('Sign in with a fresh email code to reset this device PIN.', { tone: 'info' });
-}
-
-$('appPinSettings')?.addEventListener('click', openPinSettings);
-$('pinUnlockBtn')?.addEventListener('click', unlockWithPin);
-$('pinUnlockInput')?.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') unlockWithPin();
-});
-$('pinBiometricBtn')?.addEventListener('click', async () => {
-  try {
-    const result = await appPinPlugin.authenticateBiometric();
-    if (result.verified) {
-      pinUiUnlock();
-      if (state.token && $('screen-main')?.classList.contains('active')) {
-        refreshCurrentView({ silent: true });
-        loadEarn();
-      }
-    }
-  } catch (error) {
-    $('pinLockHint').textContent = error.message || 'Biometric authentication failed.';
-  }
-});
-$('pinForgotBtn')?.addEventListener('click', startPinRecovery);
-$('pinSetupCancel')?.addEventListener('click', () => { $('pinSetupModal').hidden = true; });
-$('pinSetupSave')?.addEventListener('click', saveAppPin);
-$('pinDisableBtn')?.addEventListener('click', disableAppPin);
-const pinInitialization = initializePinProtection();
-
 // Global ChatRoom state — declared up here because showTab() (which stops chat
 // polling) runs during boot, before the chat section further down is evaluated.
 const globalChatState = {
@@ -452,13 +270,21 @@ async function checkAppVersion() {
 // Re-check whenever the app returns to the foreground, and auto-refresh active tab data.
 // Web and native both signal a resume, so coalesce them into one round of requests.
 let lastResumeAt = 0;
+let resumePending = false;
 function onAppResumed() {
   if (Date.now() - lastResumeAt < 1500) return;
   lastResumeAt = Date.now();
-  if (appPinState.enabled) {
-    pinUiLock();
-    return;
-  }
+  if (resumePending) return;   // already waiting for the PIN gate; that round of refreshes covers this resume too
+  resumePending = true;
+  // The PIN gate re-checks the lock first, so nothing below runs until the phone is unlocked.
+  Promise.resolve(window.DeltixPinGate ? window.DeltixPinGate.onResume() : null)
+    .catch(() => {})
+    .then(() => {
+      resumePending = false;
+      refreshAfterResume();
+    });
+}
+function refreshAfterResume() {
   checkAppVersion();
   flushPendingCompletions();
   // Back from the background: make sure a fresh rewarded ad is ready (a stale or failed one is replaced).
@@ -470,8 +296,7 @@ function onAppResumed() {
   }
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) pinUiLock();
-  else onAppResumed();
+  if (!document.hidden) onAppResumed();
 });
 window.addEventListener('online', () => { if (state.token) loadEarn(); });
 
@@ -479,7 +304,6 @@ window.addEventListener('online', () => { if (state.token) loadEarn(); });
 try {
   window.Capacitor?.Plugins?.App?.addListener('appStateChange', ({ isActive }) => {
     if (isActive) onAppResumed();
-    else pinUiLock();
   });
 } catch {}
 
@@ -1131,6 +955,7 @@ $('sendCodeBtn').addEventListener('click', async () => {
       ...integrityPayload,
     }, { retries: 3 });
     state.email = email;
+    holdPinSession(180000);   // the code is in the mail app: coming back from there should not ask for the PIN again
     $('otpSubtitle').textContent = `We sent a code to ${email}`;
     const dev = $('devBanner');
     if (r.devCode) {
@@ -1154,7 +979,7 @@ $('sendCodeBtn').addEventListener('click', async () => {
   }
 });
 
-$('backToEmail').addEventListener('click', () => showScreen('screen-email'));
+$('backToEmail').addEventListener('click', () => { holdPinSession(0); showScreen('screen-email'); });
 
 /** Blanks every account-scoped value in memory and on screen.
  *  Without this the next account inherits the previous one's rendered
@@ -1233,22 +1058,14 @@ $('verifyBtn').addEventListener('click', async () => {
   try {
     // Safe to retry: a code is consumed exactly once; a repeat just gets "invalid".
     const r = await api('POST', '/auth/verify', { email: state.email, code }, { retries: 3 });
-    if (sessionStorage.getItem('dltx_pin_recovery') === '1') {
-      if (appPinPlugin) {
-        await appPinPlugin.resetPinAfterReauthentication();
-        appPinState = await appPinPlugin.getState();
-      }
-      sessionStorage.removeItem('dltx_pin_recovery');
-      localStorage.setItem('dltx_pin_enabled', '0');
-      localStorage.setItem('dltx_pin_lock', '0');
-      document.documentElement.classList.remove('pin-boot-lock');
-      if ($('pinLockOverlay')) $('pinLockOverlay').hidden = true;
-    }
     state.token = r.token;
+    holdPinSession(0);   // the email trip (if any) is over: an unused hold must not cover a later trip away
     localStorage.setItem('dltx_token', r.token);
     if (r.user && r.user.email) state.email = r.user.email;
     if (state.email) localStorage.setItem('dltx_email', state.email);
     rememberAccount(state.email, r.token);
+    // "Forgot PIN": the old PIN is only replaced after the fresh email code was accepted; then a new one is created.
+    if (window.DeltixPinGate?.isRecovering?.()) await window.DeltixPinGate.completeRecovery();
     toast(r.message || 'Welcome!');
     await enterApp();
   } catch (e) {
@@ -3629,7 +3446,7 @@ function showPreloadedInterstitial() {
   if (!AdMob) return;
   if (!interstitialLoaded) { preloadInterstitial(); return; }
   interstitialLoaded = false;
-  AdMob.showInterstitial().catch(() => {});
+  holdPinSession(60000).then(() => AdMob.showInterstitial()).catch(() => holdPinSession(0));
   preloadInterstitial(); // start fetching the next one right away
 }
 window.showPreloadedInterstitial = showPreloadedInterstitial;
@@ -5102,10 +4919,19 @@ async function renderP2pView() {
           ${comm.entries.length ? `<details class="p2p-mytrades-sec"><summary>Recent entries <span class="muted small-note">(${comm.entries.length})</span></summary>${comm.entries.slice(0, 30).map((e) => `
             <div class="p2p-comm-row"><span>#${e.tradeId} · ${p2pCodeChip(e.buyerCode, 'B')} ${p2pCodeChip(e.sellerCode, 'S')}</span><span>${fmt(e.amountDltx)} DLTX · fees ${fmt(e.sellerFee.amount)} ${escapeHtml(e.sellerFee.asset.replace(':bep20', ''))} + ${fmt(e.buyerFee.amount)} ${escapeHtml(e.buyerFee.asset)}</span><b class="p2p-green-t">+${fmt(e.commission.amount)} DLTX</b><span class="muted small-note">${escapeHtml(e.status)} · ${p2pWhen(e.at)}</span></div>`).join('')}</details>` : '<p class="hint">No settled commissions yet — commission is earned only when a trade you moderate completes.</p>'}
         </div>` : '';
+      // With trading retired the account lookup and enforcement is the main job, so it leads the console.
+      const modSearchCard = `
+        <div class="card p2p-modsearch">
+          <label for="p2pModSearch">🔍 Trader lookup &amp; enforcement</label>
+          <p class="hint">Search by Deltix ID (DLTX-XXXXXX) or user #. Review trades, ads, holdings and enforcement history; remove ads or ban accounts from here.</p>
+          <div class="p2p-bid-row"><input id="p2pModSearch" type="text" maxlength="20" placeholder="DLTX-ABC123" autocomplete="off" /><button class="btn ghost" id="p2pModSearchBtn">Search</button></div>
+          <div id="p2pModSearchOut"></div>
+        </div>`;
       list.innerHTML = `
         <div class="p2p-mod-head">
           <div><div class="p2p-mod-title">🛡 Moderation Console</div><div class="muted small-note">${p2p.me?.code ? `Signed in as <b>${escapeHtml(p2p.me.code)}</b> · ` : ''}${(p2p.me?.senior || mine.me?.senior) ? 'Senior moderator · can view every trade, reassign admins, remove ads, ban/unban' : 'Moderator · can review assigned trades, remove ads, ban/unban'}</div></div>
         </div>
+        ${p2pMarketLive() ? '' : modSearchCard}
         ${p2pMarketLive() ? `<div class="card p2p-presence">
           <div class="p2p-offer-top">
             <label class="p2p-presence-toggle"><input type="checkbox" id="p2pPresenceToggle" /> <b>Available for P2P trades</b></label>
@@ -5123,12 +4949,7 @@ async function renderP2pView() {
           <div id="p2pStatsBody"><p class="muted">Loading statistics…</p></div>
         </div>
         ${commCard}
-        <div class="card p2p-modsearch">
-          <label for="p2pModSearch">🔍 Trader lookup &amp; enforcement</label>
-          <p class="hint">Search by Deltix ID (DLTX-XXXXXX) or user #. Review trades, ads, holdings and enforcement history; remove ads or ban accounts from here.</p>
-          <div class="p2p-bid-row"><input id="p2pModSearch" type="text" maxlength="20" placeholder="DLTX-ABC123" autocomplete="off" /><button class="btn ghost" id="p2pModSearchBtn">Search</button></div>
-          <div id="p2pModSearchOut"></div>
-        </div>
+        ${p2pMarketLive() ? modSearchCard : ''}
         <h3 class="section-title">Awaiting your review</h3>` +
         (!queue.length ? '<p class="muted center">Nothing awaiting your review. 🎉</p>' : queue.map((o) => `
         <div class="card p2p-offer-card" data-mod="${o.id}">
@@ -7916,6 +7737,7 @@ async function playRewardedAdDetailed() {
     const finish = (reason, detail = {}) => {
       if (settled) return;
       settled = true;
+      if (reason === 'failed_to_show' && !shownAt) holdPinSession(0);   // no ad screen appeared, so there is no trip to cover
       timers.forEach(clearTimeout);
       handles.forEach((h) => { try { h?.remove?.(); } catch {} });
       const nonce = adState.nonce;
@@ -7962,6 +7784,7 @@ async function playRewardedAdDetailed() {
         rewardedLoaded = false;
         adState.showing = true;
         showTimer = later(() => finish('failed_to_show', { code: AD_CLIENT_ERR.TIMEOUT, msg: 'ad did not appear' }), AD_SHOW_TIMEOUT_MS);
+        await holdPinSession(180000);   // the ad runs in its own screen: coming back from it must not ask for the PIN
         const item = await AdMob.showRewardVideoAd();
         if (item) { earned = true; if (dismissed) finish('earned'); } // the plugin resolves only when the user actually earned the reward
       } catch (error) {
@@ -8289,6 +8112,10 @@ function closeTopOverlay() {
 // One entry point for every Back gesture/button. Returns true when it handled
 // the press; false means the app is already at its root.
 function handleBack() {
+  // Back never reaches the app behind the PIN gate; it only steps inside the gate (or closes a PIN dialog).
+  const pinGate = window.DeltixPinGate;
+  if (pinGate?.isShowing?.()) return pinGate.back();
+  if (pinGate?.back?.()) return true;
   if (closeTopOverlay()) return true;
   // Inside a group, Back goes to the chat list first (the global chat keeps going straight to the previous screen).
   if (typeof chatLive === 'function' && chatLive() && chatIsGroup()) { chatShowList(); return true; }
@@ -8328,7 +8155,13 @@ if (isNativeApp()) {
 
 // ---------- Boot ----------
 (async function boot() {
-  await pinInitialization;
+  // The PIN gate decides first: nothing of the app is shown until the phone is unlocked (or the PIN is reset).
+  try { await window.DeltixPinGate?.ready; } catch { /* the gate reports its own failures */ }
+  if (window.DeltixPinGate?.isRecovering?.()) {
+    // "Forgot PIN": every session saved on this phone is dropped, so only a fresh email code gets back in.
+    localStorage.removeItem(SAVED_ACCOUNTS_KEY);
+    clearAccountSession();
+  }
   // Run the version check in parallel instead of blocking launch on it: it
   // self-shows the forced-update gate if needed, and the server also rejects
   // outdated clients with 426 — so we save a full round-trip off the critical
@@ -8460,7 +8293,7 @@ function openExternalLink(url) {
   let target;
   try { target = new URL(url); } catch { return false; }
   if (target.protocol !== 'https:') return false;
-  if (isNativeApp()) window.location.href = target.href;
+  if (isNativeApp()) holdPinSession(120000).then(() => { window.location.href = target.href; });
   else window.open(target.href, '_blank', 'noopener');
   return true;
 }
@@ -10800,6 +10633,7 @@ function populateStoresPage() {
           try {
             const cap = window.Capacitor;
             if (cap && cap.Plugins && cap.Plugins.Browser) {
+              await holdPinSession(120000);
               await cap.Plugins.Browser.open({ url: link });
             } else {
               window.open(link, '_blank');
