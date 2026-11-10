@@ -1,0 +1,29 @@
+.pin-lock-overlay:not([hidden]) {
+  position: fixed;
+  inset: 0;
+  z-index: 30000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #080b14;
+}
+
+.pin-lock-card {
+  width: min(100%, 380px);
+  padding: 28px 22px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 20px;
+  background: #121827;
+  color: #fff;
+  text-align: center;
+  box-shadow: 0 24px 80px rgba(0,0,0,.5);
+}
+
+.pin-lock-card h2 { margin: 14px 0 8px; }
+.pin-lock-card input { margin: 16px 0 10px; text-align: center; letter-spacing: .45em; }
+.pin-lock-card .btn, .pin-lock-card .link-btn { width: 100%; margin-top: 10px; }
+.pin-setup-modal input, .pin-setup-modal select { margin: 6px 0 14px; }
+.pin-setup-modal .check-row { margin: 10px 0 16px; }
+.pin-setup-modal .modal-actions { flex-wrap: wrap; }
+.pin-boot-lock #pinLockOverlay:not([hidden]) { display: flex !important; }

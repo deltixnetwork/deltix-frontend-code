@@ -220,7 +220,7 @@ The application is organised into these surfaces, all shipped:
    and the Instant Energy games.
 7. **Rewards**: daily check-in, Mystery Box, Chest, Daily Puzzle, Daily Challenge, Deltix Tree,
    Deltix Vault, Weekly Calendar, Deltix Rain.
-8. **Shop**: avatars, themes, Energy packs and a one-day Arcade cap boost.
+8. **Shop**: avatars, themes and Energy packs. Game rewards are limited to 10 DLTX per account per UTC day.
 9. **Deltix Earn**: timed 12-hour earn sessions.
 10. **Missions**: a six-step daily journey.
 11. **Assistant**: in-app help bot and identity verification card.
