@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.20.2';
+const APP_VERSION = '1.20.3';
 const $ = (id) => document.getElementById(id);
 
 // Stable per-phone identifier sent with every request (X-Device-Id) — the
@@ -6640,31 +6640,55 @@ function renderEarn() {
   if (pkgEl) {
     pkgEl.hidden = d.active;
     pkgEl.innerHTML = packages.map((p) => `
-      <div class="earn-pkg ${p.canStart ? '' : 'earn-pkg-off'}">
-        <div class="earn-pkg-energy">⚡ ${fmt(p.energy)} Energy</div>
+      <div class="earn-pkg${p.canStart ? '' : ' earn-pkg-off'}${earnIsFree(p) ? ' earn-pkg-free' : ''}">
+        <div class="earn-pkg-energy">${earnIsFree(p) ? 'Free · no Energy' : `⚡ ${fmt(p.energy)} Energy`}</div>
         <div class="earn-pkg-reward">Earn <b>${fmt(p.rewardDltx)} DLTX</b></div>
         <div class="muted small-note">Duration: ${p.durationHours} Hours</div>
-        <button class="btn gold earn-pkg-btn" data-pkg="${p.id}" ${p.canStart && d.enabled ? '' : 'disabled'}>${p.canStart ? 'START' : `Need ⚡ ${fmt(Math.max(0, p.energy - d.energy))} more`}</button>
+        <button class="btn gold earn-pkg-btn" data-pkg="${p.id}" ${p.canStart && d.enabled ? '' : 'disabled'}>${p.canStart ? (earnIsFree(p) ? 'START FREE' : 'START') : (p.energy > d.energy ? `Need ⚡ ${fmt(p.energy - d.energy)} more` : 'Unavailable')}</button>
       </div>`).join('');
     pkgEl.querySelectorAll('[data-pkg]').forEach((btn) => btn.addEventListener('click', () => startEarnSession(btn.dataset.pkg)));
   }
   setText('earnRateNote', d.active
     ? `Reward and cost were locked in when this session started. Closing the app does not reset the timer — it runs on the server.`
-    : `Current Earn Rates: ${packages.map((p) => `${fmt(p.energy)}⚡ → ${fmt(p.rewardDltx)} DLTX`).join(' · ')} per ${d.durationHours}h — subject to change as the network grows.`);
+    : `Current Earn Rates: ${packages.map((p) => `${earnIsFree(p) ? 'Free' : `${fmt(p.energy)}⚡`} → ${fmt(p.rewardDltx)} DLTX`).join(' · ')} per ${d.durationHours}h — subject to change as the network grows.`);
+  renderEarnCopy(d, packages);
   renderEarnEnergyBox(d);
 }
 
-// Every Earn package costs Energy: the free tier is retired, so a zero-Energy entry is never shown.
+// The server decides which packages exist and what they pay. One with no Energy cost is the free package.
 function earnPackageList(d) {
-  return (Array.isArray(d?.packages) ? d.packages : []).filter((p) => Number(p.energy) > 0);
+  return (Array.isArray(d?.packages) ? d.packages : []).filter((p) => Number(p.energy) >= 0);
+}
+function earnIsFree(p) {
+  return !(Number(p.energy) > 0);
 }
 
-// Earn is paid in Energy, and Energy comes from rewarded ads. An ad only ever grants Energy, never $DLTX.
+// The package list in the notes and on the Home card follows the server, like the cards do.
+function renderEarnCopy(d, packages) {
+  if (!packages.length) return;
+  const free = packages.find(earnIsFree);
+  const paid = packages.filter((p) => !earnIsFree(p));
+  const names = packages.map((p) => `${earnIsFree(p) ? 'Free' : `${fmt(p.energy)} Energy`} → ${fmt(p.rewardDltx)} DLTX`);
+  const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}` : names[0];
+  setText('earnTiersNote', `Pick a package: ${list}. Every package runs for ${d.durationHours} hours on the server clock.`);
+  const adsNote = 'watch rewarded ads to earn Energy — ads never pay $DLTX directly.';
+  setText('earnEnergyNote', !free ? `Every package needs Energy: ${adsNote}`
+    : paid.length ? `The Free package needs no Energy. The others do: ${adsNote}` : 'The Free package needs no Energy.');
+  const cheapest = paid.reduce((a, b) => (!a || b.energy < a.energy ? b : a), null);
+  setText('homeEarnSub', free
+    ? `Earn ${fmt(free.rewardDltx)} $DLTX free every ${d.durationHours}h${paid.length ? ', or spend ⚡ Energy to earn more' : ''}.`
+    : `Spend ${fmt(cheapest.energy)} ⚡ for ${d.durationHours}h, then claim ${fmt(cheapest.rewardDltx)} $DLTX.`);
+  setText('walletEarnSub', free
+    ? `${fmt(free.rewardDltx)} $DLTX free every ${d.durationHours}h${paid.length ? ', more with ⚡' : ''}`
+    : `Spend Energy, earn $DLTX every ${d.durationHours}h`);
+}
+
+// The paid packages cost Energy, and Energy comes from rewarded ads. An ad only ever grants Energy, never $DLTX.
 let earnAdBusy = false;
 function renderEarnEnergyBox(d) {
   const box = $('earnEnergyBox');
   if (!box) return;
-  const packages = earnPackageList(d);
+  const packages = earnPackageList(d).filter((p) => !earnIsFree(p));
   // Hidden while a session runs (nothing can be started then) and when Earn is switched off on the server.
   box.hidden = !d || Boolean(d.active) || !d.enabled || !packages.length;
   if (box.hidden) return;
@@ -6705,10 +6729,11 @@ async function startEarnSession(packageId) {
   const d = earnState.data;
   const pkg = d && Array.isArray(d.packages) ? d.packages.find((p) => p.id === packageId) : null;
   if (!pkg) return;
+  const free = earnIsFree(pkg);
   const okGo = await askConfirm({
     title: `Start Deltix Earn · ${fmt(pkg.rewardDltx)} DLTX?`,
-    message: `⚡ ${fmt(pkg.energy)} Energy will be spent now. The ${pkg.durationHours}-hour timer runs on the server; closing the app does not reset it.`,
-    rows: [['Energy', `⚡ ${fmt(pkg.energy)}`], ['Reward', `${fmt(pkg.rewardDltx)} DLTX`], ['Duration', `${pkg.durationHours} hours`]],
+    message: `${free ? 'This package is free: no Energy is spent. Only one session can run at a time.' : `⚡ ${fmt(pkg.energy)} Energy will be spent now.`} The ${pkg.durationHours}-hour timer runs on the server; closing the app does not reset it.`,
+    rows: [['Energy', free ? 'Free' : `⚡ ${fmt(pkg.energy)}`], ['Reward', `${fmt(pkg.rewardDltx)} DLTX`], ['Duration', `${pkg.durationHours} hours`]],
     confirmText: 'START',
   });
   if (!okGo) return;

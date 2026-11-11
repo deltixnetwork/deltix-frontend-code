@@ -177,7 +177,7 @@
 
         <button class="nav-card earn-nav-card" type="button" id="walletEarnCard" onclick="showTab('tab-earn')">
           <span class="nav-card-ic">◆</span>
-          <span class="nav-card-txt"><b>Deltix Earn</b><small>Spend Energy, earn $DLTX every 12h</small></span>
+          <span class="nav-card-txt"><b>Deltix Earn</b><small id="walletEarnSub">1 $DLTX free every 12h, more with ⚡</small></span>
           <span class="nav-card-arrow">›</span>
         </button>
 
@@ -624,7 +624,7 @@
             <span class="reward-emoji">◆</span>
             <div>
               <div class="reward-title">Deltix Earn</div>
-              <div class="reward-sub">Spend 50 ⚡ for 12h, then claim 5 $DLTX.</div>
+              <div class="reward-sub" id="homeEarnSub">Earn 1 $DLTX free every 12h, or spend ⚡ Energy to earn more.</div>
             </div>
           </div>
           <button class="btn gold reward-btn home-earn-btn" id="homeEarnBtn">Open Deltix Earn</button>
@@ -949,7 +949,7 @@
 
       <!-- Deltix Earn — Path 2 of the Dual Earning System. Separate from games. -->
       <div class="tab" id="tab-earn">
-        <div class="showcase-banner"><div class="showcase-title">◆ Deltix Earn</div><div class="showcase-sub">Don't want to play? Earn. Spend Energy, wait, claim $DLTX — no games required.</div></div>
+        <div class="showcase-banner"><div class="showcase-title">◆ Deltix Earn</div><div class="showcase-sub">Don't want to play? Earn. Start a session, wait, claim $DLTX — no games required.</div></div>
         
         <!-- NEXT EARN IN Timer Card -->
         <div class="card next-earn-timer-card">
@@ -981,7 +981,7 @@
           <div class="earn-packages" id="earnPackages"></div>
           <div class="earn-energy-box" id="earnEnergyBox" hidden>
             <div class="earn-energy-text">
-              <b>Need Energy?</b> Every package is paid in ⚡ Energy, and Energy comes from rewarded ads.
+              <b>Need Energy?</b> Packages with a ⚡ price are paid in Energy, and Energy comes from rewarded ads.
               <span id="earnEnergyHint"></span>
             </div>
             <button class="btn primary earn-energy-btn" id="earnWatchAdBtn" type="button">▶ Watch an ad → ⚡ Energy</button>
@@ -991,8 +991,8 @@
         </div>
         <ul class="disclosure">
           <li>Deltix Earn is completely separate from Arcade/Rewards — do both to earn more.</li>
-          <li>Pick a package: 50 Energy → 5 DLTX, 75 Energy → 7.5 DLTX, 100 Energy → 10 DLTX or 200 Energy → 25 DLTX. Every package runs for 12 hours on the server clock.</li>
-          <li>Every package needs Energy. Watch rewarded ads to earn Energy — ads never pay $DLTX directly.</li>
+          <li id="earnTiersNote">Pick a package: Free → 1 DLTX, 50 Energy → 5 DLTX, 75 Energy → 7.5 DLTX, 100 Energy → 10 DLTX or 200 Energy → 25 DLTX. Every package runs for 12 hours on the server clock.</li>
+          <li id="earnEnergyNote">The Free package needs no Energy. The others do: watch rewarded ads to earn Energy — ads never pay $DLTX directly.</li>
           <li>A session's reward and Energy cost are locked in the moment you start it; only one session can run at a time.</li>
         </ul>
       </div>
