@@ -46,7 +46,8 @@ window.DELTIX_FAQ = [
     name: 'Mining & Deltix Earn',
     icon: '⛏️',
     items: [
-      { q: 'How does Deltix Earn (mining) work?', a: 'Start a session by spending 50 ⚡. The session runs for 12 hours, then you return and claim 5 $DLTX. It is a timed earn session — you don\u2019t need to keep the app open.' },
+      { q: 'How does Deltix Earn (mining) work?', a: 'Open Earn and pick a package. The Free package needs no Energy and pays 1 $DLTX. The bigger packages cost 50 to 200 ⚡ and pay 5 to 25 $DLTX. A session runs for 12 hours, then you return and claim. Only one session runs at a time, and you don\u2019t need to keep the app open. Rates can change over time; the Earn tab always shows the current ones.' },
+      { q: 'How often can I use the free Earn package?', a: 'Once per session: a free session takes 12 hours, so it pays 1 $DLTX every 12 hours. It cannot run at the same time as another package, and the timer runs on the server, so changing your phone\u2019s clock does not speed it up.' },
       { q: 'Do I lose my session if I close the app?', a: 'No. Sessions run on the server. Come back after 12 hours and claim — but claim before starting a new session.' },
       { q: 'Why did my claim fail?', a: 'Sessions must fully finish (12 hours) before claiming, and claims count toward daily allowances. If the network is paused for maintenance, claims resume when maintenance ends — nothing is lost.' },
     ],
