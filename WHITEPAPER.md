@@ -2,7 +2,7 @@
 
 **$DLTX: A Mobile-First Delegated Proof-of-Stake Network with a Dual Earning Economy**
 
-Version 2.0 · Effective October 1, 2026 · Deltix Network · App release 1.16
+Version 2.1 · Effective November 12, 2026 · Deltix Network · App release 1.22
 
 ---
 
@@ -144,6 +144,7 @@ mobile-first application where:
 | Annual issuance | 5% of supply (staking rewards) |
 | Base staking APY | ~8% (variable, validator-dependent) |
 | Transfer base fee | 0.1% of amount (min 0.01 $DLTX), **permanently burned** |
+| Transfer eligibility | Every verified account, from day one (the 500-claim unlock was retired in November 2026) |
 | Unstake fee | 1% of principal, **permanently burned** |
 | Welcome bonus | 50 $DLTX per verified account, non-transferable (stakeable) |
 | Play & Earn daily cap | 10 $DLTX per account per UTC day across every game and reward loop |
@@ -156,7 +157,7 @@ mobile-first application where:
 | Referral activation | Referred user verifies and stakes at least 50 $DLTX of earned (non-bonus) value |
 | Referral reward lock | Transferable after 180 days; stakeable and spendable in-app immediately |
 | Ambassador threshold | 3 activated referrals + 500 $DLTX self-staked |
-| P2P Marketplace | DLTX/USDT (BNB Chain BEP-20), platform escrow, 1% buyer fee + 1% seller fee, 30-minute trade window |
+| P2P Marketplace | DLTX/USDT (BNB Chain BEP-20), platform escrow, 1% buyer fee + 1% seller fee, 30-minute trade window · **temporarily closed since November 2026** (section 8.7) |
 | Governance | Deltix DAO, stake-weighted voting (1 staked $DLTX = 1 vote) |
 | DAO proposal threshold | 100 $DLTX self-staked; 7-day voting period; 100 voted $DLTX quorum |
 | Accounts per device | 4 |
@@ -212,9 +213,9 @@ The application is organised into these surfaces, all shipped:
 
 1. **Wallet**: balances, send/receive, network snapshot, activity history.
 2. **Stake**: validator directory, delegation, unbonding, reward tracking.
-3. **Deltix Energy**: Energy Delegation to Energy Validators, claimable rewards, transfer unlock
-   progress.
-4. **P2P Market**: DLTX/USDT advertisements, escrowed order rooms, moderator panel.
+3. **Deltix Energy**: Energy Delegation to Energy Validators and claimable rewards.
+4. **P2P Market**: DLTX/USDT advertisements, escrowed order rooms, moderator panel (temporarily
+   closed; section 8.7).
 5. **Arcade**: 23 original skill games with capped $DLTX rewards.
 6. **Games**: hub for Fortune Wheel, Daily Ladder, Coin Flip, Take It or Risk It, Energy Wire
    and the Instant Energy games.
@@ -223,7 +224,8 @@ The application is organised into these surfaces, all shipped:
 8. **Shop**: avatars, themes and Energy packs. Game rewards are limited to 10 DLTX per account per UTC day.
 9. **Deltix Earn**: timed 12-hour earn sessions.
 10. **Missions**: a six-step daily journey.
-11. **Assistant**: in-app help bot and identity verification card.
+11. **Assistant**: in-app help bot, optional ChatGPT, Gemini and Claude assistants, and the
+    identity verification card.
 12. **D-Browser**: curated, allowlisted gateway to third-party dApps with a security
     interstitial.
 13. **Community**: the Deltix DAO, referral code and tracking, ambassador tiers, global
@@ -233,6 +235,10 @@ The application is organised into these surfaces, all shipped:
 15. **Network**: live tokenomics and the public block explorer.
 16. **Rank**: Energy balance, streaks, rank shields and 2x Energy Hour.
 17. **FAQ**: searchable in-app help mirrored on the website.
+18. **Tools**: a private Expense Tracker (daily, weekly and monthly totals in 60 local
+    currencies and major cryptocurrencies, stored on the device only) and a Currency Converter
+    with live market rates. These tools are informational: they never touch $DLTX balances and
+    no price shown in them is a price for $DLTX.
 
 ---
 
@@ -344,13 +350,21 @@ reward = amount x annual_rate x elapsed / 365 days
 - Undelegating early burns part of the principal by delegation age: days 1 to 7: 40%; days 8 to
   14: 25%; days 15 to 29: 10%; day 30 and later: no burn.
 
-### 6.4 Transfer Unlock
+### 6.4 Transfer Unlock (retired)
 
-New accounts begin with $DLTX transfers locked. The lock lifts once the account has **claimed 500
-Energy from delegation** in total. Earned, purchased or granted Energy does not count; only
-delegation claims advance the counter. This requires a sustained, time-based commitment before an
-account can move $DLTX out, which is the network's primary defence against throwaway accounts.
-Accounts created before this policy are grandfathered.
+From the Energy Delegation launch until November 2026, accounts created after the launch began
+with $DLTX transfers locked until they had **claimed 500 Energy from delegation**. The rule was
+introduced during the September 2026 account-farm clean-up (section 10.3) as a time-based
+commitment before an account could move $DLTX out.
+
+**The rule was retired on November 12, 2026.** Every verified account, whatever its creation
+date or role (member, moderator, administrator), can transfer $DLTX from day one. The protections
+that remain are role-neutral and unchanged: the non-transferable welcome bonus, the 180-day lock
+on referral rewards, the burned base fee, Play Integrity attestation, the four-accounts-per-device
+limit, and the Sybil review, under which an account placed under review keeps its funds in place
+until the review ends. Moderator and administrator wallets are never frozen by an automatic
+heuristic; only a human review can restrict a staff account. The unlock mechanism is kept in the
+code base, switched off, so the DAO or the operator can re-enable it if the risk picture changes.
 
 ### 6.5 Spending Energy
 
@@ -472,17 +486,36 @@ Identity verification (KYC) through a third-party provider is built into the app
 badge and Passport stamp. It is not yet switched on in production; when it is, it will gate the
 marketplace for new traders. Deltix never stores identity documents itself.
 
+### 8.7 Current Status: Temporarily Closed
+
+The P2P Marketplace has been **temporarily closed since November 2026**. While it is closed:
+
+- No new advertisements or orders can be opened, and new deposits into the platform's $DLTX
+  wallet are refused. Moderators keep access to the moderator panel and to the platform wallet so
+  that every open obligation is reconciled and returned.
+- **Wallet-to-wallet transfers are unaffected.** The marketplace and peer-to-peer transfers
+  (section 9) are separate systems; closing one never pauses, limits or role-gates the other.
+  Balances, staking, Energy and every earning loop continue as normal.
+- The rules in sections 8.1 to 8.6 describe the marketplace as built and as it will operate
+  when it reopens. Reopening, with or without identity verification switched on (section 8.6),
+  will be announced in the app.
+
 ---
 
 ## 9. Peer-to-Peer Transfers
 
-Once an account has passed the transfer unlock (section 6.4), it can send $DLTX to any other
-network address:
+Every verified account can send $DLTX to any other network address. There is no unlock, waiting
+period or role requirement: members, moderators and administrators transfer under the same rules,
+and the marketplace being open or closed (section 8.7) has no bearing on transfers.
 
 1. Sender specifies recipient address and amount.
 2. The protocol computes the base fee and displays the total debit before confirmation.
 3. On confirmation, the amount is credited to the recipient and the fee is burned, atomically.
 4. Transfers are final once processed. Duplicate submissions are detected and refused.
+
+The only amounts that cannot leave an account are the liens of section 3.4 (welcome bonus,
+referral rewards inside their 180-day lock, marketplace escrow) and the funds of an account that
+a human Sybil review has placed under review (section 6.4).
 
 ---
 
@@ -509,11 +542,13 @@ network address:
 ### 10.3 Anti-Fraud
 
 The protocol enforces self-referral rejection, one sponsor per account, a non-transferable welcome
-bonus, earned-value activation, the 180-day lock, the 500-claim transfer unlock, a four-accounts-
-per-device limit, rate limiting, and duplicate-account (Sybil) analysis. Fraudulent referrals
-result in reward forfeiture, burning of farmed balances and account termination. In September
-2026 the network identified and removed an industrial farm of roughly 131,000 fake accounts; the
-earned-value activation rule, the reward lock and the transfer unlock were introduced in response.
+bonus, earned-value activation, the 180-day lock, a four-accounts-per-device limit, rate limiting,
+and duplicate-account (Sybil) analysis. Fraudulent referrals result in reward forfeiture, burning
+of farmed balances and account termination. In September 2026 the network identified and removed
+an industrial farm of roughly 131,000 fake accounts; the earned-value activation rule, the reward
+lock and a 500-claim transfer unlock were introduced in response. The transfer unlock was retired
+in November 2026 (section 6.4) once Play Integrity attestation and collector detection covered the
+same risk without locking legitimate accounts out of their own balances.
 
 ---
 
@@ -634,12 +669,14 @@ Deltix publishes what is **actually running** separately from what is **planned*
 - 23 Arcade games, 14 Instant Energy games, Fortune Wheel (free and paid), Daily Ladder, Weekly
   Calendar, Deltix Rain, Mystery Box, Chest, Daily Puzzle, Daily Challenge, Missions, Deltix
   Tree, Deltix Vault, Deltix Hour and 2x Energy Hour.
-- Deltix Energy with eight ranks, Energy Delegation at a published rate, age-based undelegation
-  burn, and the 500-claim transfer unlock.
+- Deltix Energy with eight ranks, Energy Delegation at a published rate and age-based
+  undelegation burn. The 500-claim transfer unlock shipped in this phase and was retired in
+  November 2026 (section 6.4).
 - The Deltix Shop, 85 avatar characters, 15 application themes.
 - 30-day Seasons, Leaderboard and Passport.
+- Expense Tracker and Currency Converter tools, and the ChatGPT, Gemini and Claude assistants.
 
-**P2P Marketplace**
+**P2P Marketplace** *(built and operated; temporarily closed since November 2026, section 8.7)*
 
 - DLTX/USDT marketplace on BNB Chain with platform escrow, on-chain USDT verification,
   moderator approval, dual 1% fees with immutable commission snapshots, 30-minute trade window,
@@ -654,7 +691,7 @@ Deltix publishes what is **actually running** separately from what is **planned*
 
 **Platform and integrity**
 
-- Android application on Google Play (release 1.16), Play Integrity attestation, minimum-version
+- Android application on Google Play (release 1.22), Play Integrity attestation, minimum-version
   gate, device cap, email policy, Sybil tooling, request correlation and resilience hardening.
 
 ### 15.2 Planned, In Sequence
@@ -662,17 +699,18 @@ Deltix publishes what is **actually running** separately from what is **planned*
 | Phase | Status | Scope |
 |---|---|---|
 | **Phase 1: Live Network** | Delivered | Everything in section 15.1 |
-| **Phase 2: Reach, Identity and Validators** | In progress | Identity verification switched on for the marketplace; iOS release; third-party validator onboarding; DAO control of validator admission and removal; proposal timelocks; Fortune Wheel $DLTX jackpot segment |
+| **Phase 2: Reach, Identity and Validators** | In progress | Marketplace reopening with identity verification switched on; iOS release; third-party validator onboarding; DAO control of validator admission and removal; proposal timelocks; Fortune Wheel $DLTX jackpot segment |
 | **Phase 3: Hardening** | Planned | Validator slashing enforcement; independent third-party security audit; optional self-custody key export; DAO control of the protocol treasury with public accounting |
 | **Phase 4: Full Decentralisation** | Planned | Protocol upgrades, parameter changes and treasury spending controlled entirely by the DAO |
 | **Phase 5: Ecosystem** | Planned | wDLTX distribution and any audited link to native $DLTX; additional marketplace networks; expanded dApp directory; public developer APIs |
 
 **Honest limitations at the time of writing.** The initial validator set is operated under
 network supervision; slashing is specified but not enforced; wallets are custodial and key export
-is a Phase 3 item; identity verification is built but not yet enabled; the iOS app is not yet
-released; no independent security audit has been completed; wDLTX is held entirely by the
-treasury and is not linked to native $DLTX. These are stated plainly so that participation is an
-informed choice. Roadmap items are development objectives, not guarantees.
+is a Phase 3 item; identity verification is built but not yet enabled; the P2P Marketplace is
+temporarily closed (section 8.7); the iOS app is not yet released; no independent security audit
+has been completed; wDLTX is held entirely by the treasury and is not linked to native $DLTX.
+These are stated plainly so that participation is an informed choice. Roadmap items are
+development objectives, not guarantees.
 
 ---
 
@@ -681,7 +719,8 @@ informed choice. Roadmap items are development objectives, not guarantees.
 Long-term operations are funded by:
 
 1. **Protocol treasury**: a governance-controlled share of issuance, hard-capped for the team.
-2. **Marketplace fees**: the protocol's 50% share of the dual 1% trade fee.
+2. **Marketplace fees**: the protocol's 50% share of the dual 1% trade fee (nothing accrues while
+   the marketplace is closed, section 8.7).
 3. **Clearly separated advertising**: opt-in rewarded video and interstitials between game
    sessions, always labelled and never mixed with consensus, balances or the ledger.
 
@@ -701,6 +740,11 @@ escrowed balances belong to the trade they secure.
 - The P2P Marketplace is a facility for users to exchange $DLTX with each other. Deltix acts as
   escrow agent and moderator only. It does not set, quote or guarantee prices, does not act as a
   counterparty, and does not promise liquidity. Trading is voluntary and at the user's own risk.
+  The marketplace may be paused or closed at any time (it is closed at the time of writing);
+  a closure never affects wallet balances or peer-to-peer transfers.
+- The Expense Tracker and Currency Converter are informational tools. Exchange rates are shown
+  as published by third-party market data sources and may be delayed or unavailable; they are
+  not quotes, not advice, and never a price for $DLTX.
 - wDLTX is a separate BEP-20 token with no link to native $DLTX (section 14).
 - Nothing in this document is an offer to sell securities, investment advice, financial advice
   or tax advice. $DLTX is not an investment product.
@@ -725,6 +769,15 @@ a stake-weighted community vote, expanding its binding scope deliberately until 
 belongs entirely to its participants.
 
 **Deltix Network: stake, play, trade, govern.**
+
+---
+
+## Revision History
+
+| Version | Effective | Changes |
+|---|---|---|
+| 2.1 | November 12, 2026 | 500-claim transfer unlock retired: every account transfers from day one (sections 2, 6.4, 9, 10.3). P2P Marketplace marked temporarily closed with transfers explicitly unaffected (sections 8.7, 15, 16, 17). Expense Tracker, Currency Converter and the ChatGPT, Gemini and Claude assistants added to the application surfaces (sections 3.5, 15.1, 17). |
+| 2.0 | October 1, 2026 | Dual Earning System, Deltix Energy, P2P Marketplace, referral lock and anti-fraud rules, delivered-versus-planned statement. |
 
 ---
 
