@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.20.3';
+const APP_VERSION = '1.21.0';
 const $ = (id) => document.getElementById(id);
 
 // Stable per-phone identifier sent with every request (X-Device-Id) — the
@@ -417,6 +417,9 @@ function showTab(id, { refresh = true } = {}) {
     if (refresh && state.token) loadEarn();
   } else if (id === 'tab-chatroom') {
     if (typeof renderGlobalChatroom === 'function') renderGlobalChatroom();
+  } else if (id === 'tab-expenses') {
+    // On-device tool: works signed in or offline, nothing to fetch.
+    if (typeof renderExpenses === 'function') renderExpenses();
   } else if (id === 'tab-predict') {
     if (typeof renderPredict === 'function') renderPredict();
   } else if (refresh && state.token) {
@@ -464,6 +467,7 @@ function refreshTabContent(id) {
   } else if (id === 'tab-assistant') {
     ensureBotGreeting();
     loadKycStatus().catch(() => {});
+    if (typeof loadAiProviders === 'function') loadAiProviders().catch(() => {});
   } else if (id === 'tab-chatroom') {
     if (typeof renderGlobalChatroom === 'function') renderGlobalChatroom();
   } else if (id === 'tab-social') {
@@ -511,6 +515,7 @@ async function refreshCurrentView({ isPull = false, silent = false } = {}) {
     tasks.push(loadP2p());
   } else if (activeTab === 'tab-assistant') {
     tasks.push(loadKycStatus());
+    if (typeof loadAiProviders === 'function') tasks.push(loadAiProviders());
   } else if (activeTab === 'tab-chatroom') {
     if (typeof renderGlobalChatroom === 'function') {
       tasks.push(Promise.resolve().then(() => renderGlobalChatroom()));
@@ -4300,40 +4305,606 @@ async function waterTree() {
 
 $('treeWaterBtn')?.addEventListener('click', waterTree);
 
-// ==================== Deltix Bot (canned companion, no LLM) ====================
-function addBotMessage(role, text) {
+// ==================== Deltix Assistant: Deltix Bot (canned) + AI assistants (ChatGPT / Gemini / Claude) ====================
+// The canned bot is free and always there. The AI assistants are offered only when the server holds a key for
+// them (GET /api/ai/providers); every AI message goes through our server (keys never reach the phone) and counts
+// against a per-member daily budget the server enforces. Each assistant keeps its own transcript for the session.
+const AI_META = {
+  bot: { name: 'Deltix Bot', icon: '🤖', vendor: 'Deltix', sub: 'Ask about Energy, staking, missions, the Vault, Puzzle, Tree, Ladder, Rain, Season, or the Shop.', placeholder: 'Ask about Energy, staking, missions…', maxLen: 200 },
+  chatgpt: { name: 'ChatGPT', icon: '🟢', vendor: 'OpenAI' },
+  gemini: { name: 'Gemini', icon: '✨', vendor: 'Google' },
+  claude: { name: 'Claude', icon: '🟠', vendor: 'Anthropic' },
+};
+const AI_HISTORY_TURNS = 12;      // earlier turns sent back for context (the server trims further)
+const AI_TRANSCRIPT_MAX = 80;     // messages kept per assistant
+const aiState = { current: 'bot', providers: [], loaded: false, loading: null, limit: null, remaining: null, maxChars: 2000, busy: false, transcripts: { bot: [] },
+  // Energy top-up once the free daily messages are gone: offer from the server, the member's balance, and whether
+  // they agreed (this session) to spend Energy per message.
+  topup: null, energy: null, payOk: false };
+
+function aiTranscript(id = aiState.current) {
+  if (!aiState.transcripts[id]) aiState.transcripts[id] = [];
+  return aiState.transcripts[id];
+}
+
+function renderBotMessages() {
   const list = $('botMessages');
   if (!list) return;
-  const div = document.createElement('div');
-  div.className = `bot-msg ${role}`;
-  div.textContent = text;
-  list.appendChild(div);
+  const frag = document.createDocumentFragment();
+  for (const m of aiTranscript()) {
+    const div = document.createElement('div');
+    div.className = `bot-msg ${m.role === 'user' ? 'user' : 'bot'}${m.kind ? ` ${m.kind}` : ''}`;
+    div.textContent = m.text;
+    frag.appendChild(div);
+  }
+  if (aiState.busy) {
+    const typing = document.createElement('div');
+    typing.className = 'bot-msg bot typing';
+    typing.setAttribute('aria-label', `${AI_META[aiState.current]?.name || 'Assistant'} is typing`);
+    typing.innerHTML = '<span></span><span></span><span></span>';
+    frag.appendChild(typing);
+  }
+  list.replaceChildren(frag);
   list.scrollTop = list.scrollHeight;
 }
 
-function ensureBotGreeting() {
-  const list = $('botMessages');
-  if (list && !list.children.length) {
-    addBotMessage('bot', 'Hey! I\u2019m the Deltix Bot 🤖 — ask me about Energy, staking, referrals, missions, the Vault, Puzzle, Tree, Ladder, Rain, Season, or the Shop.');
-  }
+/** Appends one message to the current assistant's transcript (role: 'user' | 'assistant'; kind: 'greeting' | 'error'). */
+function addBotMessage(role, text, kind) {
+  const t = aiTranscript();
+  t.push({ role: role === 'user' ? 'user' : 'assistant', text: String(text || ''), kind: kind || undefined });
+  if (t.length > AI_TRANSCRIPT_MAX) t.splice(0, t.length - AI_TRANSCRIPT_MAX);
+  renderBotMessages();
 }
 
-async function sendBotMessage() {
+function aiGreeting(id) {
+  if (id === 'bot') return 'Hey! I\u2019m the Deltix Bot 🤖 — ask me about Energy, staking, referrals, missions, the Vault, the Daily Puzzle, the Tree, the Ladder, Rain, the Season Challenge, or the Shop.';
+  const meta = AI_META[id] || {};
+  const budget = aiState.limit != null && aiState.remaining != null ? ` You have ${aiState.remaining} of ${aiState.limit} free AI messages left today.` : '';
+  return `You\u2019re chatting with ${meta.name} by ${meta.vendor}. Replies come from ${meta.vendor}\u2019s servers through Deltix — don\u2019t share passwords, sign-in codes or wallet keys, and double-check anything important.${budget}`;
+}
+
+function ensureBotGreeting() {
+  if (!aiTranscript().length) addBotMessage('assistant', aiGreeting(aiState.current), 'greeting');
+  else renderBotMessages();
+}
+
+const aiAvailableProviders = () => aiState.providers.filter((p) => p.available && AI_META[p.id]);
+const aiPrice = () => Number(aiState.topup?.energyPerMessage) || 0;
+/** Can the next AI message be bought with Energy? (free ones gone, top-ups on, cap not hit, balance covers it) */
+function aiCanPay() {
+  return aiState.remaining === 0 && Boolean(aiState.topup?.enabled) && Number(aiState.topup.paidRemainingToday) > 0
+    && aiState.energy != null && aiState.energy >= aiPrice();
+}
+/** The next message will be charged (free budget gone and the member already agreed to pay). */
+const aiNextIsPaid = () => aiState.current !== 'bot' && aiCanPay() && aiState.payOk;
+
+function renderAiQuota() {
+  const el = $('aiQuota');
+  const linkouts = $('aiLinkouts');
+  const sendBtn = $('botSend');
+  if (!el) return;
+  const onAi = aiState.current !== 'bot';
+  const known = aiState.limit != null && aiState.remaining != null;
+  if (sendBtn) sendBtn.textContent = aiNextIsPaid() ? `Send ⚡${aiPrice()}` : 'Send';
+  // Link-outs show when the member is out of messages — and, before any key is configured, as the only way to reach the AIs.
+  const noAiAtAll = aiState.loaded && !aiAvailableProviders().length;
+  const exhausted = onAi && known && aiState.remaining === 0;
+  if (linkouts) {
+    linkouts.hidden = !(noAiAtAll || exhausted);
+    setText('aiLinkoutsLabel', noAiAtAll ? 'ChatGPT, Gemini and Claude on the web:' : 'Or continue free on the web:');
+  }
+  if (!aiCanPay()) aiState.payOk = false;
+  if (!aiCanPay() || aiState.busy) hideAiPaywall();
+  el.hidden = !(onAi && known);
+  if (el.hidden) return;
+  const topup = aiState.topup;
+  let text;
+  let tone = '';
+  if (aiState.remaining > 0) {
+    text = `${aiState.remaining} of ${aiState.limit} free AI messages left today · shared across ChatGPT, Gemini and Claude`;
+    if (topup?.enabled) text += ` · then ⚡${aiPrice()} Energy each`;
+  } else if (aiCanPay()) {
+    text = `Free messages used up — each message now costs ⚡${aiPrice()} Energy (you have ⚡${aiState.energy}).`;
+    tone = 'warn';
+  } else if (topup?.enabled && Number(topup.paidRemainingToday) > 0) {
+    text = `Free messages used up and you\u2019re out of Energy (⚡${aiState.energy ?? 0}). Earn Energy on the Energy tab, or use the Deltix Bot — it\u2019s always free.`;
+    tone = 'error';
+  } else {
+    text = `You\u2019ve used today\u2019s AI messages — the Deltix Bot is always free. Come back tomorrow!`;
+    tone = 'error';
+  }
+  el.textContent = text;
+  el.classList.toggle('error', tone === 'error');
+  el.classList.toggle('warn', tone === 'warn');
+}
+
+function showAiPaywall() {
+  const box = $('aiPaywall');
+  if (!box) return;
+  setText('aiPaywallText', `You\u2019ve used today\u2019s ${aiState.limit} free AI messages. Send this one for ⚡${aiPrice()} Energy? You have ⚡${aiState.energy}; each further message today costs the same, up to ${aiState.topup.paidRemainingToday} more.`);
+  const confirm = $('aiPayConfirm');
+  if (confirm) confirm.textContent = `Send for ⚡${aiPrice()}`;
+  box.hidden = false;
+}
+function hideAiPaywall() {
+  const box = $('aiPaywall');
+  if (box) box.hidden = true;
+}
+
+/** Applies budget fields from a /ai/providers or /ai/chat response (or an error body). */
+function adoptAiBudget(r) {
+  if (!r || typeof r !== 'object') return;
+  if (Number.isFinite(Number(r.dailyLimit))) aiState.limit = Number(r.dailyLimit);
+  if (Number.isFinite(Number(r.remainingToday))) aiState.remaining = Number(r.remainingToday);
+  if (Number.isFinite(Number(r.energy))) aiState.energy = Number(r.energy);
+  const t = r.topup;
+  if (t && typeof t === 'object') {
+    const prev = aiState.topup || {};
+    if ('enabled' in t) {
+      // The full offer, from /ai/providers.
+      aiState.topup = { enabled: Boolean(t.enabled), energyPerMessage: Number(t.energyPerMessage) || 0, maxPerDay: Number(t.maxPerDay) || 0, paidRemainingToday: Number(t.paidRemainingToday) || 0 };
+    } else if ('available' in t) {
+      // The short offer attached to an AI_DAILY_LIMIT error: available = top-ups on AND paid cap not reached.
+      aiState.topup = {
+        ...prev,
+        enabled: Boolean(t.available) || Boolean(prev.enabled),
+        energyPerMessage: Number(t.energyPerMessage) || Number(prev.energyPerMessage) || 0,
+        paidRemainingToday: t.available ? Math.max(1, Number(prev.paidRemainingToday) || 0) : 0,
+      };
+    }
+  }
+  if (aiState.topup && Number.isFinite(Number(r.paidRemainingToday))) aiState.topup.paidRemainingToday = Number(r.paidRemainingToday);
+}
+
+function renderAiProviders() {
+  const row = $('aiProviders');
+  if (!row) return;
+  const available = aiAvailableProviders();
+  row.querySelectorAll('.ai-provider[data-ai]:not([data-ai="bot"])').forEach((b) => b.remove());
+  for (const p of available) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ai-provider';
+    btn.dataset.ai = p.id;
+    btn.setAttribute('role', 'tab');
+    btn.title = `${p.name} by ${p.vendor}`;
+    btn.innerHTML = `<span class="ai-provider-icon">${AI_META[p.id].icon}</span><span>${escapeHtml(p.name)}</span>`;
+    row.appendChild(btn);
+  }
+  row.classList.toggle('ai-providers-solo', !available.length);
+  row.querySelectorAll('.ai-provider').forEach((b) => {
+    const on = b.dataset.ai === aiState.current;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+}
+
+function selectAssistant(id) {
+  if (id !== 'bot' && !aiState.providers.some((p) => p.id === id && p.available)) id = 'bot';
+  aiState.current = id;
+  const meta = AI_META[id];
+  setText('botAvatar', meta.icon);
+  setText('botTitle', meta.name);
+  setText('botSub', id === 'bot' ? meta.sub : `By ${meta.vendor} · general questions, ideas, writing help, explanations — anything you like.`);
+  const input = $('botInput');
+  if (input) {
+    input.placeholder = id === 'bot' ? meta.placeholder : `Message ${meta.name}…`;
+    input.maxLength = id === 'bot' ? meta.maxLen : aiState.maxChars;
+  }
+  hideAiPaywall();
+  renderAiProviders();
+  renderAiQuota();
+  ensureBotGreeting();
+}
+
+/** Which AI assistants the server offers right now, today's remaining budget and the Energy top-up offer. Silent when offline. */
+async function loadAiProviders() {
+  if (!state.token) return;
+  if (aiState.loading) return aiState.loading;
+  aiState.loading = (async () => {
+    try {
+      const r = await api('GET', '/ai/providers');
+      aiState.providers = r.enabled && Array.isArray(r.providers) ? r.providers : [];
+      adoptAiBudget(r);
+      if (Number(r.maxMessageChars) > 0) aiState.maxChars = Number(r.maxMessageChars);
+      aiState.loaded = true;
+    } catch {
+      // Older server or offline: only the Deltix Bot is offered.
+      if (!aiState.loaded) aiState.providers = [];
+    } finally {
+      aiState.loading = null;
+    }
+    // Re-apply: the current assistant may have just become (un)available.
+    selectAssistant(aiState.current);
+  })();
+  return aiState.loading;
+}
+
+async function sendBotMessage({ payWithEnergy = false } = {}) {
   const input = $('botInput');
   const text = input?.value.trim();
-  if (!text || !state.token) return;
+  if (!text || !state.token || aiState.busy) return;
+  const provider = aiState.current;
+  // Out of free messages: the member decides about Energy first — nothing is sent until they do.
+  if (provider !== 'bot' && aiState.remaining === 0) {
+    if (!aiCanPay()) {
+      renderAiQuota();
+      const t = aiState.topup;
+      toast(!t?.enabled ? 'Out of AI messages for today.'
+        : Number(t.paidRemainingToday) <= 0 ? 'You\u2019ve reached today\u2019s limit of extra AI messages.'
+        : `Not enough Energy — ⚡${aiPrice()} needed per message.`);
+      return;
+    }
+    if (!payWithEnergy && !aiState.payOk) { showAiPaywall(); return; }
+    payWithEnergy = true;
+  }
   input.value = '';
+  hideAiPaywall();
   addBotMessage('user', text);
+  const userMsg = aiTranscript(provider)[aiTranscript(provider).length - 1];
+  if (provider === 'bot') {
+    try {
+      const r = await api('POST', '/bot/ask', { message: text });
+      addBotMessage('assistant', r.reply);
+    } catch (e) {
+      addBotMessage('assistant', e.message || 'Sorry, I couldn\u2019t reach the server just now.', 'error');
+    }
+    return;
+  }
+  // Context for the AI: the recent real turns of this assistant's transcript (no greetings, error notices or
+  // messages that never got an answer, and not this message).
+  const history = aiTranscript(provider)
+    .filter((m) => !m.kind)
+    .slice(0, -1)
+    .slice(-AI_HISTORY_TURNS)
+    .map((m) => ({ role: m.role, content: m.text }));
+  aiState.busy = true;
+  const sendBtn = $('botSend');
+  if (sendBtn) sendBtn.disabled = true;
+  renderBotMessages();
   try {
-    const r = await api('POST', '/bot/ask', { message: text });
-    addBotMessage('bot', r.reply);
+    const r = await api('POST', '/ai/chat', { provider, message: text, history, ...(payWithEnergy ? { payWithEnergy: true } : {}) });
+    adoptAiBudget(r);
+    if (Number(r.paidEnergy) > 0) {
+      // Keep the Energy shown elsewhere in the app in step with the charge.
+      if (state.energy && typeof state.energy.energy === 'number') state.energy.energy = aiState.energy;
+      if (typeof loadEnergy === 'function') loadEnergy(undefined, { force: true }).catch(() => {});
+      toast(`−${r.paidEnergy} ⚡ Energy · ${r.paidRemainingToday} paid messages left today`);
+    }
+    // The member may have switched assistants while waiting: file the reply where it belongs.
+    aiTranscript(provider).push({ role: 'assistant', text: String(r.reply || '') });
   } catch (e) {
-    addBotMessage('bot', e.message || 'Sorry, I couldn\u2019t reach the server just now.');
+    const t = aiTranscript(provider);
+    if (e.code === 'AI_DAILY_LIMIT' || e.code === 'ENERGY_INSUFFICIENT' || e.code === 'AI_TOPUP_CAP') {
+      // The server knows better than our cached budget. Take the message back so it can be re-sent (paid, or tomorrow).
+      aiState.remaining = 0;
+      if (e.code === 'AI_TOPUP_CAP' && aiState.topup) aiState.topup.paidRemainingToday = 0;
+      adoptAiBudget(e.data);
+      if (t[t.length - 1] === userMsg) t.pop();
+      if (input && !input.value) input.value = text;
+      if (aiState.current === provider && aiCanPay()) showAiPaywall();
+      else toast(e.message);
+    } else {
+      // Unanswered, so it must not be replayed as context next time.
+      userMsg.kind = 'unsent';
+      t.push({ role: 'assistant', text: e.message || 'The assistant could not be reached. Please try again.', kind: 'error' });
+    }
+  } finally {
+    aiState.busy = false;
+    if (sendBtn) sendBtn.disabled = false;
+    renderBotMessages();
+    renderAiQuota();
   }
 }
 
-$('botSend')?.addEventListener('click', sendBotMessage);
+$('botSend')?.addEventListener('click', () => sendBotMessage());
 $('botInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendBotMessage(); });
+$('aiPayConfirm')?.addEventListener('click', () => {
+  aiState.payOk = true;
+  hideAiPaywall();
+  sendBotMessage({ payWithEnergy: true });
+});
+$('aiPayCancel')?.addEventListener('click', () => { hideAiPaywall(); renderAiQuota(); });
+$('aiLinkouts')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.ai-linkout[data-ai-link]');
+  if (btn && typeof openExternalLink === 'function') openExternalLink(btn.dataset.aiLink);
+});
+$('aiProviders')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.ai-provider[data-ai]');
+  if (!btn || btn.dataset.ai === aiState.current) return;
+  selectAssistant(btn.dataset.ai);
+  $('botInput')?.focus({ preventScroll: true });
+});
+
+// ==================== Deltix Expense Tracker (on this phone, per account) ====================
+// A personal spending log that never leaves the device: entries live in localStorage under a per-account
+// key, and today / this week (Mon–Sun) / this month totals are computed locally in the member's own currency.
+// No server, no external API — it works offline.
+const EXP_CATEGORIES = [
+  { id: 'food', name: 'Food', icon: '🍔' },
+  { id: 'shopping', name: 'Shopping', icon: '🛍️' },
+  { id: 'transport', name: 'Transport', icon: '🚌' },
+  { id: 'bills', name: 'Bills', icon: '💡' },
+  { id: 'health', name: 'Health', icon: '💊' },
+  { id: 'fun', name: 'Fun', icon: '🎬' },
+  { id: 'education', name: 'Education', icon: '📚' },
+  { id: 'other', name: 'Other', icon: '📦' },
+];
+const EXP_CURRENCIES = [
+  ['USD', 'US Dollar'], ['EUR', 'Euro'], ['GBP', 'British Pound'], ['PKR', 'Pakistani Rupee'], ['INR', 'Indian Rupee'],
+  ['BDT', 'Bangladeshi Taka'], ['NGN', 'Nigerian Naira'], ['KES', 'Kenyan Shilling'], ['GHS', 'Ghanaian Cedi'], ['ZAR', 'South African Rand'],
+  ['EGP', 'Egyptian Pound'], ['MAD', 'Moroccan Dirham'], ['TRY', 'Turkish Lira'], ['SAR', 'Saudi Riyal'], ['AED', 'UAE Dirham'],
+  ['QAR', 'Qatari Riyal'], ['KWD', 'Kuwaiti Dinar'], ['IDR', 'Indonesian Rupiah'], ['MYR', 'Malaysian Ringgit'], ['PHP', 'Philippine Peso'],
+  ['VND', 'Vietnamese Dong'], ['THB', 'Thai Baht'], ['SGD', 'Singapore Dollar'], ['CNY', 'Chinese Yuan'], ['JPY', 'Japanese Yen'],
+  ['KRW', 'South Korean Won'], ['HKD', 'Hong Kong Dollar'], ['TWD', 'New Taiwan Dollar'], ['LKR', 'Sri Lankan Rupee'], ['NPR', 'Nepalese Rupee'],
+  ['AUD', 'Australian Dollar'], ['NZD', 'New Zealand Dollar'], ['CAD', 'Canadian Dollar'], ['MXN', 'Mexican Peso'], ['BRL', 'Brazilian Real'],
+  ['ARS', 'Argentine Peso'], ['CLP', 'Chilean Peso'], ['COP', 'Colombian Peso'], ['PEN', 'Peruvian Sol'], ['CHF', 'Swiss Franc'],
+  ['SEK', 'Swedish Krona'], ['NOK', 'Norwegian Krone'], ['DKK', 'Danish Krone'], ['PLN', 'Polish Zloty'], ['CZK', 'Czech Koruna'],
+  ['HUF', 'Hungarian Forint'], ['RON', 'Romanian Leu'], ['UAH', 'Ukrainian Hryvnia'], ['RUB', 'Russian Ruble'], ['KZT', 'Kazakhstani Tenge'],
+  ['UZS', 'Uzbekistani Som'], ['IRR', 'Iranian Rial'], ['IQD', 'Iraqi Dinar'], ['JOD', 'Jordanian Dinar'], ['LBP', 'Lebanese Pound'],
+  ['ETB', 'Ethiopian Birr'], ['TZS', 'Tanzanian Shilling'], ['UGX', 'Ugandan Shilling'], ['XOF', 'West African CFA Franc'], ['XAF', 'Central African CFA Franc'],
+];
+// First-run default from the phone's region (the member can always change it).
+const EXP_REGION_CURRENCY = {
+  US: 'USD', GB: 'GBP', PK: 'PKR', IN: 'INR', BD: 'BDT', NG: 'NGN', KE: 'KES', GH: 'GHS', ZA: 'ZAR', EG: 'EGP', MA: 'MAD', TR: 'TRY',
+  SA: 'SAR', AE: 'AED', QA: 'QAR', KW: 'KWD', ID: 'IDR', MY: 'MYR', PH: 'PHP', VN: 'VND', TH: 'THB', SG: 'SGD', CN: 'CNY', JP: 'JPY',
+  KR: 'KRW', HK: 'HKD', TW: 'TWD', LK: 'LKR', NP: 'NPR', AU: 'AUD', NZ: 'NZD', CA: 'CAD', MX: 'MXN', BR: 'BRL', AR: 'ARS', CL: 'CLP',
+  CO: 'COP', PE: 'PEN', CH: 'CHF', SE: 'SEK', NO: 'NOK', DK: 'DKK', PL: 'PLN', CZ: 'CZK', HU: 'HUF', RO: 'RON', UA: 'UAH', RU: 'RUB',
+  KZ: 'KZT', UZ: 'UZS', IR: 'IRR', IQ: 'IQD', JO: 'JOD', LB: 'LBP', ET: 'ETB', TZ: 'TZS', UG: 'UGX', SN: 'XOF', CI: 'XOF', CM: 'XAF',
+  DE: 'EUR', FR: 'EUR', IT: 'EUR', ES: 'EUR', NL: 'EUR', BE: 'EUR', AT: 'EUR', PT: 'EUR', IE: 'EUR', FI: 'EUR', GR: 'EUR',
+};
+const EXP_MAX_ITEMS = 5000;      // oldest entries are dropped beyond this so storage stays bounded
+const EXP_MAX_AMOUNT = 1e12;
+const EXP_LIST_LIMIT = 60;       // rows shown in "Recent expenses"
+const EXP_NOTE_MAX = 60;
+
+const expState = { data: null, key: null, period: 'day', cat: 'food', wired: false };
+
+const expPad = (n) => String(n).padStart(2, '0');
+/** Local calendar day as YYYY-MM-DD (expenses follow the member's day, not UTC). */
+function expLocalDay(d = new Date()) { return `${d.getFullYear()}-${expPad(d.getMonth() + 1)}-${expPad(d.getDate())}`; }
+function expShiftDay(d, days) { const x = new Date(d); x.setDate(x.getDate() + days); return x; }
+/** Monday..Sunday of the week containing `d`, as YYYY-MM-DD strings. */
+function expWeekRange(d = new Date()) {
+  const offset = (d.getDay() + 6) % 7;    // Monday = 0
+  const start = expShiftDay(d, -offset);
+  return { start: expLocalDay(start), end: expLocalDay(expShiftDay(start, 6)) };
+}
+function expParseDay(s) { const [y, m, d] = String(s).split('-').map(Number); return new Date(y, m - 1, d); }
+
+function expStorageKey() { return `dltx_expenses:${String(state.email || 'local').toLowerCase()}`; }
+
+function expDefaultCurrency() {
+  try {
+    const loc = new Intl.Locale(navigator.language || 'en-US');
+    const region = (loc.region || (loc.maximize && loc.maximize().region) || '').toUpperCase();
+    return EXP_REGION_CURRENCY[region] || 'USD';
+  } catch { return 'USD'; }
+}
+
+function expLoad() {
+  const key = expStorageKey();
+  if (expState.data && expState.key === key) return expState.data;
+  let data = null;
+  try { data = JSON.parse(localStorage.getItem(key) || 'null'); } catch { data = null; }
+  if (!data || typeof data !== 'object' || !Array.isArray(data.items)) data = { v: 1, currency: expDefaultCurrency(), items: [] };
+  if (!EXP_CURRENCIES.some(([c]) => c === data.currency)) data.currency = 'USD';
+  data.items = data.items.filter((i) => i && Number.isFinite(Number(i.amount)) && /^\d{4}-\d{2}-\d{2}$/.test(String(i.date || '')));
+  expState.data = data;
+  expState.key = key;
+  return data;
+}
+
+function expSave() {
+  try { localStorage.setItem(expState.key || expStorageKey(), JSON.stringify(expState.data)); }
+  catch { toast('Could not save the expense — this phone\u2019s storage is full or unavailable.'); }
+}
+
+function expFmt(amount, currency) {
+  const cur = currency || expLoad().currency;
+  const n = Number(amount) || 0;
+  try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: cur, currencyDisplay: 'narrowSymbol' }).format(n); }
+  catch {
+    try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: cur }).format(n); }
+    catch { return `${cur} ${n.toFixed(2)}`; }
+  }
+}
+
+function expDayLabel(day, today) {
+  if (day === today) return 'Today';
+  if (day === expLocalDay(expShiftDay(expParseDay(today), -1))) return 'Yesterday';
+  try { return expParseDay(day).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }); }
+  catch { return day; }
+}
+
+const expCategory = (id) => EXP_CATEGORIES.find((c) => c.id === id) || EXP_CATEGORIES[EXP_CATEGORIES.length - 1];
+const expSum = (items) => Math.round(items.reduce((n, i) => n + Number(i.amount), 0) * 100) / 100;
+
+function expWire() {
+  if (expState.wired) return;
+  expState.wired = true;
+  $('expAddBtn')?.addEventListener('click', expAdd);
+  $('expAmount')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') expAdd(); });
+  $('expNote')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') expAdd(); });
+  $('expCats')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-exp-cat]');
+    if (!btn) return;
+    expState.cat = btn.dataset.expCat;
+    renderExpenses();
+  });
+  document.querySelector('.exp-summary')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-exp-period]');
+    if (!btn) return;
+    expState.period = btn.dataset.expPeriod;
+    renderExpenses();
+  });
+  $('expCurrency')?.addEventListener('change', (e) => {
+    const data = expLoad();
+    const cur = String(e.target.value || '');
+    if (!EXP_CURRENCIES.some(([c]) => c === cur)) return;
+    data.currency = cur;
+    expSave();
+    renderExpenses();
+  });
+  $('expList')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-exp-del]');
+    if (!btn) return;
+    const data = expLoad();
+    const idx = data.items.findIndex((i) => i.id === btn.dataset.expDel);
+    if (idx < 0) return;
+    const [gone] = data.items.splice(idx, 1);
+    expSave();
+    renderExpenses();
+    toast(`Removed ${expFmt(gone.amount, gone.cur)} · ${expCategory(gone.cat).name}`);
+  });
+  $('expClearBtn')?.addEventListener('click', () => {
+    const data = expLoad();
+    if (!data.items.length) return;
+    if (!window.confirm(`Delete all ${data.items.length} expenses saved for this account on this phone?`)) return;
+    data.items = [];
+    expSave();
+    renderExpenses();
+    toast('All expenses cleared');
+  });
+}
+
+function expAdd() {
+  const data = expLoad();
+  const amountEl = $('expAmount');
+  const hint = $('expHint');
+  const amount = Math.round(Number(String(amountEl?.value || '').replace(',', '.')) * 100) / 100;
+  const fail = (msg) => { if (hint) { hint.textContent = msg; hint.className = 'hint error'; } amountEl?.focus(); };
+  if (!Number.isFinite(amount) || amount <= 0) return fail('Enter an amount greater than zero.');
+  if (amount > EXP_MAX_AMOUNT) return fail('That amount is too large.');
+  const dateEl = $('expDate');
+  const today = expLocalDay();
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(dateEl?.value || '') ? dateEl.value : today;
+  if (date > today) return fail('Expenses can\u2019t be dated in the future.');
+  const note = String($('expNote')?.value || '').trim().slice(0, EXP_NOTE_MAX);
+  const item = {
+    id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+    amount, cat: expState.cat, note, date, cur: data.currency, at: Date.now(),
+  };
+  data.items.push(item);
+  if (data.items.length > EXP_MAX_ITEMS) data.items.splice(0, data.items.length - EXP_MAX_ITEMS);
+  expSave();
+  if (amountEl) amountEl.value = '';
+  const noteEl = $('expNote');
+  if (noteEl) noteEl.value = '';
+  if (hint) { hint.textContent = ''; hint.className = 'hint'; }
+  renderExpenses();
+  toast(`Added ${expFmt(amount)} · ${expCategory(item.cat).name}`);
+}
+
+function renderExpenses() {
+  const data = expLoad();
+  expWire();
+  const dateEl = $('expDate');
+  const today = expLocalDay();
+  if (dateEl) {
+    dateEl.max = today;
+    if (!dateEl.value || dateEl.value > today) dateEl.value = today;
+  }
+  const sel = $('expCurrency');
+  if (sel) {
+    if (sel.options.length !== EXP_CURRENCIES.length) sel.innerHTML = EXP_CURRENCIES.map(([c, n]) => `<option value="${c}">${c} — ${n}</option>`).join('');
+    sel.value = data.currency;
+  }
+  const cats = $('expCats');
+  if (cats) {
+    cats.innerHTML = EXP_CATEGORIES.map((c) => `<button type="button" class="exp-cat${expState.cat === c.id ? ' active' : ''}" data-exp-cat="${c.id}" role="radio" aria-checked="${expState.cat === c.id}">${c.icon} ${c.name}</button>`).join('');
+  }
+
+  // Totals, in the ledger currency only (entries logged in another currency are listed but never mixed in).
+  const week = expWeekRange();
+  const month = today.slice(0, 7);
+  const inCur = data.items.filter((i) => i.cur === data.currency);
+  const byPeriod = {
+    day: inCur.filter((i) => i.date === today),
+    week: inCur.filter((i) => i.date >= week.start && i.date <= week.end),
+    month: inCur.filter((i) => i.date.slice(0, 7) === month),
+  };
+  setText('expToday', expFmt(expSum(byPeriod.day)));
+  setText('expWeek', expFmt(expSum(byPeriod.week)));
+  setText('expMonth', expFmt(expSum(byPeriod.month)));
+  // Long amounts (big local-currency totals) step down a size instead of wrapping mid-number on narrow phones.
+  document.querySelectorAll('.exp-stat b').forEach((b) => b.classList.toggle('long', b.textContent.length > 9));
+  document.querySelectorAll('.exp-stat[data-exp-period]').forEach((b) => {
+    const on = b.dataset.expPeriod === expState.period;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+
+  // Last 7 days, newest on the right.
+  const chart = $('expChart');
+  if (chart) {
+    const days = Array.from({ length: 7 }, (_, k) => expLocalDay(expShiftDay(new Date(), k - 6)));
+    const totals = days.map((d) => expSum(inCur.filter((i) => i.date === d)));
+    const max = Math.max(...totals, 0);
+    chart.innerHTML = days.map((d, k) => {
+      const pct = max > 0 ? Math.max(totals[k] > 0 ? 6 : 0, Math.round((totals[k] / max) * 100)) : 0;
+      const label = expParseDay(d).toLocaleDateString(undefined, { weekday: 'narrow' });
+      return `<div class="exp-bar-col${d === today ? ' today' : ''}" title="${escapeHtml(expDayLabel(d, today))}: ${escapeHtml(expFmt(totals[k]))}"><div class="exp-bar-track"><div class="exp-bar" style="height:${pct}%"></div></div><span>${escapeHtml(label)}</span></div>`;
+    }).join('');
+  }
+
+  // Category breakdown for the selected period.
+  const periodItems = byPeriod[expState.period] || byPeriod.day;
+  const periodName = { day: 'Today', week: 'This week', month: 'This month' }[expState.period] || 'Today';
+  setText('expBreakdownTitle', `${periodName} by category`);
+  const breakdown = $('expBreakdown');
+  if (breakdown) {
+    const total = expSum(periodItems);
+    if (!periodItems.length) {
+      breakdown.innerHTML = `<p class="muted center exp-empty">No expenses ${periodName === 'Today' ? 'today' : periodName.toLowerCase()} yet${expState.period === 'day' ? ' — add your first one below' : ''}.</p>`;
+    } else {
+      const rows = EXP_CATEGORIES
+        .map((c) => ({ ...c, total: expSum(periodItems.filter((i) => i.cat === c.id)), count: periodItems.filter((i) => i.cat === c.id).length }))
+        .filter((c) => c.total > 0)
+        .sort((a, b) => b.total - a.total);
+      // Averages are over the days elapsed so far, so a Tuesday is not divided by a full week.
+      const daysSoFar = expState.period === 'week' ? ((new Date().getDay() + 6) % 7) + 1 : expParseDay(today).getDate();
+      const avg = expState.period === 'day' ? null : expSum(periodItems) / daysSoFar;
+      breakdown.innerHTML = rows.map((c) => {
+        const pct = total > 0 ? Math.round((c.total / total) * 100) : 0;
+        return `<div class="exp-cat-row"><span class="exp-cat-icon">${c.icon}</span><div class="exp-cat-main"><div class="exp-cat-top"><span>${escapeHtml(c.name)}<small> · ${c.count}</small></span><b>${escapeHtml(expFmt(c.total))}</b></div><div class="exp-cat-track"><div class="exp-cat-fill" style="width:${pct}%"></div></div></div><span class="exp-cat-pct">${pct}%</span></div>`;
+      }).join('') + (avg != null ? `<p class="exp-avg">Average ${escapeHtml(expFmt(avg))} per day so far this ${expState.period}</p>` : '');
+    }
+  }
+
+  // Recent list, newest first, grouped by day.
+  const list = $('expList');
+  const sub = $('expListSub');
+  const clearBtn = $('expClearBtn');
+  if (clearBtn) clearBtn.hidden = !data.items.length;
+  if (list) {
+    const sorted = [...data.items].sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : (b.at || 0) - (a.at || 0)));
+    const shown = sorted.slice(0, EXP_LIST_LIMIT);
+    const foreign = data.items.length - inCur.length;
+    if (sub) {
+      sub.textContent = !data.items.length
+        ? 'Nothing logged yet.'
+        : `${data.items.length} expense${data.items.length === 1 ? '' : 's'} saved${foreign > 0 ? ` · ${foreign} in other currencies (not in totals)` : ''}`;
+    }
+    if (!shown.length) {
+      list.innerHTML = '<p class="muted center exp-empty">Your expenses will show up here.</p>';
+    } else {
+      let lastDay = null;
+      let html = '';
+      for (const it of shown) {
+        if (it.date !== lastDay) {
+          lastDay = it.date;
+          const dayTotal = expSum(sorted.filter((i) => i.date === it.date && i.cur === data.currency));
+          html += `<div class="exp-day-head"><span>${escapeHtml(expDayLabel(it.date, today))}</span><b>${escapeHtml(expFmt(dayTotal))}</b></div>`;
+        }
+        const c = expCategory(it.cat);
+        html += `<div class="exp-item"><span class="exp-item-icon">${c.icon}</span><div class="exp-item-main"><div class="exp-item-title">${escapeHtml(it.note || c.name)}</div><div class="exp-item-sub">${escapeHtml(it.note ? c.name : '')}</div></div><b class="exp-item-amt${it.cur !== data.currency ? ' foreign' : ''}">${escapeHtml(expFmt(it.amount, it.cur))}</b><button type="button" class="exp-del" data-exp-del="${escapeHtml(it.id)}" aria-label="Remove expense">✕</button></div>`;
+      }
+      if (sorted.length > shown.length) html += `<p class="muted center exp-empty">…and ${sorted.length - shown.length} older expense${sorted.length - shown.length === 1 ? '' : 's'}.</p>`;
+      list.innerHTML = html;
+    }
+  }
+}
 
 /**
  * In-app notification card — a push-notification-style banner used for
