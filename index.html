@@ -997,19 +997,42 @@
         </ul>
       </div>
 
-      <!-- Deltix Assistant — canned-answer bot + identity verification, one place -->
+      <!-- Deltix Assistant — canned-answer bot, AI assistants (ChatGPT / Gemini / Claude) + identity verification, one place -->
       <div class="tab" id="tab-assistant">
-        <div class="showcase-banner"><div class="showcase-title">🤖 Deltix Assistant</div><div class="showcase-sub">Ask the bot anything, and verify your identity to unlock more.</div></div>
+        <div class="showcase-banner"><div class="showcase-title">🤖 Deltix Assistant</div><div class="showcase-sub">Ask the Deltix Bot, or chat with ChatGPT, Gemini and Claude — and verify your identity to unlock more.</div></div>
 
         <div class="card bot-embed-card">
-          <div class="reward-head">
-            <span class="reward-emoji">🤖</span>
-            <div><div class="reward-title">Deltix Bot</div><div class="reward-sub">Ask about Energy, staking, missions, the Vault, Puzzle, Tree, Ladder, Rain, Season, or the Shop.</div></div>
+          <div class="ai-providers" id="aiProviders" role="tablist" aria-label="Choose an assistant">
+            <button type="button" class="ai-provider active" data-ai="bot" role="tab" aria-selected="true"><span class="ai-provider-icon">🤖</span><span>Deltix Bot</span></button>
+            <!-- ChatGPT / Gemini / Claude buttons appear here once the server offers them -->
           </div>
-          <div class="bot-messages" id="botMessages"></div>
+          <div class="reward-head">
+            <span class="reward-emoji" id="botAvatar">🤖</span>
+            <div><div class="reward-title" id="botTitle">Deltix Bot</div><div class="reward-sub" id="botSub">Ask about Energy, staking, missions, the Vault, Puzzle, Tree, Ladder, Rain, Season, or the Shop.</div></div>
+          </div>
+          <div class="bot-messages" id="botMessages" aria-live="polite"></div>
           <div class="bot-input-row">
             <input id="botInput" type="text" placeholder="Ask about Energy, staking, missions…" maxlength="200" />
             <button class="btn primary" id="botSend">Send</button>
+          </div>
+          <p class="hint ai-quota" id="aiQuota" hidden></p>
+          <!-- Shown once the free daily AI messages are used up: the member decides, explicitly, to spend Energy -->
+          <div class="ai-paywall" id="aiPaywall" hidden>
+            <div class="ai-paywall-text" id="aiPaywallText"></div>
+            <div class="ai-paywall-actions">
+              <button class="btn primary small" id="aiPayConfirm" type="button">Send for ⚡1</button>
+              <button class="btn ghost small" id="aiPayCancel" type="button">Not now</button>
+            </div>
+          </div>
+          <!-- Free fallback: the vendors' own web apps, in the phone's browser (they can't be embedded) -->
+          <div class="ai-linkouts" id="aiLinkouts" hidden>
+            <span class="ai-linkouts-label" id="aiLinkoutsLabel">Or continue free on the web:</span>
+            <div class="ai-linkouts-row">
+              <button type="button" class="ai-linkout" data-ai-link="https://chatgpt.com/">🟢 ChatGPT ↗</button>
+              <button type="button" class="ai-linkout" data-ai-link="https://gemini.google.com/">✨ Gemini ↗</button>
+              <button type="button" class="ai-linkout" data-ai-link="https://claude.ai/">🟠 Claude ↗</button>
+            </div>
+            <span class="ai-linkouts-note">Opens in your browser with your own account — outside Deltix.</span>
           </div>
         </div>
 
@@ -1020,6 +1043,61 @@
           </div>
           <button class="btn primary reward-btn" id="kycActionBtn" hidden>Verify Identity</button>
         </div>
+      </div>
+
+      <!-- Deltix Expense Tracker — personal daily spending log, kept on this phone only -->
+      <div class="tab" id="tab-expenses">
+        <div class="showcase-banner"><div class="showcase-title">💸 Expense Tracker</div><div class="showcase-sub">Log what you spend each day — Deltix adds it up for today, this week and this month, in your own currency.</div></div>
+
+        <div class="card exp-summary-card">
+          <div class="exp-summary" role="tablist" aria-label="Spending period">
+            <button type="button" class="exp-stat active" data-exp-period="day" role="tab" aria-selected="true"><span>Today</span><b id="expToday">—</b></button>
+            <button type="button" class="exp-stat" data-exp-period="week" role="tab" aria-selected="false"><span>This week</span><b id="expWeek">—</b></button>
+            <button type="button" class="exp-stat" data-exp-period="month" role="tab" aria-selected="false"><span>This month</span><b id="expMonth">—</b></button>
+          </div>
+          <div class="exp-chart" id="expChart" aria-label="Spending over the last 7 days"></div>
+          <div class="exp-breakdown-title" id="expBreakdownTitle">Today by category</div>
+          <div class="exp-breakdown" id="expBreakdown"></div>
+        </div>
+
+        <div class="card exp-add-card">
+          <div class="reward-head">
+            <span class="reward-emoji">➕</span>
+            <div><div class="reward-title">Add an expense</div><div class="reward-sub">Pick a category, enter the amount, done.</div></div>
+          </div>
+          <div class="exp-cats" id="expCats" role="radiogroup" aria-label="Category"></div>
+          <div class="exp-row">
+            <div class="exp-field">
+              <label for="expAmount">Amount</label>
+              <input id="expAmount" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00" />
+            </div>
+            <div class="exp-field">
+              <label for="expCurrency">Currency</label>
+              <select id="expCurrency" class="exp-select"></select>
+            </div>
+          </div>
+          <div class="exp-row">
+            <div class="exp-field">
+              <label for="expDate">Date</label>
+              <input id="expDate" type="date" />
+            </div>
+            <div class="exp-field">
+              <label for="expNote">Note (optional)</label>
+              <input id="expNote" type="text" maxlength="60" placeholder="e.g. Lunch" />
+            </div>
+          </div>
+          <p class="hint" id="expHint"></p>
+          <button class="btn primary" id="expAddBtn" type="button">Add expense</button>
+        </div>
+
+        <div class="card exp-list-card">
+          <div class="exp-list-head">
+            <div><div class="reward-title">Recent expenses</div><div class="reward-sub" id="expListSub">Nothing logged yet.</div></div>
+            <button class="btn ghost small" id="expClearBtn" type="button" hidden>Clear all</button>
+          </div>
+          <div class="exp-list" id="expList"></div>
+        </div>
+        <p class="pp-note">Expenses are saved only on this phone, separately for each account — nothing is sent to Deltix servers. Changing the currency relabels new entries; amounts are never converted.</p>
       </div>
 
       <!-- Country Leaderboard -->
@@ -1321,6 +1399,7 @@
       <button class="tabbtn active" data-tab="tab-wallet"><img src="assets/energy/38_wallet_nav.png" class="nav-3d-icon" alt="" /><span>Wallet</span></button>
       <button class="tabbtn" data-tab="tab-earn"><span class="nav-3d-icon nav-emoji">◆</span><span>Earn</span></button>
       <button class="tabbtn" data-tab="tab-stake"><img src="assets/energy/39_stake_nav.png" class="nav-3d-icon" alt="" /><span>Stake</span></button>
+      <button class="tabbtn" data-tab="tab-expenses"><span class="nav-3d-icon nav-emoji">💸</span><span>Expenses</span></button>
       <button class="tabbtn" data-tab="tab-arcade"><img src="assets/energy/40_arcade_nav.png" class="nav-3d-icon" alt="" /><span>Arcade</span></button>
       <button class="tabbtn" data-tab="tab-games"><span class="nav-3d-icon nav-emoji">🎮</span><span>Games</span></button>
       <button class="tabbtn" data-tab="tab-social"><span class="nav-3d-icon nav-emoji">📱</span><span>Social</span></button>
@@ -1385,6 +1464,9 @@
         </button>
         <button class="sidenav-item" data-tab="tab-earn">
           <span class="nav-3d-icon nav-emoji">◆</span><span>Deltix Earn</span>
+        </button>
+        <button class="sidenav-item" data-tab="tab-expenses">
+          <span class="nav-3d-icon nav-emoji">💸</span><span>Expense Tracker</span>
         </button>
         <button class="sidenav-item" data-tab="tab-assistant">
           <span class="nav-3d-icon nav-emoji">🤖</span><span>Assistant</span>
