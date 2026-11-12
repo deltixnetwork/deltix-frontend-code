@@ -120,7 +120,9 @@ window.DELTIX_FAQ = [
     icon: '💸',
     items: [
       { q: 'How do I send $DLTX to another user?', a: 'Open Wallet → Send, enter the recipient\u2019s address, and confirm. Transfers are instant and sealed into the public Deltix chain.' },
-      { q: 'Why is my transferable balance lower than my total balance?', a: 'Your transferable balance = total balance − locked welcome bonus. Everything you earned from games, mining, rewards, and staking is fully transferable; only the welcome bonus stays locked.' },
+      { q: 'Do I have to unlock transfers first?', a: 'No. Every verified account can send $DLTX from day one — members, moderators and admins alike. The earlier rule that required claiming 500 Energy from delegation before the first transfer was retired in November 2026. What still applies: the welcome bonus stays non-transferable, referral rewards unlock after 180 days, and an account under review keeps its funds in place until the review ends.' },
+      { q: 'Does closing the P2P Marketplace stop me from sending $DLTX?', a: 'No. The marketplace (DLTX/USDT trading with escrow and a moderator) and wallet-to-wallet transfers are separate. While the marketplace is closed, only new deposits into the P2P platform wallet are paused; sending $DLTX to any other member works exactly as before.' },
+      { q: 'Why is my transferable balance lower than my total balance?', a: 'Your transferable balance = total balance − locked welcome bonus − referral rewards still inside their 180-day lock. Everything you earned from games, mining, rewards, and staking is fully transferable.' },
       { q: 'What is the transfer fee?', a: '0.1% of the amount (minimum 0.01 $DLTX), burned forever. The fee is shown before you confirm.' },
       { q: 'The app says my transfer was already submitted — why?', a: 'Duplicate protection. If a send is retried (double tap, network blip), the server refuses the duplicate so you can never accidentally pay twice.' },
     ],
@@ -176,6 +178,17 @@ window.DELTIX_FAQ = [
       { q: 'What daily rewards are there?', a: 'Daily check-in (with streaks), the Mystery Box every 12 hours, the daily Chest pick, the Daily Puzzle, the Daily Challenge, Missions, and the 7-day Deltix Vault.' },
       { q: 'What happens if I miss a day?', a: 'Check-in streaks reset. Staying away also costs Energy: 5 Energy for each full day you don\u2019t open the app (never below zero), with a 7-day welcome period for new accounts and no deductions during maintenance. Your $DLTX balance, rank, and badges are never touched.' },
       { q: 'Why did a reward say "paused"?', a: 'During maintenance the team can briefly pause reward claims to protect the economy. Nothing is lost — claims resume when the pause lifts.' },
+    ],
+  },
+  {
+    id: 'tools',
+    name: 'Expenses & Rates',
+    icon: '💸',
+    items: [
+      { q: 'Where are my expenses stored?', a: 'Only on your phone, separately for each account you sign in with. Nothing about your expenses is sent to Deltix — which also means a new phone starts with an empty tracker.' },
+      { q: 'Can I log an expense in crypto or another currency?', a: 'Yes. Pick the currency or coin for that entry (BTC, ETH, USDT and others are listed with the 60 currencies). Its value in your ledger currency is recorded at the live rate when you add it, so a crypto purchase keeps what it was worth that day. Entries added while offline are counted once rates load, marked \u2248.' },
+      { q: 'How do I change the currency my totals use?', a: 'Use "Totals in" at the top of the Expense Tracker. Amounts you typed never change; entries in other currencies are converted into the new ledger currency at the live rate and shown with \u2248.' },
+      { q: 'Where do the converter rates come from?', a: 'From public market data (Coinbase, with Exchange Rate API and CoinGecko as backups). The Deltix server refreshes them every minute and the app updates every minute while the converter is open, so what you see is the current market rate, not a feed you have to reload. They are indicative rates for information only, not a quote — Deltix does not exchange currency, and $DLTX has no market rate, so it is not listed.' },
     ],
   },
 ];
