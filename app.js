@@ -3,7 +3,7 @@
 // In the native app shell (Capacitor) there is no same-origin backend —
 // point at the production API instead.
 const API = window.Capacitor ? 'https://app.deltixllc.com/api' : '/api';
-const APP_VERSION = '1.21.0';
+const APP_VERSION = '1.22.0';
 const $ = (id) => document.getElementById(id);
 
 // Stable per-phone identifier sent with every request (X-Device-Id) — the
@@ -400,6 +400,7 @@ function showTab(id, { refresh = true } = {}) {
   updateTabAd(id);
   navRecord(id);
   syncNavSelection(id);
+  if (typeof ratesTickerSync === 'function') ratesTickerSync();
   if (id !== 'tab-chatroom') stopChatPolling();
   if (id !== 'tab-predict' && typeof stopPredictPolling === 'function') stopPredictPolling();
   if (id !== 'tab-p2p' && typeof stopP2pAdminsPoll === 'function') stopP2pAdminsPoll();
@@ -418,8 +419,12 @@ function showTab(id, { refresh = true } = {}) {
   } else if (id === 'tab-chatroom') {
     if (typeof renderGlobalChatroom === 'function') renderGlobalChatroom();
   } else if (id === 'tab-expenses') {
-    // On-device tool: works signed in or offline, nothing to fetch.
+    // On-device tool: works signed in or offline, nothing to fetch (live rates only refine foreign/crypto entries).
     if (typeof renderExpenses === 'function') renderExpenses();
+    if (state.token && typeof loadRates === 'function') loadRates().catch(() => {});
+  } else if (id === 'tab-converter') {
+    if (typeof renderConverter === 'function') renderConverter();
+    if (state.token && typeof loadRates === 'function') loadRates().catch(() => {});
   } else if (id === 'tab-predict') {
     if (typeof renderPredict === 'function') renderPredict();
   } else if (refresh && state.token) {
@@ -516,6 +521,8 @@ async function refreshCurrentView({ isPull = false, silent = false } = {}) {
   } else if (activeTab === 'tab-assistant') {
     tasks.push(loadKycStatus());
     if (typeof loadAiProviders === 'function') tasks.push(loadAiProviders());
+  } else if (activeTab === 'tab-converter' || activeTab === 'tab-expenses') {
+    if (typeof loadRates === 'function') tasks.push(loadRates({ force: true }));
   } else if (activeTab === 'tab-chatroom') {
     if (typeof renderGlobalChatroom === 'function') {
       tasks.push(Promise.resolve().then(() => renderGlobalChatroom()));
@@ -2426,11 +2433,12 @@ function renderEnergyDelegation(d) {
     claimBtn.textContent = s.claimable > 0 ? `Claim ${fmt(s.claimable)} ⚡ Energy` : 'Claim Energy';
   }
 
-  // Transfer unlock progress (hidden for grandfathered accounts).
+  // Transfer unlock progress — hidden for grandfathered accounts and whenever the policy is not enforced
+  // (it was retired in November 2026: every account can transfer).
   const unlockCard = $('edUnlockCard');
   if (unlockCard) {
     const u = s.transferUnlock || {};
-    unlockCard.hidden = Boolean(u.grandfathered);
+    unlockCard.hidden = Boolean(u.grandfathered) || !u.active;
     if (!unlockCard.hidden) {
       const pct = Math.min(100, (Number(u.claimed) / Math.max(1, Number(u.required))) * 100);
       const fill = $('edUnlockFill');
@@ -2442,9 +2450,7 @@ function renderEnergyDelegation(d) {
       if (hintEl) {
         hintEl.textContent = u.claimed >= u.required
           ? 'Transfers are unlocked on this account.'
-          : (u.active
-            ? 'Claim Energy from delegation to unlock $DLTX transfers on this account.'
-            : 'Preview — the transfer requirement is not enforced on this server yet.');
+          : 'Claim Energy from delegation to unlock $DLTX transfers on this account.';
       }
     }
   }
@@ -4616,21 +4622,11 @@ $('aiProviders')?.addEventListener('click', (e) => {
   $('botInput')?.focus({ preventScroll: true });
 });
 
-// ==================== Deltix Expense Tracker (on this phone, per account) ====================
-// A personal spending log that never leaves the device: entries live in localStorage under a per-account
-// key, and today / this week (Mon–Sun) / this month totals are computed locally in the member's own currency.
-// No server, no external API — it works offline.
-const EXP_CATEGORIES = [
-  { id: 'food', name: 'Food', icon: '🍔' },
-  { id: 'shopping', name: 'Shopping', icon: '🛍️' },
-  { id: 'transport', name: 'Transport', icon: '🚌' },
-  { id: 'bills', name: 'Bills', icon: '💡' },
-  { id: 'health', name: 'Health', icon: '💊' },
-  { id: 'fun', name: 'Fun', icon: '🎬' },
-  { id: 'education', name: 'Education', icon: '📚' },
-  { id: 'other', name: 'Other', icon: '📦' },
-];
-const EXP_CURRENCIES = [
+// ==================== Live exchange rates (shared by the Currency Converter and the Expense Tracker) ====================
+// GET /api/rates returns every rate against USD ("1 USD = rate units"); any pair is rates[to] / rates[from]. The last
+// payload is kept in localStorage so both tools keep working offline with "as of …" rates. Display only — nothing in
+// the app settles value on these numbers, and $DLTX (no market rate) is deliberately not listed.
+const FIAT_CURRENCIES = [
   ['USD', 'US Dollar'], ['EUR', 'Euro'], ['GBP', 'British Pound'], ['PKR', 'Pakistani Rupee'], ['INR', 'Indian Rupee'],
   ['BDT', 'Bangladeshi Taka'], ['NGN', 'Nigerian Naira'], ['KES', 'Kenyan Shilling'], ['GHS', 'Ghanaian Cedi'], ['ZAR', 'South African Rand'],
   ['EGP', 'Egyptian Pound'], ['MAD', 'Moroccan Dirham'], ['TRY', 'Turkish Lira'], ['SAR', 'Saudi Riyal'], ['AED', 'UAE Dirham'],
@@ -4643,6 +4639,258 @@ const EXP_CURRENCIES = [
   ['HUF', 'Hungarian Forint'], ['RON', 'Romanian Leu'], ['UAH', 'Ukrainian Hryvnia'], ['RUB', 'Russian Ruble'], ['KZT', 'Kazakhstani Tenge'],
   ['UZS', 'Uzbekistani Som'], ['IRR', 'Iranian Rial'], ['IQD', 'Iraqi Dinar'], ['JOD', 'Jordanian Dinar'], ['LBP', 'Lebanese Pound'],
   ['ETB', 'Ethiopian Birr'], ['TZS', 'Tanzanian Shilling'], ['UGX', 'Ugandan Shilling'], ['XOF', 'West African CFA Franc'], ['XAF', 'Central African CFA Franc'],
+];
+// code, name, symbol (null = show the code), decimals shown
+const CRYPTO_CURRENCIES = [
+  ['BTC', 'Bitcoin', '₿', 8], ['ETH', 'Ethereum', 'Ξ', 6], ['USDT', 'Tether', null, 2], ['USDC', 'USD Coin', null, 2],
+  ['BNB', 'BNB', null, 5], ['SOL', 'Solana', null, 4], ['XRP', 'XRP', null, 3], ['DOGE', 'Dogecoin', null, 2],
+  ['TON', 'Toncoin', null, 4], ['TRX', 'TRON', null, 2], ['LTC', 'Litecoin', null, 5], ['ADA', 'Cardano', null, 3],
+];
+const CRYPTO_META = Object.fromEntries(CRYPTO_CURRENCIES.map(([c, name, sym, dec]) => [c, { name, sym, dec }]));
+const isCrypto = (code) => Object.prototype.hasOwnProperty.call(CRYPTO_META, code);
+const isKnownCurrency = (code) => isCrypto(code) || FIAT_CURRENCIES.some(([c]) => c === code);
+function currencyName(code) { return isCrypto(code) ? CRYPTO_META[code].name : (FIAT_CURRENCIES.find(([c]) => c === code) || [code, code])[1]; }
+
+/** Options for a currency select: fiat first, then crypto. Built once per select (the lists are static). */
+function fillCurrencySelect(sel, value) {
+  if (!sel) return;
+  if (!sel.dataset.filled) {
+    sel.innerHTML = `<optgroup label="Currencies">${FIAT_CURRENCIES.map(([c, n]) => `<option value="${c}">${c} — ${n}</option>`).join('')}</optgroup>`
+      + `<optgroup label="Crypto">${CRYPTO_CURRENCIES.map(([c, n]) => `<option value="${c}">${c} — ${n}</option>`).join('')}</optgroup>`;
+    sel.dataset.filled = '1';
+  }
+  if (value && sel.value !== value) sel.value = value;
+}
+
+/** Decimals a fiat amount is shown with (Intl's own defaults are too coarse for some currencies, e.g. 0 for PKR). */
+const FIAT_ZERO_DECIMALS = new Set(['JPY', 'KRW', 'VND', 'UGX', 'XOF', 'XAF', 'CLP', 'IRR', 'LBP', 'UZS']);
+const FIAT_THREE_DECIMALS = new Set(['KWD', 'JOD', 'IQD']);
+const fiatDigits = (code) => (FIAT_ZERO_DECIMALS.has(code) ? 0 : FIAT_THREE_DECIMALS.has(code) ? 3 : 2);
+
+/** Money formatting: fiat through Intl, crypto with its symbol/code; small values keep enough decimals to mean something. */
+function fmtMoney(amount, code, { maxDecimals } = {}) {
+  const n = Number(amount) || 0;
+  const small = n !== 0 && Math.abs(n) < 1;
+  if (isCrypto(code)) {
+    const m = CRYPTO_META[code];
+    const digits = maxDecimals != null ? maxDecimals : (small ? Math.min(8, Math.max(m.dec, Math.ceil(-Math.log10(Math.abs(n))) + 2)) : m.dec);
+    const s = n.toLocaleString(undefined, { maximumFractionDigits: digits });
+    return m.sym ? `${m.sym}${s}` : `${s} ${code}`;
+  }
+  const base = fiatDigits(code);
+  const digits = maxDecimals != null ? maxDecimals : (small ? Math.min(6, Math.max(base, Math.ceil(-Math.log10(Math.abs(n))) + 2)) : base);
+  const opts = { style: 'currency', currency: code, currencyDisplay: 'narrowSymbol', maximumFractionDigits: digits, minimumFractionDigits: Math.min(base, digits) };
+  try { return new Intl.NumberFormat(undefined, opts).format(n); }
+  catch {
+    try { return new Intl.NumberFormat(undefined, { ...opts, currencyDisplay: 'symbol' }).format(n); }
+    catch { return `${code} ${n.toFixed(base)}`; }
+  }
+}
+
+const RATES_KEY = 'dltx_rates';
+const ratesState = { data: null, loading: null, error: null };
+
+function ratesRestore() {
+  if (ratesState.data) return ratesState.data;
+  try {
+    const d = JSON.parse(localStorage.getItem(RATES_KEY) || 'null');
+    if (d && d.fiat && Number(d.updatedAt) > 0) ratesState.data = d;
+  } catch { /* nothing cached */ }
+  return ratesState.data;
+}
+
+/** Fetches rates when the cached ones are older than the server's refresh cadence (or when forced). Never throws. */
+async function loadRates({ force = false } = {}) {
+  const cached = ratesRestore();
+  if (!state.token) return cached;
+  const refresh = (cached && Number(cached.refreshMs)) || 60 * 1000;
+  if (!force && cached && Date.now() - cached.updatedAt < refresh) return cached;
+  if (ratesState.loading) return ratesState.loading;
+  ratesState.loading = (async () => {
+    try {
+      const r = await api('GET', '/rates');
+      if (r && r.fiat) {
+        ratesState.data = r;
+        ratesState.error = null;
+        try { localStorage.setItem(RATES_KEY, JSON.stringify(r)); } catch { /* private mode */ }
+      }
+    } catch (e) {
+      ratesState.error = e.message || 'Rates are unavailable right now.';
+    } finally {
+      ratesState.loading = null;
+    }
+    // Whatever is on screen that depends on rates repaints with the new numbers.
+    const active = document.querySelector('.tab.active')?.id;
+    if (active === 'tab-converter' && typeof renderConverter === 'function') renderConverter();
+    if (active === 'tab-expenses' && typeof renderExpenses === 'function') renderExpenses();
+    return ratesState.data;
+  })();
+  return ratesState.loading;
+}
+
+/** Units of `to` per one unit of `from`, or null when either rate is unknown. */
+function rateBetween(from, to) {
+  if (from === to) return 1;
+  const d = ratesRestore();
+  if (!d) return null;
+  const a = Number((d.fiat && d.fiat[from]) ?? (d.crypto && d.crypto[from]));
+  const b = Number((d.fiat && d.fiat[to]) ?? (d.crypto && d.crypto[to]));
+  if (!(a > 0) || !(b > 0)) return null;
+  return b / a;
+}
+const convertAmount = (amount, from, to) => { const r = rateBetween(from, to); return r == null ? null : Number(amount) * r; };
+
+function ratesAgeText() {
+  const d = ratesRestore();
+  if (!d) return null;
+  const mins = Math.max(0, Math.round((Date.now() - d.updatedAt) / 60000));
+  return mins < 1 ? 'just now' : mins < 60 ? `${mins} min ago` : mins < 48 * 60 ? `${Math.round(mins / 60)} h ago` : `${Math.round(mins / 1440)} days ago`;
+}
+function ratesSourceText() {
+  const d = ratesRestore();
+  if (!d) return '';
+  const src = d.sources || {};
+  const names = { coinbase: 'Coinbase', 'er-api': 'Exchange Rate API', coingecko: 'CoinGecko' };
+  const tokens = [src.fiat, src.crypto].filter(Boolean).flatMap((s) => String(s).split('+'));
+  return [...new Set(tokens)].map((s) => names[s] || s).join(' · ');
+}
+
+// Live updates: while the Converter or the Expense Tracker is on screen and the app is in the foreground, rates are
+// re-checked every minute (the server refreshes its own copy on the same cadence, so this is as fresh as it gets).
+const RATES_TICK_MS = 60 * 1000;
+let ratesTicker = null;
+function ratesTickerSync() {
+  const active = document.querySelector('.tab.active')?.id;
+  const wanted = state.token && document.visibilityState !== 'hidden' && (active === 'tab-converter' || active === 'tab-expenses');
+  if (wanted && !ratesTicker) {
+    ratesTicker = setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      loadRates().catch(() => {});
+      // Keep the "updated N min ago" lines honest even when nothing new arrived.
+      if (document.querySelector('.tab.active')?.id === 'tab-converter' && typeof renderConverter === 'function') renderConverter({ keepInput: true });
+    }, RATES_TICK_MS);
+  } else if (!wanted && ratesTicker) {
+    clearInterval(ratesTicker);
+    ratesTicker = null;
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  ratesTickerSync();
+  // Coming back to the app after a while: fetch straight away rather than waiting for the next tick.
+  if (document.visibilityState === 'visible' && ratesTicker) loadRates().catch(() => {});
+});
+
+// ==================== Currency Converter ====================
+const CV_KEY = 'dltx_conv';
+const CV_WATCH_FIAT = ['USD', 'EUR', 'GBP', 'SAR', 'AED', 'INR'];
+const CV_WATCH_CRYPTO = ['BTC', 'ETH', 'USDT', 'BNB', 'SOL', 'XRP'];
+const cvState = { from: null, to: null, amount: 1, base: null, wired: false, refreshing: false };
+
+function cvRestore() {
+  if (cvState.from) return;
+  const home = expLoad().currency;
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(CV_KEY) || 'null'); } catch { saved = null; }
+  cvState.from = isKnownCurrency(saved?.from) ? saved.from : (home === 'USD' ? 'EUR' : 'USD');
+  cvState.to = isKnownCurrency(saved?.to) ? saved.to : home;
+  cvState.base = isKnownCurrency(saved?.base) ? saved.base : home;
+  cvState.amount = Number(saved?.amount) > 0 ? Number(saved.amount) : 1;
+}
+function cvSave() {
+  try { localStorage.setItem(CV_KEY, JSON.stringify({ from: cvState.from, to: cvState.to, base: cvState.base, amount: cvState.amount })); } catch { /* private mode */ }
+}
+
+function cvWire() {
+  if (cvState.wired) return;
+  cvState.wired = true;
+  $('cvAmount')?.addEventListener('input', (e) => {
+    const n = Number(String(e.target.value || '').replace(',', '.'));
+    cvState.amount = Number.isFinite(n) && n >= 0 ? n : 0;
+    cvSave();
+    renderConverter({ keepInput: true });
+  });
+  $('cvFrom')?.addEventListener('change', (e) => { if (isKnownCurrency(e.target.value)) { cvState.from = e.target.value; cvSave(); renderConverter(); } });
+  $('cvTo')?.addEventListener('change', (e) => { if (isKnownCurrency(e.target.value)) { cvState.to = e.target.value; cvSave(); renderConverter(); } });
+  $('cvSwap')?.addEventListener('click', () => { [cvState.from, cvState.to] = [cvState.to, cvState.from]; cvSave(); renderConverter(); });
+  $('cvBoardBase')?.addEventListener('change', (e) => { if (isKnownCurrency(e.target.value)) { cvState.base = e.target.value; cvSave(); renderConverter(); } });
+  $('cvRefresh')?.addEventListener('click', async () => {
+    if (cvState.refreshing) return;
+    cvState.refreshing = true;
+    renderConverter({ keepInput: true });
+    await loadRates({ force: true });
+    cvState.refreshing = false;
+    renderConverter({ keepInput: true });
+    if (ratesState.error) toast(ratesState.error);
+  });
+}
+
+function renderConverter({ keepInput = false } = {}) {
+  cvWire();
+  cvRestore();
+  fillCurrencySelect($('cvFrom'), cvState.from);
+  fillCurrencySelect($('cvTo'), cvState.to);
+  fillCurrencySelect($('cvBoardBase'), cvState.base);
+  const amountEl = $('cvAmount');
+  if (amountEl && !keepInput && document.activeElement !== amountEl) amountEl.value = String(cvState.amount);
+
+  const rate = rateBetween(cvState.from, cvState.to);
+  const result = $('cvResult');
+  const unit = $('cvUnit');
+  if (result) result.textContent = rate == null ? '—' : fmtMoney(cvState.amount * rate, cvState.to);
+  if (unit) unit.textContent = rate == null ? '' : `1 ${cvState.from} = ${fmtMoney(rate, cvState.to)}   ·   1 ${cvState.to} = ${fmtMoney(1 / rate, cvState.from)}`;
+
+  const status = $('cvStatus');
+  if (status) {
+    const d = ratesRestore();
+    let text;
+    let cls = 'hint cv-status';
+    if (cvState.refreshing) text = 'Refreshing rates…';
+    else if (!d) { text = ratesState.error || (state.token ? 'Loading live rates…' : 'Sign in to load live rates.'); if (ratesState.error) cls += ' error'; }
+    else if (rate == null) { text = `No rate for ${cvState.from}/${cvState.to} right now.`; cls += ' error'; }
+    else {
+      const age = ratesAgeText();
+      // "Last known" once the data is clearly older than the refresh cadence allows (never twitchy below 5 minutes).
+      const old = Date.now() - d.updatedAt > Math.max(5 * 60 * 1000, 3 * (Number(d.refreshMs) || 60000));
+      text = old ? `Showing the last known rates (${age})${ratesState.error ? ' — ' + ratesState.error : ''}` : `Updated ${age}${ratesSourceText() ? ' · ' + ratesSourceText() : ''}`;
+      if (old) cls += ' warn';
+    }
+    status.textContent = text;
+    status.className = cls;
+  }
+
+  // Live board: popular currencies and coins against the chosen base.
+  setText('cvBoardSub', `1 unit of each, in ${cvState.base} (${currencyName(cvState.base)}).`);
+  const board = $('cvBoard');
+  if (board) {
+    const rows = [...CV_WATCH_FIAT, ...CV_WATCH_CRYPTO]
+      .filter((c) => c !== cvState.base)
+      .map((c) => ({ code: c, name: currencyName(c), rate: rateBetween(c, cvState.base), crypto: isCrypto(c) }));
+    board.innerHTML = rows.map((r) => `<div class="cv-row${r.crypto ? ' crypto' : ''}"><span class="cv-row-code">${escapeHtml(r.code)}</span><span class="cv-row-name">${escapeHtml(r.name)}</span><b>${r.rate == null ? '—' : escapeHtml(fmtMoney(r.rate, cvState.base))}</b></div>`).join('');
+  }
+  const refreshBtn = $('cvRefresh');
+  if (refreshBtn) { refreshBtn.disabled = cvState.refreshing || !state.token; refreshBtn.textContent = cvState.refreshing ? 'Refreshing…' : '↻ Refresh rates'; }
+  const note = $('cvNote');
+  if (note) {
+    const d = ratesRestore();
+    note.textContent = `Live market rates, refreshed about every ${Math.max(1, Math.round(((d && Number(d.refreshMs)) || 60000) / 60000))} minute${((d && Number(d.refreshMs)) || 60000) > 90000 ? 's' : ''} while this screen is open — indicative, not a quote. Deltix does not exchange currency; $DLTX has no market rate and is not listed.${d && d.attribution ? ' ' + d.attribution + '.' : ''}`;
+  }
+}
+
+// ==================== Deltix Expense Tracker (on this phone, per account) ====================
+// A personal spending log that never leaves the device: entries live in localStorage under a per-account key, and
+// today / this week (Mon–Sun) / this month totals are computed locally in the member's ledger currency. Entries may be
+// logged in any currency or coin: the value in the ledger currency is snapshotted at the live rate when the entry is
+// added (so a crypto purchase keeps what it was worth that day); entries without a snapshot are converted live and
+// marked ≈. The typed amount is never changed.
+const EXP_CATEGORIES = [
+  { id: 'food', name: 'Food', icon: '🍔' },
+  { id: 'shopping', name: 'Shopping', icon: '🛍️' },
+  { id: 'transport', name: 'Transport', icon: '🚌' },
+  { id: 'bills', name: 'Bills', icon: '💡' },
+  { id: 'health', name: 'Health', icon: '💊' },
+  { id: 'fun', name: 'Fun', icon: '🎬' },
+  { id: 'education', name: 'Education', icon: '📚' },
+  { id: 'other', name: 'Other', icon: '📦' },
 ];
 // First-run default from the phone's region (the member can always change it).
 const EXP_REGION_CURRENCY = {
@@ -4658,7 +4906,8 @@ const EXP_MAX_AMOUNT = 1e12;
 const EXP_LIST_LIMIT = 60;       // rows shown in "Recent expenses"
 const EXP_NOTE_MAX = 60;
 
-const expState = { data: null, key: null, period: 'day', cat: 'food', wired: false };
+// entryCur: the currency of the expense being added (remembered for the session); the ledger currency lives in the data.
+const expState = { data: null, key: null, period: 'day', cat: 'food', wired: false, entryCur: null };
 
 const expPad = (n) => String(n).padStart(2, '0');
 /** Local calendar day as YYYY-MM-DD (expenses follow the member's day, not UTC). */
@@ -4688,8 +4937,8 @@ function expLoad() {
   let data = null;
   try { data = JSON.parse(localStorage.getItem(key) || 'null'); } catch { data = null; }
   if (!data || typeof data !== 'object' || !Array.isArray(data.items)) data = { v: 1, currency: expDefaultCurrency(), items: [] };
-  if (!EXP_CURRENCIES.some(([c]) => c === data.currency)) data.currency = 'USD';
-  data.items = data.items.filter((i) => i && Number.isFinite(Number(i.amount)) && /^\d{4}-\d{2}-\d{2}$/.test(String(i.date || '')));
+  if (!isKnownCurrency(data.currency)) data.currency = 'USD';
+  data.items = data.items.filter((i) => i && Number.isFinite(Number(i.amount)) && /^\d{4}-\d{2}-\d{2}$/.test(String(i.date || '')) && isKnownCurrency(i.cur));
   expState.data = data;
   expState.key = key;
   return data;
@@ -4700,15 +4949,29 @@ function expSave() {
   catch { toast('Could not save the expense — this phone\u2019s storage is full or unavailable.'); }
 }
 
-function expFmt(amount, currency) {
-  const cur = currency || expLoad().currency;
-  const n = Number(amount) || 0;
-  try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: cur, currencyDisplay: 'narrowSymbol' }).format(n); }
-  catch {
-    try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: cur }).format(n); }
-    catch { return `${cur} ${n.toFixed(2)}`; }
-  }
+/** Amounts are kept to 2 decimals for fiat and 8 for coins. */
+const expRound = (n, cur) => (isCrypto(cur) ? Math.round(Number(n) * 1e8) / 1e8 : Math.round(Number(n) * 100) / 100);
+const expFmt = (amount, currency) => fmtMoney(amount, currency || expLoad().currency);
+
+/** An entry's value in the ledger currency: exact (same currency or snapshot taken when added), live (≈), or unknown. */
+function expHomeValue(item, home) {
+  if (item.cur === home) return { amount: Number(item.amount), approx: false };
+  if (item.home && item.home.cur === home && Number.isFinite(Number(item.home.amount))) return { amount: Number(item.home.amount), approx: false };
+  const live = convertAmount(item.amount, item.cur, home);
+  return live == null ? null : { amount: live, approx: true };
 }
+/** Total of entries in the ledger currency; `approx` when any live conversion is included, `excluded` = entries with no rate yet. */
+function expTotals(items, home) {
+  let total = 0, approx = false, excluded = 0;
+  for (const it of items) {
+    const v = expHomeValue(it, home);
+    if (!v) { excluded += 1; continue; }
+    total += v.amount;
+    approx = approx || v.approx;
+  }
+  return { total: expRound(total, home), approx, excluded };
+}
+const expTotalText = (t, home) => `${t.approx ? '≈ ' : ''}${fmtMoney(t.total, home)}`;
 
 function expDayLabel(day, today) {
   if (day === today) return 'Today';
@@ -4718,7 +4981,6 @@ function expDayLabel(day, today) {
 }
 
 const expCategory = (id) => EXP_CATEGORIES.find((c) => c.id === id) || EXP_CATEGORIES[EXP_CATEGORIES.length - 1];
-const expSum = (items) => Math.round(items.reduce((n, i) => n + Number(i.amount), 0) * 100) / 100;
 
 function expWire() {
   if (expState.wired) return;
@@ -4739,12 +5001,21 @@ function expWire() {
     renderExpenses();
   });
   $('expCurrency')?.addEventListener('change', (e) => {
+    // The currency of the entry being added — the ledger currency (totals) is chosen separately.
+    const cur = String(e.target.value || '');
+    if (!isKnownCurrency(cur)) return;
+    expState.entryCur = cur;
+    renderExpenses();
+  });
+  $('expHome')?.addEventListener('change', (e) => {
     const data = expLoad();
     const cur = String(e.target.value || '');
-    if (!EXP_CURRENCIES.some(([c]) => c === cur)) return;
+    if (!isKnownCurrency(cur) || cur === data.currency) return;
     data.currency = cur;
+    if (!expState.entryCur) expState.entryCur = cur;
     expSave();
     renderExpenses();
+    toast(`Totals now in ${cur}`);
   });
   $('expList')?.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-exp-del]');
@@ -4772,7 +5043,8 @@ function expAdd() {
   const data = expLoad();
   const amountEl = $('expAmount');
   const hint = $('expHint');
-  const amount = Math.round(Number(String(amountEl?.value || '').replace(',', '.')) * 100) / 100;
+  const cur = isKnownCurrency(expState.entryCur) ? expState.entryCur : data.currency;
+  const amount = expRound(Number(String(amountEl?.value || '').replace(',', '.')), cur);
   const fail = (msg) => { if (hint) { hint.textContent = msg; hint.className = 'hint error'; } amountEl?.focus(); };
   if (!Number.isFinite(amount) || amount <= 0) return fail('Enter an amount greater than zero.');
   if (amount > EXP_MAX_AMOUNT) return fail('That amount is too large.');
@@ -4783,8 +5055,13 @@ function expAdd() {
   const note = String($('expNote')?.value || '').trim().slice(0, EXP_NOTE_MAX);
   const item = {
     id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
-    amount, cat: expState.cat, note, date, cur: data.currency, at: Date.now(),
+    amount, cat: expState.cat, note, date, cur, at: Date.now(),
   };
+  // Snapshot the value in the ledger currency at today's rate, so a crypto purchase keeps what it was worth.
+  if (cur !== data.currency) {
+    const rate = rateBetween(cur, data.currency);
+    if (rate != null) item.home = { cur: data.currency, amount: expRound(amount * rate, data.currency), rate, at: Date.now() };
+  }
   data.items.push(item);
   if (data.items.length > EXP_MAX_ITEMS) data.items.splice(0, data.items.length - EXP_MAX_ITEMS);
   expSave();
@@ -4793,40 +5070,45 @@ function expAdd() {
   if (noteEl) noteEl.value = '';
   if (hint) { hint.textContent = ''; hint.className = 'hint'; }
   renderExpenses();
-  toast(`Added ${expFmt(amount)} · ${expCategory(item.cat).name}`);
+  const asHome = item.home ? ` ≈ ${expFmt(item.home.amount)}` : (cur !== data.currency ? ' (no rate yet)' : '');
+  toast(`Added ${fmtMoney(amount, cur)}${asHome} · ${expCategory(item.cat).name}`);
 }
 
 function renderExpenses() {
   const data = expLoad();
   expWire();
+  const home = data.currency;
   const dateEl = $('expDate');
   const today = expLocalDay();
   if (dateEl) {
     dateEl.max = today;
     if (!dateEl.value || dateEl.value > today) dateEl.value = today;
   }
-  const sel = $('expCurrency');
-  if (sel) {
-    if (sel.options.length !== EXP_CURRENCIES.length) sel.innerHTML = EXP_CURRENCIES.map(([c, n]) => `<option value="${c}">${c} — ${n}</option>`).join('');
-    sel.value = data.currency;
+  if (!isKnownCurrency(expState.entryCur)) expState.entryCur = home;
+  fillCurrencySelect($('expHome'), home);
+  fillCurrencySelect($('expCurrency'), expState.entryCur);
+  const entryHint = $('expEntryHint');
+  if (entryHint) {
+    const r = expState.entryCur === home ? null : rateBetween(expState.entryCur, home);
+    entryHint.textContent = expState.entryCur === home ? '' : (r == null ? `No live rate for ${expState.entryCur} yet — it will be counted once rates load.` : `1 ${expState.entryCur} ≈ ${fmtMoney(r, home)} right now · counted in ${home} at today\u2019s rate`);
   }
   const cats = $('expCats');
   if (cats) {
     cats.innerHTML = EXP_CATEGORIES.map((c) => `<button type="button" class="exp-cat${expState.cat === c.id ? ' active' : ''}" data-exp-cat="${c.id}" role="radio" aria-checked="${expState.cat === c.id}">${c.icon} ${c.name}</button>`).join('');
   }
 
-  // Totals, in the ledger currency only (entries logged in another currency are listed but never mixed in).
+  // Totals in the ledger currency; foreign and crypto entries count at their snapshot or live rate (≈).
   const week = expWeekRange();
   const month = today.slice(0, 7);
-  const inCur = data.items.filter((i) => i.cur === data.currency);
   const byPeriod = {
-    day: inCur.filter((i) => i.date === today),
-    week: inCur.filter((i) => i.date >= week.start && i.date <= week.end),
-    month: inCur.filter((i) => i.date.slice(0, 7) === month),
+    day: data.items.filter((i) => i.date === today),
+    week: data.items.filter((i) => i.date >= week.start && i.date <= week.end),
+    month: data.items.filter((i) => i.date.slice(0, 7) === month),
   };
-  setText('expToday', expFmt(expSum(byPeriod.day)));
-  setText('expWeek', expFmt(expSum(byPeriod.week)));
-  setText('expMonth', expFmt(expSum(byPeriod.month)));
+  const totals = { day: expTotals(byPeriod.day, home), week: expTotals(byPeriod.week, home), month: expTotals(byPeriod.month, home) };
+  setText('expToday', expTotalText(totals.day, home));
+  setText('expWeek', expTotalText(totals.week, home));
+  setText('expMonth', expTotalText(totals.month, home));
   // Long amounts (big local-currency totals) step down a size instead of wrapping mid-number on narrow phones.
   document.querySelectorAll('.exp-stat b').forEach((b) => b.classList.toggle('long', b.textContent.length > 9));
   document.querySelectorAll('.exp-stat[data-exp-period]').forEach((b) => {
@@ -4839,36 +5121,39 @@ function renderExpenses() {
   const chart = $('expChart');
   if (chart) {
     const days = Array.from({ length: 7 }, (_, k) => expLocalDay(expShiftDay(new Date(), k - 6)));
-    const totals = days.map((d) => expSum(inCur.filter((i) => i.date === d)));
-    const max = Math.max(...totals, 0);
+    const dayTotals = days.map((d) => expTotals(data.items.filter((i) => i.date === d), home).total);
+    const max = Math.max(...dayTotals, 0);
     chart.innerHTML = days.map((d, k) => {
-      const pct = max > 0 ? Math.max(totals[k] > 0 ? 6 : 0, Math.round((totals[k] / max) * 100)) : 0;
+      const pct = max > 0 ? Math.max(dayTotals[k] > 0 ? 6 : 0, Math.round((dayTotals[k] / max) * 100)) : 0;
       const label = expParseDay(d).toLocaleDateString(undefined, { weekday: 'narrow' });
-      return `<div class="exp-bar-col${d === today ? ' today' : ''}" title="${escapeHtml(expDayLabel(d, today))}: ${escapeHtml(expFmt(totals[k]))}"><div class="exp-bar-track"><div class="exp-bar" style="height:${pct}%"></div></div><span>${escapeHtml(label)}</span></div>`;
+      return `<div class="exp-bar-col${d === today ? ' today' : ''}" title="${escapeHtml(expDayLabel(d, today))}: ${escapeHtml(fmtMoney(dayTotals[k], home))}"><div class="exp-bar-track"><div class="exp-bar" style="height:${pct}%"></div></div><span>${escapeHtml(label)}</span></div>`;
     }).join('');
   }
 
   // Category breakdown for the selected period.
   const periodItems = byPeriod[expState.period] || byPeriod.day;
+  const periodTotals = totals[expState.period] || totals.day;
   const periodName = { day: 'Today', week: 'This week', month: 'This month' }[expState.period] || 'Today';
   setText('expBreakdownTitle', `${periodName} by category`);
   const breakdown = $('expBreakdown');
   if (breakdown) {
-    const total = expSum(periodItems);
+    const total = periodTotals.total;
     if (!periodItems.length) {
       breakdown.innerHTML = `<p class="muted center exp-empty">No expenses ${periodName === 'Today' ? 'today' : periodName.toLowerCase()} yet${expState.period === 'day' ? ' — add your first one below' : ''}.</p>`;
     } else {
       const rows = EXP_CATEGORIES
-        .map((c) => ({ ...c, total: expSum(periodItems.filter((i) => i.cat === c.id)), count: periodItems.filter((i) => i.cat === c.id).length }))
+        .map((c) => { const mine = periodItems.filter((i) => i.cat === c.id); return { ...c, total: expTotals(mine, home).total, count: mine.length }; })
         .filter((c) => c.total > 0)
         .sort((a, b) => b.total - a.total);
       // Averages are over the days elapsed so far, so a Tuesday is not divided by a full week.
       const daysSoFar = expState.period === 'week' ? ((new Date().getDay() + 6) % 7) + 1 : expParseDay(today).getDate();
-      const avg = expState.period === 'day' ? null : expSum(periodItems) / daysSoFar;
+      const avg = expState.period === 'day' ? null : total / daysSoFar;
       breakdown.innerHTML = rows.map((c) => {
         const pct = total > 0 ? Math.round((c.total / total) * 100) : 0;
-        return `<div class="exp-cat-row"><span class="exp-cat-icon">${c.icon}</span><div class="exp-cat-main"><div class="exp-cat-top"><span>${escapeHtml(c.name)}<small> · ${c.count}</small></span><b>${escapeHtml(expFmt(c.total))}</b></div><div class="exp-cat-track"><div class="exp-cat-fill" style="width:${pct}%"></div></div></div><span class="exp-cat-pct">${pct}%</span></div>`;
-      }).join('') + (avg != null ? `<p class="exp-avg">Average ${escapeHtml(expFmt(avg))} per day so far this ${expState.period}</p>` : '');
+        return `<div class="exp-cat-row"><span class="exp-cat-icon">${c.icon}</span><div class="exp-cat-main"><div class="exp-cat-top"><span>${escapeHtml(c.name)}<small> · ${c.count}</small></span><b>${escapeHtml(fmtMoney(c.total, home))}</b></div><div class="exp-cat-track"><div class="exp-cat-fill" style="width:${pct}%"></div></div></div><span class="exp-cat-pct">${pct}%</span></div>`;
+      }).join('')
+        + (avg != null ? `<p class="exp-avg">Average ${escapeHtml(fmtMoney(avg, home))} per day so far this ${expState.period}</p>` : '')
+        + (periodTotals.excluded > 0 ? `<p class="exp-avg">${periodTotals.excluded} entr${periodTotals.excluded === 1 ? 'y' : 'ies'} without a rate yet — not in these totals.</p>` : '');
     }
   }
 
@@ -4880,11 +5165,11 @@ function renderExpenses() {
   if (list) {
     const sorted = [...data.items].sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : (b.at || 0) - (a.at || 0)));
     const shown = sorted.slice(0, EXP_LIST_LIMIT);
-    const foreign = data.items.length - inCur.length;
+    const all = expTotals(data.items, home);
     if (sub) {
       sub.textContent = !data.items.length
         ? 'Nothing logged yet.'
-        : `${data.items.length} expense${data.items.length === 1 ? '' : 's'} saved${foreign > 0 ? ` · ${foreign} in other currencies (not in totals)` : ''}`;
+        : `${data.items.length} expense${data.items.length === 1 ? '' : 's'} saved · totals in ${home}${all.excluded > 0 ? ` · ${all.excluded} without a rate yet (not in totals)` : ''}`;
     }
     if (!shown.length) {
       list.innerHTML = '<p class="muted center exp-empty">Your expenses will show up here.</p>';
@@ -4894,11 +5179,16 @@ function renderExpenses() {
       for (const it of shown) {
         if (it.date !== lastDay) {
           lastDay = it.date;
-          const dayTotal = expSum(sorted.filter((i) => i.date === it.date && i.cur === data.currency));
-          html += `<div class="exp-day-head"><span>${escapeHtml(expDayLabel(it.date, today))}</span><b>${escapeHtml(expFmt(dayTotal))}</b></div>`;
+          const dayTotal = expTotals(sorted.filter((i) => i.date === it.date), home);
+          html += `<div class="exp-day-head"><span>${escapeHtml(expDayLabel(it.date, today))}</span><b>${escapeHtml(expTotalText(dayTotal, home))}</b></div>`;
         }
         const c = expCategory(it.cat);
-        html += `<div class="exp-item"><span class="exp-item-icon">${c.icon}</span><div class="exp-item-main"><div class="exp-item-title">${escapeHtml(it.note || c.name)}</div><div class="exp-item-sub">${escapeHtml(it.note ? c.name : '')}</div></div><b class="exp-item-amt${it.cur !== data.currency ? ' foreign' : ''}">${escapeHtml(expFmt(it.amount, it.cur))}</b><button type="button" class="exp-del" data-exp-del="${escapeHtml(it.id)}" aria-label="Remove expense">✕</button></div>`;
+        const foreign = it.cur !== home;
+        const v = foreign ? expHomeValue(it, home) : null;
+        const subText = foreign
+          ? `${it.note ? c.name + ' · ' : ''}${v ? `≈ ${fmtMoney(v.amount, home)}` : 'no rate yet'}`
+          : (it.note ? c.name : '');
+        html += `<div class="exp-item"><span class="exp-item-icon">${c.icon}</span><div class="exp-item-main"><div class="exp-item-title">${escapeHtml(it.note || c.name)}</div><div class="exp-item-sub">${escapeHtml(subText)}</div></div><b class="exp-item-amt${foreign ? ' foreign' : ''}">${escapeHtml(fmtMoney(it.amount, it.cur))}</b><button type="button" class="exp-del" data-exp-del="${escapeHtml(it.id)}" aria-label="Remove expense">✕</button></div>`;
       }
       if (sorted.length > shown.length) html += `<p class="muted center exp-empty">…and ${sorted.length - shown.length} older expense${sorted.length - shown.length === 1 ? '' : 's'}.</p>`;
       list.innerHTML = html;
