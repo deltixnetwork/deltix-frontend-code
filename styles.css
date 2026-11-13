@@ -2913,6 +2913,9 @@ html[data-dark] .faq-cat.active { background: #2563eb; border-color: #2563eb; }
 .ed-unlock-card { padding: 14px; margin-bottom: 14px; }
 .ed-unlock-title { font-size: 12px; font-weight: 800; letter-spacing: 0.8px; color: #64748b; margin-bottom: 8px; }
 .ed-unlock-progress { font-weight: 800; color: #0b1c3f; margin-top: 8px; }
+.ed-unlock-row + .ed-unlock-row { margin-top: 12px; }
+.ed-unlock-label { font-size: 13px; font-weight: 700; color: #334155; }
+html[data-dark] .ed-unlock-label { color: var(--text, #e7ecf7); }
 html[data-dark] .ed-stat { background: var(--card, #101a33); border-color: rgba(255,255,255,0.08); }
 html[data-dark] .ed-stat b, html[data-dark] .ed-unlock-progress { color: var(--text, #e7ecf7); }
 

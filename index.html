@@ -223,10 +223,18 @@
         <button class="primary-btn" id="edClaimBtn" disabled>Claim Energy</button>
 
         <div class="card ed-unlock-card" id="edUnlockCard" hidden>
-          <div class="ed-unlock-title">TRANSFER UNLOCK</div>
-          <div class="mini-progress"><div class="mini-progress-fill" id="edUnlockFill"></div></div>
-          <div class="ed-unlock-progress" id="edUnlockText">0 / 500 Claimed Energy</div>
-          <p class="hint" id="edUnlockHint">Claim Energy from delegation to unlock $DLTX transfers on this account.</p>
+          <div class="ed-unlock-title">TRANSFER &amp; P2P UNLOCK</div>
+          <div class="ed-unlock-row">
+            <div class="ed-unlock-label">1 · Stake: Energy delegated now</div>
+            <div class="mini-progress"><div class="mini-progress-fill" id="edUnlockStakeFill"></div></div>
+            <div class="ed-unlock-progress" id="edUnlockStakeText">0 / 500 ⚡ staked</div>
+          </div>
+          <div class="ed-unlock-row">
+            <div class="ed-unlock-label">2 · Claim: rewards claimed in total</div>
+            <div class="mini-progress"><div class="mini-progress-fill" id="edUnlockClaimFill"></div></div>
+            <div class="ed-unlock-progress" id="edUnlockClaimText">0 / 500 ⚡ claimed</div>
+          </div>
+          <p class="hint" id="edUnlockHint">Keep 500 Energy delegated and claim 500 Energy of rewards to unlock $DLTX transfers and P2P trades.</p>
         </div>
 
         <h3 class="section-title">Energy Validators</h3>
@@ -588,7 +596,7 @@
 
         <div class="mystery-hour idle" id="energyHourBanner">
           <span class="mh-icon">⚡</span>
-          <div class="mh-text"><b id="energyHourTitle">2x Energy Hour</b><span id="energyHourSub">Watch an ad to activate 2× Energy · once per day</span></div>
+          <div class="mh-text"><b id="energyHourTitle">2x Energy Hour</b><span id="energyHourSub">Watch an ad to activate 2× Energy · up to twice per day</span></div>
           <button class="mh-activate" id="energyHourBtn">Activate</button>
         </div>
 
