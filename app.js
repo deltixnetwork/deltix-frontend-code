@@ -2433,8 +2433,8 @@ function renderEnergyDelegation(d) {
     claimBtn.textContent = s.claimable > 0 ? `Claim ${fmt(s.claimable)} ⚡ Energy` : 'Claim Energy';
   }
 
-  // Transfer unlock progress — hidden for grandfathered accounts and whenever the policy is not enforced
-  // (it was retired in November 2026: every account can transfer).
+  // Transfer unlock progress. Shown only when the server applies the unlock to this account
+  // (post-launch accounts, not staff, not grandfathered).
   const unlockCard = $('edUnlockCard');
   if (unlockCard) {
     const u = s.transferUnlock || {};
@@ -3836,7 +3836,7 @@ function renderEnergy() {
   }
 }
 
-// ---- 2x Energy Hour — ad-activated personal 2× window, one use per UTC day ----
+// ---- 2x Energy Hour — ad-activated personal 2× window, up to two uses per UTC day ----
 let ehTimer = null;
 let ehResetTimer = null;
 let ehAnnouncedFor = null;
@@ -5262,7 +5262,7 @@ function checkBotNudge() {
     nudges.push({
       icon: '⚡',
       title: '2x Energy Hour Available',
-      message: `Watch an ad to double your Energy earnings for a full hour · ${hh.usesRemaining} of ${hh.maxPerDay || 1} left today.`,
+      message: `Watch an ad to double your Energy earnings for a full hour · ${hh.usesRemaining} of ${hh.maxPerDay || 2} left today.`,
       tab: 'tab-energy',
     });
   }
