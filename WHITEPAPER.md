@@ -144,7 +144,7 @@ mobile-first application where:
 | Annual issuance | 5% of supply (staking rewards) |
 | Base staking APY | ~8% (variable, validator-dependent) |
 | Transfer base fee | 0.1% of amount (min 0.01 $DLTX), **permanently burned** |
-| Transfer eligibility | Accounts created after the Energy Delegation launch: 500 Energy claimed from delegation before the first $DLTX transfer or P2P trade (section 6.4). Pre-launch accounts and team operator accounts: no unlock needed |
+| Transfer eligibility | Accounts created after the Energy Delegation launch: 500 Energy delegated right now and 500 Energy claimed from delegation rewards before the first $DLTX transfer or P2P trade (section 6.4). Pre-launch accounts and staff: no unlock needed |
 | Unstake fee | 1% of principal, **permanently burned** |
 | Welcome bonus | 50 $DLTX per verified account, non-transferable (stakeable) |
 | Play & Earn daily cap | 10 $DLTX per account per UTC day across every game and reward loop |
@@ -354,11 +354,18 @@ reward = amount x annual_rate x elapsed / 365 days
 ### 6.4 Transfer Unlock
 
 Accounts created after the Energy Delegation launch begin with $DLTX transfers and P2P trading
-locked until they have **claimed 500 Energy from delegation** in total. In practice that means
-delegating Energy to a validator, letting the rewards accrue, and claiming them. Earned, purchased
-or granted Energy does not count; only delegation claims advance the counter. The rule applies to
-sending $DLTX and to opening, bidding on or accepting a P2P trade. The app shows the account's
-progress on the Energy Delegation screen.
+locked. The lock lifts while **both** of the following hold:
+
+- **Stake:** at least **500 Energy is delegated** to a validator right now. Undelegating below 500
+  pauses transfers and trades until the account stakes again.
+- **Claim:** at least **500 Energy of delegation rewards has been claimed** in total. Rewards count
+  only once they are claimed.
+
+Earned, purchased or granted Energy does not count toward either condition. The rule applies to
+sending $DLTX and to opening, bidding on or accepting a P2P trade. Staff are exempt: P2P moderators
+and senior moderators, global chat admins and moderators, and the team mailboxes, so the operating
+team can always settle and reconcile funds. Pre-launch accounts are exempt. The app shows both
+progress figures on the Energy Delegation screen.
 
 This is the network's primary defence against throwaway accounts: an account must carry a sustained,
 time-based commitment before it can move or trade $DLTX. The rule was introduced in response to the
@@ -508,10 +515,10 @@ The P2P Marketplace has been **temporarily closed since November 2026**. While i
 
 ## 9. Peer-to-Peer Transfers
 
-Every verified account can send $DLTX to any other network address once it is unlocked: accounts
-created before the Energy Delegation launch and team operator accounts from day one, and accounts
-created after it once they have claimed the threshold in section 6.4. Whether the marketplace is
-open or closed (section 8.7) has no bearing on transfers.
+Every verified account can send $DLTX to any other network address once it is unlocked. Accounts
+created before the Energy Delegation launch and staff are unlocked from day one. Accounts created
+after it unlock once they have both staked 500 Energy and claimed 500 Energy of delegation rewards
+(section 6.4). Whether the marketplace is open or closed (section 8.7) has no bearing on transfers.
 
 1. Sender specifies recipient address and amount.
 2. The protocol computes the base fee and displays the total debit before confirmation.
@@ -547,12 +554,12 @@ a human Sybil review has placed under review (section 6.4).
 ### 10.3 Anti-Fraud
 
 The protocol enforces self-referral rejection, one sponsor per account, a non-transferable welcome
-bonus, earned-value activation, the 180-day lock, the 500-claim transfer unlock (section 6.4), a
+bonus, earned-value activation, the 180-day lock, the stake-and-claim transfer unlock (section 6.4), a
 four-accounts-per-device limit, rate limiting, and duplicate-account (Sybil) analysis. Fraudulent referrals
 result in reward forfeiture, burning
 of farmed balances and account termination. In September 2026 the network identified and removed
 an industrial farm of roughly 131,000 fake accounts; the earned-value activation rule, the reward
-lock and the 500-claim transfer unlock (section 6.4) were introduced in response. The unlock was
+lock and the stake-and-claim transfer unlock (section 6.4) were introduced in response. The unlock was
 reinstated on November 13, 2026, once Play Integrity attestation and collector detection were in place
 to cover the wider risk.
 
@@ -676,7 +683,7 @@ Deltix publishes what is **actually running** separately from what is **planned*
   Calendar, Deltix Rain, Mystery Box, Chest, Daily Puzzle, Daily Challenge, Missions, Deltix
   Tree, Deltix Vault, Deltix Hour and 2x Energy Hour.
 - Deltix Energy with eight ranks, Energy Delegation at a published rate and age-based
-  undelegation burn, and the 500-claim transfer unlock (section 6.4).
+  undelegation burn, and the stake-and-claim transfer unlock (section 6.4).
 - The Deltix Shop, 85 avatar characters, 15 application themes.
 - 30-day Seasons, Leaderboard and Passport.
 - Expense Tracker and Currency Converter tools, and the ChatGPT, Gemini and Claude assistants.
@@ -781,7 +788,7 @@ belongs entirely to its participants.
 
 | Version | Effective | Changes |
 |---|---|---|
-| 2.2 | November 13, 2026 | The 500-claim transfer unlock is reinstated for accounts created after the Energy Delegation launch, covering $DLTX sends and P2P trades; team operator accounts are exempt and pre-launch accounts are unaffected. The November 12 retirement is withdrawn (sections 2, 3.5, 6.4, 8.1, 8.7, 9, 10.3, 15.1). |
+| 2.2 | November 13, 2026 | The transfer unlock is reinstated for accounts created after the Energy Delegation launch, covering $DLTX sends and P2P trades. It needs both 500 Energy delegated right now (stake) and 500 Energy of delegation rewards claimed in total. Staff (P2P and chat moderators and admins) and the team mailboxes are exempt; pre-launch accounts are unaffected. The November 12 retirement is withdrawn (sections 2, 3.5, 6.4, 8.1, 8.7, 9, 10.3, 15.1). |
 | 2.1 | November 12, 2026 | 500-claim transfer unlock retired: every account transfers from day one (sections 2, 6.4, 9, 10.3). P2P Marketplace marked temporarily closed with transfers explicitly unaffected (sections 8.7, 15, 16, 17). Expense Tracker, Currency Converter and the ChatGPT, Gemini and Claude assistants added to the application surfaces (sections 3.5, 15.1, 17). |
 | 2.0 | October 1, 2026 | Dual Earning System, Deltix Energy, P2P Marketplace, referral lock and anti-fraud rules, delivered-versus-planned statement. |
 

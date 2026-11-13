@@ -2096,7 +2096,7 @@ $('sendBtn').addEventListener('click', () => {
   const u = s.transferUnlock || {};
   const gated = u.active && !u.unlocked;
   $('sendHint').textContent = gated
-    ? `Transfers unlock after claiming ${fmt(u.required)} Energy from delegation (${fmt(u.claimed || 0)} / ${fmt(u.required)} so far).`
+    ? `Transfers unlock after staking ${fmt(u.stakeRequired || 500)} Energy and claiming ${fmt(u.required)} Energy of rewards (staked ${fmt(u.staked || 0)} / ${fmt(u.stakeRequired || 500)}, claimed ${fmt(u.claimed || 0)} / ${fmt(u.required)}).`
     : `Transferable: ${fmt(sendable)} $DLTX`
       + (s.bonusLocked > 0 && s.liquidLocked > 0 ? ` · ${fmt(Math.min(s.bonusLocked, s.liquidLocked))} welcome bonus locked (stake/use only)` : '')
       + (s.timeLocked > 0 ? ` · ${fmt(s.timeLocked)} referral rewards locked for 6 months (use in-app only)` : '')
@@ -2440,17 +2440,22 @@ function renderEnergyDelegation(d) {
     const u = s.transferUnlock || {};
     unlockCard.hidden = Boolean(u.grandfathered) || !u.active;
     if (!unlockCard.hidden) {
-      const pct = Math.min(100, (Number(u.claimed) / Math.max(1, Number(u.required))) * 100);
-      const fill = $('edUnlockFill');
-      if (fill) fill.style.width = pct + '%';
-      set('edUnlockText', u.claimed >= u.required
-        ? `${fmt(u.claimed)} / ${fmt(u.required)} — UNLOCKED ✅`
-        : `${fmt(u.claimed)} / ${fmt(u.required)} Claimed Energy`);
+      // Both conditions are required: Energy staked (delegated) right now, and Energy claimed from rewards in total.
+      // `unlocked` comes from the server, which checks both.
+      const stakeReq = Number(u.stakeRequired) || 500;
+      const claimReq = Number(u.required) || 500;
+      const bar = (fillId, textId, value, required, unit) => {
+        const fill = $(fillId);
+        if (fill) fill.style.width = `${Math.min(100, (value / required) * 100)}%`;
+        set(textId, value >= required ? `${fmt(value)} / ${fmt(required)} ${unit} ✅` : `${fmt(value)} / ${fmt(required)} ${unit}`);
+      };
+      bar('edUnlockStakeFill', 'edUnlockStakeText', Number(u.staked) || 0, stakeReq, '⚡ staked');
+      bar('edUnlockClaimFill', 'edUnlockClaimText', Number(u.claimed) || 0, claimReq, '⚡ claimed');
       const hintEl = $('edUnlockHint');
       if (hintEl) {
-        hintEl.textContent = u.claimed >= u.required
-          ? 'Transfers are unlocked on this account.'
-          : 'Claim Energy from delegation to unlock $DLTX transfers on this account.';
+        hintEl.textContent = u.unlocked
+          ? 'Unlocked: $DLTX transfers and P2P trades are open on this account.'
+          : `Keep ${fmt(stakeReq)} Energy delegated and claim ${fmt(claimReq)} Energy of rewards to unlock $DLTX transfers and P2P trades.`;
       }
     }
   }
